@@ -1,0 +1,3 @@
+#!/bin/sh
+# LEDs have one owner: zbt-modem-leds, using exact physical USB paths.
+exit 0

@@ -1,212 +1,128 @@
 #!/bin/sh
-set -eu
-log() { logger -t modem-watchdog "$*"; }
-uci_get() { uci -q get "$1" 2>/dev/null || true; }
-list_modems() { uci -q show modem_watchdog | sed -n "s/^modem_watchdog\.\([^.=]*\)=modem$/\1/p"; }
-num_or() {
-	value="$1"
-	fallback="$2"
-	case "$value" in ''|*[!0-9.]*) echo "$fallback" ;; *) echo "$value" ;; esac
+# Optional connectivity recovery and fresh-sample-driven mwan3 preferences.
+. /usr/lib/zbt/dual-modem.sh
+. /usr/lib/zbt/speed-policy.sh
+. /usr/lib/zbt/speed-lock.sh
+RUNDIR=/tmp/modem-watchdog
+umask 077
+mkdir -p "$RUNDIR" /tmp/zbt-speedtest
+get() { uci -q get "modem_watchdog.$1" 2>/dev/null || true; }
+uint() { case "$1" in ''|*[!0-9]*) echo "$2" ;; *) [ "$1" -ge 1 ] && [ "$1" -le 86400 ] && echo "$1" || echo "$2" ;; esac; }
+now() { cut -d. -f1 /proc/uptime; }
+cleanup() {
+	zbt_speed_unlock
+	rm -f "$RUNDIR/4_1.metric" "$RUNDIR/2_1.metric"
+	/usr/sbin/zbt-mwan-apply >/dev/null 2>&1 || true
 }
-int_or() {
-	value="$1"
-	fallback="$2"
-	case "$value" in ''|*[!0-9]*) echo "$fallback" ;; *) echo "$value" ;; esac
-}
-now_epoch() {
-	date +%s 2>/dev/null || awk '{print int($1)}' /proc/uptime
-}
-ping_ok() {
-	iface="$1"; target="$2"
-	ping -I "$iface" -c 1 -W 2 "$target" >/dev/null 2>&1
-}
-speed_mbps() {
-	iface="$1"
-	if command -v speedtest-netperf >/dev/null 2>&1; then
-		speedtest-netperf --json 2>/dev/null | jq -r '.download_mbps // 0'
-	elif command -v speedtest-go >/dev/null 2>&1; then
-		speedtest-go --json 2>/dev/null | jq -r '.download.bandwidth // 0' | awk '{printf "%.2f", ($1*8/1000000)}'
-	else
-		echo 0
+trap 'cleanup; exit 0' INT TERM
+check_modem() {
+	local key="$1" section="$2" device sample value stamp last=0 speed='' bad=0 good=0 blocked=0 fails=0 last_action=0 action
+	if ! device=$(zbt_netdev "$section") ||
+	   [ "$(get "$key.enabled")" != 1 ] ||
+	   [ "$(uci -q get "qmodem.$section.enable_dial")" != 1 ] ||
+	   [ "$(uci -q get qmodem.main.enable_dial)" != 1 ]; then
+		rm -f "$RUNDIR/$section.state"
+		return 0
 	fi
-}
-is_up() {
-	section="$1"
-	ubus call "network.interface.$section" status 2>/dev/null | grep -q '"up": true'
-}
-score_modem() {
-	modem_key="$1"
-	section="$2"
-	iface="$(uci -q get network.$section.device 2>/dev/null || uci -q get network.$section.ifname 2>/dev/null || true)"
-	[ -n "$iface" ] || { echo 0; return; }
-	speed_test_enabled="$3"
-	speed_min="$4"
-	speed_interval_secs="$5"
-	now="$6"
-	if [ "$speed_test_enabled" = "1" ]; then
-		last_ts="$(int_or "$(uci_get modem_watchdog.$modem_key.last_speed_ts)" 0)"
-		last_speed="$(num_or "$(uci_get modem_watchdog.$modem_key.last_speed_mbps)" 0)"
-		if [ "$last_ts" -eq 0 ] || [ $((now - last_ts)) -ge "$speed_interval_secs" ]; then
-			last_speed="$(num_or "$(speed_mbps "$iface")" 0)"
-			uci -q set "modem_watchdog.$modem_key.last_speed_mbps=$last_speed"
-			uci -q set "modem_watchdog.$modem_key.last_speed_ts=$now"
-		fi
-		awk -v v="$last_speed" 'BEGIN { if (v+0 > 0) print v; else print 0 }'
-	else
-		if ping_ok "$iface" "1.1.1.1"; then echo 1; else echo 0; fi
+	if [ -f "$RUNDIR/$section.state" ]; then
+		read -r last speed bad good blocked fails last_action < "$RUNDIR/$section.state"
+		[ "$speed" != '-' ] || speed=''
 	fi
-}
-choose_best_section() {
-	speed_test_enabled="$1"
-	speed_min="$2"
-	speed_interval_secs="$3"
-	now="$4"
-	best_section=""
-	best_score="-1"
-	for m in $(list_modems); do
-		enabled="$(uci_get modem_watchdog.$m.enabled)"; [ "$enabled" = "1" ] || continue
-		section="$(uci_get modem_watchdog.$m.section)"; [ -n "$section" ] || continue
-		is_up "$section" || continue
-		score="$(score_modem "$m" "$section" "$speed_test_enabled" "$speed_min" "$speed_interval_secs" "$now")"
-		if awk -v s="$score" -v b="$best_score" 'BEGIN { exit !((s+0) > (b+0)) }'; then
-			best_score="$score"
-			best_section="$section"
-		fi
-	done
-	echo "$best_section"
-}
-set_failover_preference() {
-	preferred="$1"
-	[ -n "$preferred" ] || return 0
-	metric_base=200
-	offset=0
-	changed=0
-	for m in $(list_modems); do
-		enabled="$(uci_get modem_watchdog.$m.enabled)"; [ "$enabled" = "1" ] || continue
-		section="$(uci_get modem_watchdog.$m.section)"; [ -n "$section" ] || continue
-		want_metric=$((metric_base + 10 + offset))
-		[ "$section" = "$preferred" ] && want_metric="$metric_base"
-		current_metric="$(int_or "$(uci -q get network.$section.metric 2>/dev/null || true)" -1)"
-		if [ "$current_metric" -ne "$want_metric" ]; then
-			uci -q set "network.$section.metric=$want_metric"
-			changed=1
-		fi
-		offset=$((offset + 1))
-	done
-	if [ "$changed" = "1" ]; then
-		uci -q commit network
-		/etc/init.d/network reload >/dev/null 2>&1 || true
-		log "failover preferred_section=$preferred metrics_updated=1"
+	stamp=$(now)
+	# Sharing the measurement lock prevents overlapping background/UI tests.
+	if [ ! -d /tmp/zbt-speedtest/lock ]; then
+		if ping -I "$device" -c 1 -W 2 "$target" >/dev/null 2>&1; then fails=0; else fails=$((fails + 1)); fi
 	fi
-	uci -q set "modem_watchdog.global.active_section=$preferred"
-}
-redial_section() {
-	section="$1"
-	/etc/init.d/qmodem_network redial "$section" >/dev/null 2>&1 || true
-}
-disconnect_section() {
-	section="$1"
-	ifdown "$section" >/dev/null 2>&1 || true
-	ifdown "${section}v6" >/dev/null 2>&1 || true
-}
-gpio_cycle() {
-	gpio="$1"
-	[ -w "/sys/class/gpio/$gpio/value" ] || return 0
-	printf 0 > "/sys/class/gpio/$gpio/value" || true
-	sleep 3
-	printf 1 > "/sys/class/gpio/$gpio/value" || true
-}
-main_loop() {
-	interval="$(uci_get modem_watchdog.global.interval_seconds)"; [ -n "$interval" ] || interval=30
-	interval="$(int_or "$interval" 30)"
-	target="$(uci_get modem_watchdog.global.ping_target)"; [ -n "$target" ] || target=1.1.1.1
-	fail_threshold="$(uci_get modem_watchdog.global.ping_fail_threshold)"; [ -n "$fail_threshold" ] || fail_threshold=4
-	fail_threshold="$(int_or "$fail_threshold" 4)"
-	speed_fail_threshold="$(int_or "$(uci_get modem_watchdog.global.speed_fail_threshold)" 1)"
-	actions="$(uci_get modem_watchdog.global.actions_enabled)"; [ -n "$actions" ] || actions=0
-	failover="$(uci_get modem_watchdog.global.failover)"; [ -n "$failover" ] || failover=0
-	prefer_fastest="$(uci_get modem_watchdog.global.prefer_fastest)"; [ -n "$prefer_fastest" ] || prefer_fastest=0
-	cooldown="$(int_or "$(uci_get modem_watchdog.global.cooldown_seconds)" 180)"
-	speed_test_enabled="$(uci_get modem_watchdog.global.speed_test)"; [ -n "$speed_test_enabled" ] || speed_test_enabled=0
-	speed_min="$(num_or "$(uci_get modem_watchdog.global.speed_test_min_mbps)" 5)"
-	speed_interval_minutes="$(int_or "$(uci_get modem_watchdog.global.speed_test_cooldown_minutes)" 15)"
-	speed_interval_secs=$((speed_interval_minutes * 60))
-	log "started interval=${interval}s actions=${actions} failover=${failover} prefer_fastest=${prefer_fastest}"
-	while :; do
-		now="$(now_epoch)"
-		for m in $(list_modems); do
-			enabled="$(uci_get modem_watchdog.$m.enabled)"; [ "$enabled" = "1" ] || continue
-			section="$(uci_get modem_watchdog.$m.section)"; [ -n "$section" ] || continue
-			action="$(uci_get modem_watchdog.$m.action)"; [ -n "$action" ] || action=redial
-			gpio="$(uci_get modem_watchdog.$m.gpio_power_name)"
-			iface="$(uci -q get network.$section.device 2>/dev/null || uci -q get network.$section.ifname 2>/dev/null || true)"
-			[ -n "$iface" ] || { log "$m section=$section missing iface"; continue; }
-			speed_fail=0
-			if [ "$speed_test_enabled" = "1" ]; then
-				last_ts="$(int_or "$(uci_get modem_watchdog.$m.last_speed_ts)" 0)"
-				last_speed="$(num_or "$(uci_get modem_watchdog.$m.last_speed_mbps)" 0)"
-				if [ "$last_ts" -eq 0 ] || [ $((now - last_ts)) -ge "$speed_interval_secs" ]; then
-					last_speed="$(num_or "$(speed_mbps "$iface")" 0)"
-					uci -q set "modem_watchdog.$m.last_speed_mbps=$last_speed"
-					uci -q set "modem_watchdog.$m.last_speed_ts=$now"
-				fi
-				if ! awk -v s="$last_speed" -v min="$speed_min" 'BEGIN { exit !((s+0) >= (min+0)) }'; then
-					speed_fail=1
-				fi
-			fi
-			if ping_ok "$iface" "$target" && [ "$speed_fail" = "0" ]; then
-				uci -q set modem_watchdog.$m.last_status='ok'
-				uci -q set modem_watchdog.$m.fail_count='0'
-				uci -q set modem_watchdog.$m.speed_fail_count='0'
-				continue
-			fi
-			fc="$(uci_get modem_watchdog.$m.fail_count)"; [ -n "$fc" ] || fc=0
-			fc="$(int_or "$fc" 0)"
-			fc=$((fc + 1))
-			uci -q set modem_watchdog.$m.fail_count="$fc"
-			sfc="$(int_or "$(uci_get modem_watchdog.$m.speed_fail_count)" 0)"
-			if [ "$speed_fail" = "1" ]; then
-				sfc=$((sfc + 1))
+	if [ "$sampling" = 1 ] && [ $((stamp - last)) -ge "$sample_interval" ]; then
+		if zbt_speed_lock; then
+			sample=$(/usr/sbin/zbt-speed-sample "$section" download)
+			zbt_speed_unlock
+			value=$(printf '%s' "$sample" | jq -er 'select(.ok == true) | .download_mbps | numbers')
+			last=$(now)
+			if [ -n "$value" ]; then
+				speed="$value"
+				zbt_speed_transition "$speed" "$minimum" "$speed_threshold"
 			else
-				sfc=0
+				# An HTTP/DNS/time/server failure is NOT a low-speed result.
+				speed=''; bad=0; good=0; blocked=0
+				logger -t modem-watchdog "$section: throughput sample unavailable; no speed-based action"
 			fi
-			uci -q set modem_watchdog.$m.speed_fail_count="$sfc"
-			uci -q set modem_watchdog.$m.last_status='fail'
-			last_action_ts="$(int_or "$(uci_get modem_watchdog.$m.last_action_ts)" 0)"
-			in_cooldown=0
-			[ $((now - last_action_ts)) -lt "$cooldown" ] && in_cooldown=1
-			log "$m section=$section iface=$iface ping_fail_count=$fc speed_fail_count=$sfc cooldown=$in_cooldown"
-			trigger=0
-			[ "$fc" -ge "$fail_threshold" ] && trigger=1
-			[ "$sfc" -ge "$speed_fail_threshold" ] && trigger=1
-			if [ "$trigger" = "1" ] && [ "$actions" = "1" ] && [ "$in_cooldown" = "0" ]; then
-				case "$action" in
-					disconnect) disconnect_section "$section"; log "$m action=disconnect";;
-					redial) redial_section "$section"; log "$m action=redial";;
-					power_cycle) gpio_cycle "$gpio"; redial_section "$section"; log "$m action=power_cycle gpio=$gpio";;
-					none) log "$m action=none";;
-					*) log "$m unknown_action=$action";;
-				esac
-				uci -q set modem_watchdog.$m.fail_count='0'
-				uci -q set modem_watchdog.$m.speed_fail_count='0'
-				uci -q set modem_watchdog.$m.last_action_ts="$now"
-			fi
-		done
-		if [ "$failover" = "1" ]; then
-			preferred=""
-			if [ "$prefer_fastest" = "1" ]; then
-				preferred="$(choose_best_section "$speed_test_enabled" "$speed_min" "$speed_interval_secs" "$now")"
-			else
-				for m in $(list_modems); do
-					enabled="$(uci_get modem_watchdog.$m.enabled)"; [ "$enabled" = "1" ] || continue
-					section="$(uci_get modem_watchdog.$m.section)"; [ -n "$section" ] || continue
-					if is_up "$section"; then preferred="$section"; break; fi
-				done
-			fi
-			set_failover_preference "$preferred"
 		fi
-		uci -q commit modem_watchdog
-		sleep "$interval"
-	done
+	fi
+	stamp=$(now)
+	# Do not make decisions using old measurements or a disabled sampler.
+	if [ "$sampling" != 1 ] || [ $((stamp - last)) -gt $((sample_interval * 2)) ]; then
+		blocked=0; speed=''
+	fi
+	# Slow throughput changes preference only. Never power-cycle a healthy
+	# modem simply because a speed-test server is slow.
+	if [ "$actions" = 1 ] && [ "$fails" -ge "$ping_threshold" ] && [ $((stamp - last_action)) -ge "$cooldown" ]; then
+		action=$(get "$key.action")
+		case "$action" in
+			redial) /etc/init.d/qmodem_network redial "$section" ;;
+			power_cycle)
+				zbt_slot "$section"
+				# Ignore editable GPIO strings: the section selects its own pin.
+				/etc/init.d/qmodem_network hang "$section"
+				if [ -w "/sys/class/gpio/$ZBT_POWER/value" ]; then
+					printf 0 > "/sys/class/gpio/$ZBT_POWER/value"; sleep 3
+					printf 1 > "/sys/class/gpio/$ZBT_POWER/value"
+				fi ;;
+			disconnect) /etc/init.d/qmodem_network hang "$section" ;;
+		esac
+		last_action=$(now); fails=0
+		logger -t modem-watchdog "$section: requested $action after connectivity failures"
+	fi
+	printf '%s %s %s %s %s %s %s\n' "$last" "${speed:--}" "$bad" "$good" "$blocked" "$fails" "$last_action" > "$RUNDIR/$section.state"
 }
-main_loop
+write_preference() {
+	local section="$1" metric="$2" previous
+	previous=$(awk '{print $2}' "$RUNDIR/$section.metric" 2>/dev/null)
+	printf '%s %s\n' "$(($(now) + 150))" "$metric" > "$RUNDIR/$section.metric.new"
+	mv "$RUNDIR/$section.metric.new" "$RUNDIR/$section.metric"
+	[ "$previous" = "$metric" ] || changed=1
+}
+while [ "$(get global.enabled)" = 1 ]; do
+	interval=$(uint "$(get global.interval_seconds)" 30)
+	[ "$interval" -ge 10 ] || interval=10
+	[ "$interval" -le 60 ] || interval=60
+	sampling=$(get global.speed_test)
+	sample_interval=$(uint "$(get global.speed_test_cooldown_minutes)" 15)
+	sample_interval=$((sample_interval * 60))
+	minimum=$(get global.speed_test_min_mbps)
+	case "$minimum" in ''|*[!0-9.]*|*.*.*|.) minimum=5 ;; esac
+	speed_threshold=$(uint "$(get global.speed_fail_threshold)" 2)
+	ping_threshold=$(uint "$(get global.ping_fail_threshold)" 4)
+	cooldown=$(uint "$(get global.cooldown_seconds)" 180)
+	actions=$(get global.actions_enabled)
+	target=$(get global.ping_target); [ -n "$target" ] || target=1.1.1.1
+	check_modem modem1 4_1
+	check_modem modem2 2_1
+	if [ "$(get global.failover)" = 1 ]; then
+		m1=3; m2=4; s1=''; s2=''
+		if [ -f "$RUNDIR/4_1.state" ]; then
+			read -r ts s1 bad good blocked rest < "$RUNDIR/4_1.state"
+			[ "$blocked" != 1 ] || m1=5
+		fi
+		if [ -f "$RUNDIR/2_1.state" ]; then
+			read -r ts s2 bad good blocked rest < "$RUNDIR/2_1.state"
+			[ "$blocked" != 1 ] || m2=5
+		fi
+		delta=$(get global.fastest_delta_mbps)
+		case "$delta" in ''|*[!0-9.]*|*.*.*|.) delta=5 ;; esac
+		if [ "$m1$m2" = 34 ] && [ "$(get global.prefer_fastest)" = 1 ] &&
+		   [ -n "$s1" ] && [ "$s1" != '-' ] && [ -n "$s2" ] && [ "$s2" != '-' ]; then
+			if awk -v a="$s1" -v b="$s2" -v d="$delta" 'BEGIN { exit !(b > a + d) }'; then preferred=2
+			elif awk -v a="$s1" -v b="$s2" -v d="$delta" 'BEGIN { exit !(a > b + d) }'; then preferred=1; fi
+			[ "${preferred:-1}" != 2 ] || { m1=4; m2=3; }
+		fi
+		changed=0
+		write_preference 4_1 "$m1"
+		write_preference 2_1 "$m2"
+		[ "$changed" = 0 ] || /usr/sbin/zbt-mwan-apply
+	else
+		if [ -f "$RUNDIR/4_1.metric" ] || [ -f "$RUNDIR/2_1.metric" ]; then cleanup; fi
+	fi
+	sleep "$interval"
+done
+cleanup

@@ -1,0 +1,44 @@
+#!/bin/sh
+# Bounded HTTPS throughput sample. SO_BINDTODEVICE is essential: two modems
+# can have identical private IPs, making source-IP-only binding ambiguous.
+set -eu
+. /usr/lib/zbt/dual-modem.sh
+section="${1:-default}"
+mode="${2:-interactive}"
+case "$mode" in interactive|download) ;; *) echo '{"ok":false,"error":"Unsupported sample mode"}'; exit 0 ;; esac
+case "$section" in
+	default) device='' ;;
+	4_1|2_1) device=$(zbt_netdev "$section") || { echo '{"ok":false,"error":"Modem is not enumerated"}'; exit 0; } ;;
+	wan|wan_sfp)
+		device=$(ubus call "network.interface.$section" status | jq -er '.l3_device // .device') ||
+			{ echo '{"ok":false,"error":"WAN has no device"}'; exit 0; } ;;
+	*) echo '{"ok":false,"error":"Unsupported interface"}'; exit 0 ;;
+esac
+if [ -n "$device" ] && ! ip -4 addr show dev "$device" | grep -q 'inet '; then
+	echo '{"ok":false,"error":"Interface has no IPv4 address"}'; exit 0
+fi
+# No shell input/URL from the browser. HTTPS validation stays enabled.
+set -- -4 -f -sS --noproxy '*' --connect-timeout 10 --max-time 30
+[ -z "$device" ] || set -- "$@" --interface "if!$device"
+tmp=$(mktemp -d /tmp/zbt-speed-sample.XXXXXX)
+trap 'rm -f "$tmp/down" "$tmp/up" "$tmp/body" "$tmp/error"; rmdir "$tmp"' EXIT
+trap 'exit 1' TERM INT
+if ! curl "$@" -o /dev/null -w '%{json}' 'https://speed.cloudflare.com/__down?bytes=25000000' > "$tmp/down" 2>"$tmp/error"; then
+	echo '{"ok":false,"error":"HTTPS sample failed or timed out; check link, clock, DNS and carrier access"}'; exit 0
+fi
+# Keep download-only watchdog samples smaller; interactive tests include 5 MB upload.
+printf '{}' > "$tmp/up"
+if [ "$mode" != download ]; then
+	dd if=/dev/zero of="$tmp/body" bs=1000000 count=5 2>/dev/null
+	if ! curl "$@" -o /dev/null -w '%{json}' -H 'Content-Type: application/octet-stream' --data-binary "@$tmp/body" 'https://speed.cloudflare.com/__up' > "$tmp/up" 2>"$tmp/error"; then
+		echo '{"ok":false,"error":"Upload sample failed; no complete result"}'; exit 0
+	fi
+fi
+jq -nes --arg interface "$section" --arg device "$device" --slurpfile d "$tmp/down" --slurpfile u "$tmp/up" '
+	$d[0] as $d | $u[0] as $u |
+	if ($d.http_code != 200 or $d.size_download != 25000000 or ($d.speed_download|type) != "number")
+	then {ok:false,error:"Invalid download response"}
+	else {ok:true,interface:$interface,device:$device,runner:"Bound HTTPS sample",server:"Cloudflare",
+		download_mbps:($d.speed_download * 8 / 1000000),
+		upload_mbps:(if $u.speed_upload then $u.speed_upload * 8 / 1000000 else null end),
+		latency_ms:($d.time_connect * 1000)} end'

@@ -1,0 +1,10 @@
+#!/bin/sh
+. /usr/lib/zbt/dual-modem.sh
+# Only the physical USB device event, not each of its serial interfaces.
+usb_event_name="${DEVICENAME:-${DEVPATH##*/}}"
+zbt_slot "$usb_event_name" || exit 0
+[ -x /usr/sbin/zbt-modem-events ] || exit 0
+case "$ACTION" in
+	add) /usr/sbin/zbt-modem-events record usb detected info "$ZBT_SECTION" "USB modem detected" "device=$ZBT_USB; detection alone does not confirm Internet access" ;;
+	remove) /usr/sbin/zbt-modem-events record usb issue warning "$ZBT_SECTION" "USB modem removed" "device=$ZBT_USB" ;;
+esac

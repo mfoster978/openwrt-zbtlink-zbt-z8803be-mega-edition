@@ -1,0 +1,6 @@
+#!/bin/sh
+# Container fixture ONLY; never included in the router files overlay.
+case "$*" in
+  *zbtTestAdminSession*) echo '{"access":true}' ;;
+  *) echo '{"access":false}' ;;
+esac

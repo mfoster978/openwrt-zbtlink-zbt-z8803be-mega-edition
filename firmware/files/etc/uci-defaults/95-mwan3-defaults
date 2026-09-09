@@ -11,7 +11,7 @@ configure_tracking() {
 	track_ip_2="$3"
 	uci -q set "mwan3.$interface=interface"
 	uci -q set "mwan3.$interface.enabled=1"
-	uci -q set "mwan3.$interface.initial_state=online"
+	uci -q set "mwan3.$interface.initial_state=offline"
 	uci -q set "mwan3.$interface.family=ipv4"
 	uci -q set "mwan3.$interface.track_method=ping"
 	uci -q set "mwan3.$interface.reliability=1"
@@ -103,23 +103,11 @@ uci -q add_list mwan3.failover.use_member='failover_4_1'
 uci -q add_list mwan3.failover.use_member='failover_2_1'
 uci -q set mwan3.failover.last_resort='unreachable'
 
-# mwan3 evaluates rules in config order. Remove the stock HTTPS/balanced and
-# stock catch-all rules, then put the narrow speed-test rules before our only
-# IPv4 catch-all rule. mwan3 requires an exact single protocol whenever a
-# destination port is set, so TCP and UDP need separate rules.
+# All default traffic follows wired-first failover. Never silently send
+# HTTPS or speed-test ports over a balanced cellular policy.
 for old_rule in https default_rule_v4 default_rule_v6 speedtest_rule speedtest_tcp speedtest_udp default_rule; do
 	uci -q delete "mwan3.$old_rule" 2>/dev/null || true
 done
-for protocol in tcp udp; do
-	rule="speedtest_$protocol"
-	uci -q set "mwan3.$rule=rule"
-	uci -q set "mwan3.$rule.dest_port=8080,8443"
-	uci -q set "mwan3.$rule.proto=$protocol"
-	uci -q set "mwan3.$rule.sticky=0"
-	uci -q set "mwan3.$rule.use_policy=balanced"
-	uci -q set "mwan3.$rule.family=ipv4"
-done
-
 uci -q set mwan3.default_rule='rule'
 uci -q set mwan3.default_rule.dest_ip='0.0.0.0/0'
 uci -q set mwan3.default_rule.use_policy='failover'

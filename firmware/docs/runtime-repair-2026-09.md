@@ -1,0 +1,81 @@
+# September 2026 dual-modem runtime repair
+
+Status: source-level repairs and host/container regression checks. A new firmware compilation and physical-router acceptance test are still required. Do not label the older build #17 as containing these repairs.
+
+## What the supplied evidence establishes
+
+| Observation | Finding and response |
+|---|---|
+| Modem 1 obtained IPv4/IPv6 and reported 5G SA attachment | Its USB/QMI driver and basic data path worked. Avoid replacing the working kernel or modem driver. |
+| Modem 2 reported SIM_READY but remained PS Detached | The SIM is readable, but successful packet-service registration is not demonstrated. An APN change alone is not a proven fix. |
+| Both dialers were hung at the same logged second | A shared restart can interrupt both. The old custom hotplug path did globally restart QModem; the log alone cannot establish which caller caused every restart. |
+| A post-flash hook reset modem 1 while handling modem events | The automatic factory-reset/reboot hook is disabled. A firmware update must not silently erase module configuration or reboot the wrong modem. |
+| Both USB buses were attributed to LED 1 | Broad `*-1` matching and a presumed second path `4-2` were wrong for the supplied `4-1` / `2-1` topology. One mapped LED poller now owns both indicators. |
+| QModem startup submitted an empty procd service object | Nested service operations corrupted startup registration. Startup now builds one transaction; targeted commands operate on one instance. |
+| `modem1` DHCP competed with a `4_1` interface on the same device | QModem and mwan3 now use one identity per slot. The patched QMI/MBIM `-d` path owns addresses without a second DHCP client. |
+| Speed-test JSON parsing encountered a shell shebang | nginx served the old CGI script as a static file. The browser now calls an authenticated rpcd backend, not a web-exposed shell endpoint. |
+| Speedify appeared after reboot but opened a 404 | The old installer could switch back to uhttpd after a health failure. That server cannot serve the vendor's nginx alias/proxy URL. nginx is retained, its authenticated routes repaired, and menu visibility no longer waits for the VPN daemon to be healthy. |
+| Tailscale daemon was present but menu absent | The pinned feeds did not supply the requested LuCI package. A local, explicitly required status/sign-in package is now built. |
+| SA band boxes were empty / setting bands appeared ineffective | Empty or failed reads are now distinguished from a valid selection. Writes must return OK and match a subsequent readback; errors are surfaced to the user. |
+
+The pasted log's March-to-September timestamp jump is consistent with correcting the clock after gaining connectivity; it is not proof of a months-long outage. Wi-Fi emitted startup errors but subsequently reported all three APs enabled and a client connected. Those lines do not justify replacing Wi-Fi drivers or raising file limits blindly. Missing first-boot fstab/seed messages were followed by a mounted writable overlay and saved seed.
+
+## Hardware and SIM identity
+
+The kernel remains **6.12.74** from Far5eer tag **v25.12.021**, commit `edc738504fe8fae81eb15de967456204699b1830`. The base configuration, DTS, kernel patches and modem-driver sources are unchanged by this repair.
+
+| Physical modem | QModem/netifd identity | USB path | Power enable | LED |
+|---|---|---|---|---|
+| Modem 1 / 5G1 | `4_1` | `4-1` | GPIO 17, `5g1`, active-high | GPIO 61, `blue:mobile-1`, active-low |
+| Modem 2 / 5G2 | `2_1` | `2-1` | GPIO 52, `5g2`, active-high | GPIO 53, `blue:mobile-2`, active-low |
+
+GPIO assignments match the [pinned device tree](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE/blob/edc738504fe8fae81eb15de967456204699b1830/target/linux/mediatek/dts/mt7988a-zbtlink-zbt-z8803be.dts). USB identity comes from the supplied two-modem runtime evidence; this is not an electrical measurement of every board revision. GPIO 59/SIM switching is deliberately untouched because the user confirmed correct card identities. Each module can report its own internal SIM input **1**, even though the board connects different cards to those modules. Never remap a working SIM based solely on this display.
+
+The modules are the same RM551E-GL model but have different **internal modem firmware**: modem 1 reports `RM551EGL00AAR01A02M8G`, modem 2 `RM551EGL00AAR02A02M8G`. This router firmware change does not upgrade or downgrade either module. Reported voltages of 4003 and 3992 mV differ by only 11 mV; these snapshots alone neither identify a power fault nor rule out transient droop under load.
+
+## APN and carrier independence
+
+Both modems use the same configuration helper and dialer. For QMI, blank/`auto` APN means retaining the connection manager's modem/network profile negotiation, not sending a literal APN named `auto` or clearing an existing profile. Manual APNs, authentication, PINs and SIM selections are preserved. No T-Mobile or AT&T APN is hardcoded.
+
+This is not a promise of universal zero-configuration access: carrier activation, plan-specific APNs, coverage, device approval, modem firmware and carrier profiles can matter. The modem 2 log already shows a saved `nxtgenphone` profile; it does **not** prove there was no APN. Public firmware should not overwrite every user's profile with that value either.
+
+## Speed-based failover
+
+The controls are under **Network → MultiWAN Manager → Speed & Recovery**. Enable the watchdog, sampling and speed-based preferences explicitly; recovery actions are a separate opt-in. Only new successful samples count, two below-threshold samples demote by default, and two healthy samples recover. Test-server/TLS/DNS failures are not treated as zero Mbps.
+
+The sampler is a bounded, single-stream HTTPS transfer, not a complete Ookla benchmark. It binds the physical interface, which matters when both modem NATs return the same private address. Background tests use up to 25 MB each; interactive tests add up to 5 MB upload. Two modems sampled every 15 minutes can use approximately 4.8 GB/day. The kernel timer/traffic LED cannot establish Internet reachability or distinguish SA/NSA by color.
+
+Speed preferences apply only to the project's cellular members, are stored in RAM, and do not rewrite UCI counters or change wired member priorities. Expired preference leases are ignored at the next policy rebuild. Custom member layouts are untouched. An active Speedify/VPN policy can affect routing and must be tested separately; established flows are not seamlessly migrated.
+
+## Verification performed
+
+- Static shell syntax, base-config SHA256, selected dependency and source-pin checks.
+- Zero-fuzz forward and reverse patch checks against the exact pinned QModem and packages sources; patched shell and LuCI JavaScript syntax checks.
+- `node firmware/tests/check-patches.cjs`: physical-path/AT-port isolation, missing/ambiguous devices, per-modem settings fingerprints, APN arguments for both modems, speed units/interface binding/download-only mode, failed samples, threshold/recovery counters, expiring preferences/measurement locks, stopped-service status, SA band read/write failures, and utility-page/RPC contracts.
+- Isolated nginx + **the pinned vendor Python proxy and UI**: main LuCI route fixture reachable, valid test session serves the index (200), missing/invalid sessions denied (401). The authentication service was mocked; this does not authenticate a real router session or test the ARM VPN daemon.
+
+The web test uses `firmware/tests/nginx-speedify.conf`, `mock-speedify-ubus`, and `check-speedify-web.sh` in a disposable Alpine container with nginx/Python/curl and read-only mounts of the extracted, checksum-verified vendor UI. These fixtures are outside the router files overlay and must never replace the router's real ubus executable.
+
+## Remaining hardware checks
+
+1. Build the repair commit, inspect its manifest/checksums, back up configuration, and flash only a verified image for the correct board. No router was flashed or remotely reset during this source repair.
+2. Run `firmware/scripts/verify-router-runtime.sh` on the router. It is read-only and avoids complete SIM/account dumps. Verify each module's physical path, own AT port, independent metrics and `proto=none` for the default QMI setup.
+3. With automatic recovery and Speedify connection disabled, test one modem, then both. Redial each independently and confirm the peer stays connected. Confirm correct chassis LED behavior. Do not infer an electrically powered-off module from an LED alone.
+4. On **modem 2's own AT Debug tab**, collect these read-only responses:
+
+   ```text
+   AT+CPIN?
+   AT+CEREG?
+   AT+C5GREG?
+   AT+COPS?
+   AT+QENG="servingcell"
+   AT+QNWPREFCFG="mode_pref"
+   AT+QNWPREFCFG="nr5g_band"
+   AT+QNWPREFCFG="nsa_nr5g_band"
+   AT+CGDCONT?
+   ```
+
+   Some module revisions may not support every query. An ERROR to one query is not proof that the radio feature is absent. Registration/reject information is needed before attributing the persistent `PS: Detached` state to APN, band settings, carrier provisioning or modem firmware. Do not force SA-only operation, reset all bands, or flash module firmware based on the empty checkbox display.
+5. Confirm automatic/default APN behavior with each activated SIM; preserve manual plan-specific settings where needed. Do not publish IMSI, ICCID, IMEI, PINs or account tokens with diagnostics.
+6. Test Speedify sign-in and traffic after the unbonded cellular links are stable. Inspect `/tmp/speedify-service.log`, `/tmp/speedify-nginx-check.log` and `logread -e speedify-installer` if the daemon remains unhealthy. The provided log did not establish why the proprietary daemon itself failed its health check.
+7. Confirm all expected menus, a completed interactive speed sample, Tailscale sign-in, wired-first routing, and optional speed-threshold failover. Validate over time and across carriers before marking the public firmware stable.

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Dual-slot defaults already applied. Start at rc.d time, not from uci-defaults.
+exit 0

@@ -1,0 +1,37 @@
+#!/bin/sh
+# rpcd-exec: all start requests require the write ACL; polling is read-only.
+state=/tmp/zbt-speedtest
+. /usr/lib/zbt/speed-lock.sh
+case "$1" in
+	list) echo '{"start":{"interface":"string"},"status":{}}' ;;
+	call)
+		case "$2" in
+			start)
+				read -r input
+				interface=$(printf '%s' "$input" | jq -er '.interface // "default"') || exit 1
+				case "$interface" in default|wan|wan_sfp|4_1|2_1) ;; *) echo '{"ok":false,"error":"Unsupported interface"}'; exit 0 ;; esac
+				mkdir -p "$state"
+				# One test globally (shared with watchdog), held by the worker.
+				if ! zbt_speed_lock; then
+					echo '{"ok":false,"error":"A speed sample is already running"}'; exit 0
+				fi
+				echo '{"running":true}' > "$state/result"
+				(
+					trap zbt_speed_unlock EXIT
+					trap 'exit 1' INT TERM
+					/usr/sbin/zbt-speed-sample "$interface" > "$state/result.new" 2>/dev/null ||
+						echo '{"ok":false,"error":"Sample worker failed"}' > "$state/result.new"
+					mv "$state/result.new" "$state/result"
+				) </dev/null >/dev/null 2>&1 &
+				echo '{"ok":true}'
+				;;
+			status)
+				if [ -s "$state/result" ]; then
+					if jq -e '.running == true' "$state/result" >/dev/null &&
+					   { [ ! -s "$state/lock/lease" ] || [ "$(cut -d. -f1 /proc/uptime)" -gt "$(cut -d' ' -f1 "$state/lock/lease")" ]; }; then
+						echo '{"ok":false,"error":"Sample worker stopped; run a new sample"}'
+					else cat "$state/result"; fi
+				else echo '{"running":false}'; fi
+				;;
+		esac ;;
+esac

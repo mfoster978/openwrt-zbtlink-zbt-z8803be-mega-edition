@@ -1,0 +1,7 @@
+{
+  "luci-app-speedtest-lite": {
+    "description": "Run bounded speed samples",
+    "read": { "ubus": { "zbt.speedtest": ["status"] } },
+    "write": { "ubus": { "zbt.speedtest": ["start"] } }
+  }
+}

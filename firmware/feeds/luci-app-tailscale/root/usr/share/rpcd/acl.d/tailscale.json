@@ -1,0 +1,7 @@
+{
+  "luci-app-tailscale": {
+    "description": "View and sign in to Tailscale",
+    "read": { "ubus": { "zbt.tailscale": ["status"] } },
+    "write": { "ubus": { "zbt.tailscale": ["login", "stop"] } }
+  }
+}

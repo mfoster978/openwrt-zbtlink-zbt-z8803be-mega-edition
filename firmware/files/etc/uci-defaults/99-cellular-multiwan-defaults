@@ -1,85 +1,62 @@
 #!/bin/sh
 set -eu
-
-# Keep watchdog/failover controls installed but safe-defaulted off until user enables.
-uci -q set modem_watchdog.global.enabled='0'
-uci -q set modem_watchdog.global.actions_enabled='0'
-uci -q set modem_watchdog.global.failover='0'
-uci -q set modem_watchdog.global.prefer_fastest='0'
-
-# GPIO power lines for both modem slots.
-printf 1 > /sys/class/gpio/5g1/value 2>/dev/null || true
-printf 1 > /sys/class/gpio/5g2/value 2>/dev/null || true
-
-# Far5eer's board defaults create 5g2 as an off-by-default gpio_switch. Seed it
-# on once, but remember that we did so and preserve later operator changes.
-gpio_5g2=''
-if [ "$(uci -q get system.5g2 2>/dev/null || true)" = 'gpio_switch' ]; then
-	gpio_5g2='system.5g2'
-else
-	for gpio_section in $(uci -q show system 2>/dev/null | sed -n 's/^\(system\.[^=]*\)=gpio_switch$/\1/p'); do
-		if [ "$(uci -q get "$gpio_section.gpio_pin" 2>/dev/null || true)" = '5g2' ]; then
-			gpio_5g2="$gpio_section"
-			break
+. /usr/lib/zbt/dual-modem.sh
+migrate_network=0
+[ "$(uci -q get system.zbt_dual_runtime.network_migrated || true)" = 1 ] || migrate_network=1
+# Seed each physical power switch once; preserve later user power choices.
+for section in 4_1 2_1; do
+	zbt_slot "$section"
+	gpio_section=''
+	for candidate in $(uci -q show system | sed -n 's/^system\.\([^=]*\)=gpio_switch$/\1/p'); do
+		[ "$(uci -q get "system.$candidate.gpio_pin")" = "$ZBT_POWER" ] && gpio_section="$candidate"
+	done
+	if [ -z "$gpio_section" ]; then
+		gpio_section="$ZBT_POWER"
+		uci set "system.$gpio_section=gpio_switch"
+		uci set "system.$gpio_section.gpio_pin=$ZBT_POWER"
+		uci set "system.$gpio_section.name=$ZBT_POWER"
+	fi
+	if [ "$(uci -q get "system.$gpio_section.dual_power_seeded" || true)" != 1 ]; then
+		if [ "$(uci -q get "system.$gpio_section.cellular_default_seeded" || true)" != 1 ]; then
+			uci set "system.$gpio_section.value=1"
+		fi
+		uci set "system.$gpio_section.dual_power_seeded=1"
+	fi
+	if [ "$(uci -q get "system.$gpio_section.value")" = 1 ] && [ -w "/sys/class/gpio/$ZBT_POWER/value" ]; then
+		printf 1 > "/sys/class/gpio/$ZBT_POWER/value"
+	fi
+	# Keep existing APNs/PINs even on an incomplete profile. The patched
+	# scanner fills path/data_interface after real hardware is discovered.
+	if [ "$(uci -q get "qmodem.$section" || true)" = modem-device ]; then
+		if [ -n "$(uci -q get "qmodem.$section.manufacturer" || true)" ]; then
+			/usr/sbin/zbt-qmodem-profile "$section"
+		fi
+	fi
+	# Drop only the old firmware-owned competing identities on this migration.
+	[ "$migrate_network" = 1 ] || continue
+	for network_id in "$section" "${section}v6"; do
+		if [ "$(uci -q get "network.$network_id.modem_config" || true)" = "$section" ] ||
+		   [ "$(uci -q get "network.$network_id.proto" || true)" = none ] ||
+		   { [ "$section" = 4_1 ] && [ "$(uci -q get "network.$network_id.device" || true)" = wwan0 ]; }; then
+			uci -q delete "network.$network_id" || true
 		fi
 	done
-fi
-if [ -z "$gpio_5g2" ]; then
-	uci -q set system.5g2='gpio_switch'
-	uci -q set system.5g2.name='5g2'
-	uci -q set system.5g2.gpio_pin='5g2'
-	gpio_5g2='system.5g2'
-fi
-if [ "$(uci -q get "$gpio_5g2.cellular_default_seeded" 2>/dev/null || true)" != '1' ]; then
-	uci -q set "$gpio_5g2.value=1"
-	uci -q set "$gpio_5g2.cellular_default_seeded=1"
-	uci -q commit system
-fi
-
-# Modem bring-up defaults.
-uci -q get qmodem.4_1 >/dev/null 2>&1 || uci -q set qmodem.4_1='modem-device'
-uci -q get qmodem.2_1 >/dev/null 2>&1 || uci -q set qmodem.2_1='modem-device'
-uci -q set qmodem.main.enable_dial='1'
-uci -q set qmodem.main.block_auto_probe='0'
-uci -q set qmodem.4_1.state='enabled'
-uci -q set qmodem.2_1.state='enabled'
-uci -q set qmodem.4_1.enable_dial='1'
-uci -q set qmodem.2_1.enable_dial='1'
-uci -q set qmodem.4_1.metric='200'
-uci -q set qmodem.2_1.metric='210'
-uci -q set qmodem.4_1.pdp_type='ipv4v6'
-uci -q set qmodem.2_1.pdp_type='ipv4v6'
-uci -q set qmodem.4_1.alias='modem1'
-uci -q set qmodem.2_1.alias='modem2'
-
-# Link and startup defaults.
-for network_section in 4_1 4_1v6 2_1 2_1v6; do
-	uci -q get "network.$network_section" >/dev/null 2>&1 || \
-		uci -q set "network.$network_section=interface"
 done
-uci -q set network.4_1.auto='1'
-uci -q set network.4_1.disabled='0'
-uci -q set network.4_1.proto='none'
-uci -q set network.4_1v6.auto='0'
-uci -q set network.4_1v6.disabled='1'
-uci -q set network.4_1v6.proto='none'
-uci -q set network.2_1.auto='1'
-uci -q set network.2_1.disabled='0'
-uci -q set network.2_1.proto='none'
-uci -q set network.2_1.defaultroute='1'
-uci -q set network.2_1.peerdns='0'
-uci -q set network.2_1v6.auto='0'
-uci -q set network.2_1v6.disabled='1'
-uci -q set network.2_1v6.proto='none'
-uci -q set network.2_1v6.defaultroute='1'
-
-# Conservative MTU baseline for cellular paths to reduce USB/QMI fragmentation issues seen in field captures.
-uci -q set network.4_1.mtu='1472'
-uci -q set network.4_1.metric='200'
-uci -q set network.2_1.metric='210'
-
-uci -q commit modem_watchdog
+# Old modem1/modem2 aliases refer to the same devices as 4_1/2_1.
+if [ "$migrate_network" = 1 ]; then
+	for pair in modem1:4_1 modem2:2_1; do
+		alias=${pair%:*}; section=${pair#*:}
+		for name in "$alias" "${alias}v6"; do
+			[ "$(uci -q get "network.$name.modem_config" || true)" = "$section" ] &&
+				uci -q delete "network.$name" || true
+		done
+	done
+	uci set system.zbt_dual_runtime=runtime_defaults
+	uci set system.zbt_dual_runtime.network_migrated=1
+fi
+uci -q commit system
 uci -q commit qmodem
 uci -q commit network
-
+# Services start at their normal rc.d phase, after all defaults have finished.
+[ -x /etc/init.d/modem_watchdog ] && /etc/init.d/modem_watchdog enable
 exit 0

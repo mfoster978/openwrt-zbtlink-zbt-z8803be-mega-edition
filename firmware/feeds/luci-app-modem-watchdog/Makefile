@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 PKG_NAME:=luci-app-modem-watchdog
 PKG_VERSION:=1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 LUCI_TITLE:=LuCI support for modem watchdog and failover controls
 LUCI_DEPENDS:=+luci-base +rpcd +jq +curl
 include $(TOPDIR)/feeds/luci/luci.mk

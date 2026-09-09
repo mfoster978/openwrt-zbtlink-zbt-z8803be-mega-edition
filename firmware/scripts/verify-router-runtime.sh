@@ -1,43 +1,45 @@
 #!/bin/sh
-set -eu
-echo "=== LuCI menus/services quick check ==="
-ls /www/luci-static/resources/view/modem-watchdog/config.js >/dev/null 2>&1 && echo "luci_modem_watchdog=present" || echo "luci_modem_watchdog=missing"
-opkg list-installed 2>/dev/null | grep -E 'luci-app-mwan3|luci-app-openvpn|luci-app-tailscale' || true
-apk list -I 2>/dev/null | grep -E 'luci-app-mwan3|luci-app-openvpn|luci-app-tailscale' || true
-apk list -I 2>/dev/null | grep -E '^(speedify|luci-app-speedify|luci-nginx|python3-light|kmod-nft-tproxy|kmod-tcp-bbr|iptables-mod-tproxy|iptables-mod-extra|iptables-mod-conntrack-extra|libstdcpp|libkeyutils|libatomic)' || true
-echo "=== Watchdog defaults ==="
-uci -q show modem_watchdog || true
-echo "=== TUN/kernel support ==="
-opkg list-installed 2>/dev/null | grep -E '^kmod-tun ' || true
-apk list -I 2>/dev/null | grep -E '^kmod-tun-' || true
-[ -c /dev/net/tun ] && echo "dev_net_tun=present" || echo "dev_net_tun=missing"
-echo "=== Modem naming/startup ==="
-echo "alias_4_1=$(uci -q get qmodem.4_1.alias || true)"
-echo "alias_2_1=$(uci -q get qmodem.2_1.alias || true)"
-echo "state_4_1=$(uci -q get qmodem.4_1.state || true)"
-echo "state_2_1=$(uci -q get qmodem.2_1.state || true)"
-echo "metric_4_1=$(uci -q get qmodem.4_1.metric || true)"
-echo "metric_2_1=$(uci -q get qmodem.2_1.metric || true)"
-echo "proto_4_1=$(uci -q get network.4_1.proto || true)"
-echo "proto_2_1=$(uci -q get network.2_1.proto || true)"
-echo "=== Modem power default ==="
-for gpio_section in $(uci -q show system 2>/dev/null | sed -n 's/^\(system\.[^=]*\)=gpio_switch$/\1/p'); do
-	[ "$(uci -q get "$gpio_section.gpio_pin" 2>/dev/null || true)" = '5g2' ] || continue
-	echo "gpio_5g2_value=$(uci -q get "$gpio_section.value" || true)"
-	echo "gpio_5g2_seeded=$(uci -q get "$gpio_section.cellular_default_seeded" || true)"
+# Read-only post-flash checks. No AT writes, resets, reloads, UCI commits,
+# full modem/SIM config dumps or account tokens.
+. /usr/lib/zbt/dual-modem.sh
+printf '%s\n' 'Runtime diagnostics (review/redact before sharing)'
+printf 'kernel=%s\n' "$(uname -r)"
+printf 'board=%s\n' "$(cat /tmp/sysinfo/board_name 2>/dev/null)"
+for section in 4_1 2_1; do
+	zbt_slot "$section"
+	device=$(zbt_netdev "$section") || device=''
+	port=$(uci -q get "qmodem.$section.at_port")
+	printf '\nmodem=%s usb=%s device=%s power=%s led=%s\n' "$section" "$ZBT_USB" "${device:-absent}" "$ZBT_POWER" "$ZBT_LED"
+	printf 'power_value=%s at_port=%s port_matches=%s\n' "$(cat "/sys/class/gpio/$ZBT_POWER/value" 2>/dev/null)" "$port" "$(zbt_port_matches "$section" "$port" && echo yes || echo no)"
+	for key in alias state enable_dial pdp_type metric monitor_enabled; do
+		printf '%s=%s\n' "$key" "$(uci -q get "qmodem.$section.$key")"
+	done
+	printf 'apn_mode=%s secondary_apn_mode=%s\n' "$(zbt_apn_mode "$(uci -q get "qmodem.$section.apn")")" "$(zbt_apn_mode "$(uci -q get "qmodem.$section.apn2")")"
+	printf 'proto=%s\n' "$(uci -q get "network.$section.proto")"
+	/etc/init.d/qmodem_network modem_status "$section" 2>/dev/null
+	if [ -n "$device" ]; then
+		ip addr show dev "$device" scope global 2>/dev/null
+	fi
 done
-echo "=== mwan3 failover order ==="
-uci -q get mwan3.failover.use_member || true
+printf '\n%s\n' 'Routing and measurement configuration'
 for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
-	echo "$member=$(uci -q get "mwan3.$member.interface" || true):$(uci -q get "mwan3.$member.metric" || true)"
+	printf '%s=%s:%s\n' "$member" "$(uci -q get "mwan3.$member.interface")" "$(uci -q get "mwan3.$member.metric")"
 done
-echo "=== Speedify bootstrap ==="
-echo "install_luci=$(uci -q get speedify_bootstrap.main.install_luci || true)"
-echo "installer_done=$([ -f /etc/speedify.installed ] && echo yes || echo no)"
-[ -x /etc/init.d/speedify ] && /etc/init.d/speedify status || true
-[ -x /etc/init.d/nginx ] && /etc/init.d/nginx status || true
-echo "=== LAN path ==="
-ubus call network.interface.lan status | ucode -e 'import {readfile} from "fs";let s=json(readfile("/dev/stdin"));print(sprintf("%J\n",{up:s.up,l3:s.l3_device,ipv4:s["ipv4-address"]||[]}));'
-ip -4 route show default || true
-nft list chain inet fw4 srcnat_wan 2>/dev/null || true
-ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1 && echo "router_uplink_ping=ok" || echo "router_uplink_ping=fail"
+uci -q show modem_watchdog
+ip -4 route show default
+printf '\n%s\n' 'Installed UI packages and service health'
+for package in luci-app-mwan3 luci-app-speedtest-lite luci-app-tailscale speedify luci-app-speedify; do
+	apk info -e "$package" >/dev/null 2>&1 && printf '%s=installed\n' "$package" || printf '%s=missing\n' "$package"
+done
+for service in nginx sfy-ws-auth speedify speedify-installer tailscale qmodem_network; do
+	printf '%s=' "$service"
+	"/etc/init.d/$service" status 2>/dev/null || true
+done
+nginx -t 2>&1
+printf 'speedify_installer_done=%s\n' "$([ -f /etc/speedify.installed ] && echo yes || echo no)"
+printf 'speedify_unauthenticated_http_status='
+# Self-signed local health probe only. Upstream HTTPS downloads stay verified.
+curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/luci-app-speedify/view/index.html
+printf 'tailscale_state='
+tailscale status --json 2>/dev/null | jq -r '.BackendState // "Unavailable"'
+printf '\n%s\n' 'Compare AT registration/band readbacks separately in the selected modem AT Debug tab; do not publish SIM identifiers.'

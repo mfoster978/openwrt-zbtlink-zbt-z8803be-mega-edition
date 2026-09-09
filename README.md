@@ -38,6 +38,9 @@
 
 The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi support, modem drivers, and release configuration. This repository layers carefully scoped dual-modem behavior and additional packages on top of that pinned baseline.
 
+> [!IMPORTANT]
+> The September 9 runtime repairs described below are **source changes, not a newly hardware-validated firmware release**. Build #17 predates them and has reported runtime defects. See the [repair and verification notes](firmware/docs/runtime-repair-2026-09.md) for confirmed causes, tests, and remaining on-router checks.
+
 ## Choose your path
 
 | You are… | Start here |
@@ -67,9 +70,11 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 - USB QMI/MBIM, USB WDM, USB serial/Option, NCM, WWAN, and Quectel connection-manager support.
 - PCIe MHI bus, network, control, MBIM, and generic PCI support for compatible MHI modems.
 - Both physical modem slots are represented explicitly and mapped by their actual USB paths.
-- Both modem power rails are seeded on during initial setup. The modem 2 setting is marked after the first seed so later operator changes are preserved.
-- QModem-managed interfaces deliberately use `proto=none`; this avoids the competing DHCP behavior associated with repeated cellular disconnects.
-- Conservative modem 1 MTU baseline of `1472`, based on field diagnostics for the affected USB/QMI path.
+- Both modem power rails are seeded on during initial setup; later operator power choices are preserved.
+- QMI/MBIM paths using `quectel-CM-M -d` use `proto=none`: the connection manager owns addresses and routes, with no competing DHCP client. ECM/RNDIS retain their protocol-specific behavior.
+- Both USB modems use the same startup, APN, protocol, and recovery logic. The connection manager applies the MTU reported for each data connection, rather than copying one carrier's value to everyone.
+- Blank/auto QMI APNs retain modem/network profile negotiation. Manual APNs, credentials, PINs, and SIM selections are not erased; some carriers/plans still require manual configuration.
+- Band changes require a successful AT response and matching readback. An unreadable SA band mask is shown as unknown, not falsely reported as every SA band disabled.
 - Existing Far5eer carrier TTL/hop-limit handling and modem NAT detection remain available.
 
 ### Multi-WAN and recovery
@@ -77,18 +82,19 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 - `mwan3` and `luci-app-mwan3` are installed and enabled with deterministic first-boot defaults.
 - Strict wired-first failover order, while automatically omitting a wired interface that is not present.
 - A separate balanced policy is available for deliberate load distribution.
-- Dedicated TCP and UDP rules route speed-test traffic on ports `8080` and `8443` through the balanced policy.
-- A custom **Network → Modem Watchdog** page provides per-modem health and recovery controls.
-- Watchdog observation, recovery actions, automatic failover, speed sampling, and “prefer fastest” mode are all conservative and disabled by default.
+- Default traffic, including speed-test ports, follows wired-first failover; balancing is an explicit user choice.
+- **Network → MultiWAN Manager → Speed & Recovery** exposes minimum-speed thresholds and per-modem recovery controls.
+- The additional watchdog, recovery actions, speed-based preference changes, and “prefer fastest” mode are disabled by default. Normal `mwan3` connectivity failover remains enabled.
 - Recovery choices include log-only, disconnect, redial, or GPIO power-cycle followed by redial.
 - Cooldowns and failure thresholds prevent rapid recovery loops.
-- The low-level QModem guard acts only on a physically enumerated modem path and avoids repeated UCI commits, reloads, and healthy-link redials.
+- QModem supervises each physical modem separately. The old configuration-rewriting watchdog, shared restart hooks, and post-flash automatic modem reset have been retired.
 
 ### Connectivity tools and VPNs
 
-- **Services → Speed Test Utility** provides an on-router test with download, upload, and latency results.
-- `speedtest-netperf` and `speedtest-go` are included for command-line and watchdog-assisted testing.
-- Tailscale and its LuCI application are included.
+- **Services → Speed Test Utility** runs an authenticated, bounded HTTPS sample with download/upload Mbps and TCP connection timing. It is not an Ookla benchmark and has no Save/Apply buttons.
+- Choose the current default route, wired WAN, SFP WAN, modem 1, or modem 2. Physical-interface binding prevents substituting the other modem when their private IP addresses overlap.
+- `speedtest-netperf` and `speedtest-go` remain available separately at the command line.
+- **Services → Tailscale** provides a locally packaged status/sign-in page; each user authenticates their own account. Advanced Tailscale route/exit-node options remain CLI-managed.
 - OpenVPN with OpenSSL and its LuCI application are included.
 - TUN, nftables/iptables compatibility, TPROXY, BBR, C++ runtime, atomic, and keyutils support are built against this exact kernel and userspace.
 
@@ -111,7 +117,17 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 | Modem 1 | `4_1` | `4-1` | `5g1` | 200 | Enabled |
 | Modem 2 | `2_1` | `2-1` | `5g2` | 210 | Enabled |
 
-On the verified ZBT-Z8803BE-T wiring, SIM1 belongs to modem 1 and SIM2 belongs to modem 2. One module cannot switch between both physical SIM sockets on that variant. Hardware revisions may differ, so confirm the board revision before relying on SIM wiring assumptions.
+Physical SIM wiring can differ between board revisions. Preserve a working SIM selection and confirm the selected modem reads the intended card before changing any SIM-routing setting; a software slot label is not an electrical wiring test.
+
+QModem's **SIM Slot 1** refers to the SIM input inside the selected modem. Both modules can correctly report slot 1 while reading different cards. It is not the same numbering as the board's SIM sockets. These repairs do not change SIM GPIO routing.
+
+| Indicator/control | Modem 1 | Modem 2 |
+|---|---|---|
+| Power enable (active-high) | GPIO 17 / `5g1` | GPIO 52 / `5g2` |
+| Status LED (active-low) | GPIO 61 / `blue:mobile-1` | GPIO 53 / `blue:mobile-2` |
+| Network identity used by QModem and mwan3 | `4_1` | `2_1` |
+
+These GPIO numbers follow the pinned device tree. The `blue:` name is a kernel label, not a guarantee of the visible LED color on every revision. LEDs are off when absent/unpowered, blink slowly while awaiting an address, and use link/traffic indication once a global address exists. An LED alone does not prove Internet access or 5G registration.
 
 The firmware does not infer a live modem merely because a UCI section exists. Runtime recovery is tied to a physically enumerated USB path, which prevents activity on one slot from needlessly repowering or redialing the other.
 
@@ -136,14 +152,14 @@ Each available interface is monitored with two public ping targets and `reliabil
 
 ## Modem watchdog
 
-Open **Network → Modem Watchdog** in LuCI to configure:
+Open **Network → MultiWAN Manager → Speed & Recovery** in LuCI to configure:
 
 - service enablement and a separate permission switch for recovery actions;
 - check interval, ping target, consecutive-failure threshold, and recovery cooldown;
 - speed-test sampling interval and minimum acceptable throughput;
 - optional failover and fastest-modem preference;
 - per-modem monitoring and recovery action;
-- the GPIO power name associated with each modem.
+- the fixed physical identity/power mapping (displayed for reference, not freely editable).
 
 The safe defaults are:
 
@@ -151,14 +167,21 @@ The safe defaults are:
 |---|---:|
 | Watchdog service | Off |
 | Recovery actions | Off |
-| Automatic failover control | Off |
+| Additional speed-based preferences | Off |
 | Prefer fastest modem | Off |
 | Check interval | 30 seconds |
 | Ping failures before action | 4 |
 | Recovery cooldown | 180 seconds |
 | Speed-test sampling | Off |
+| Sampling interval / minimum download speed | 15 minutes / 5 Mbps |
+| Fresh slow samples before demotion | 2 |
+| Fresh healthy samples before recovery | 2 |
 
 Start with monitoring only. Confirm that interface names, APNs, and ping behavior are correct before enabling redial or power-cycle actions.
+
+Each background sample downloads up to **25 MB per modem**; the interactive utility adds up to 5 MB upload. At a 15-minute interval on both modems, background sampling can consume about **4.8 GB/day**. Consider cellular plan limits before enabling it. Samples use [Cloudflare's HTTPS endpoints](https://github.com/cloudflare/speedtest/blob/main/README.md) with [curl device binding](https://curl.se/docs/manpage.html#--interface), not the full Cloudflare or Ookla measurement algorithm.
+
+Only fresh, successful samples count toward the speed threshold. DNS, TLS, timeout, and server failures are not fabricated as zero Mbps. Speed demotion changes only the project's cellular failover-member preferences in RAM, retaining both wired WAN priorities. Custom member layouts are left alone. Existing flows may remain on their original link; this is not seamless bonding. Slow throughput alone never triggers a modem power cycle.
 
 ## Speedify
 
@@ -178,7 +201,7 @@ The installer:
 4. rejects either file unless its reviewed SHA256 matches;
 5. installs only the downloaded local APKs with `--no-network`, preventing an ABI-mismatched kernel module from being pulled later;
 6. starts and health-checks Speedify, its web service, nginx, and LuCI;
-7. restores the prior uhttpd configuration if the web interface health check fails;
+7. keeps nginx and its authenticated Speedify routes in place if a service health check fails; retries do not reinstall already-present packages or repeatedly run vendor network setup;
 8. records completion only after all selected services pass.
 
 To install the Speedify core without its LuCI application, set this before the first successful installation:
@@ -208,7 +231,7 @@ The generic Linux MPTCP capability inherited from the OpenWrt/Far5eer kernel rem
 
 ### Validated reference build
 
-The latest verified artifact at the time of this README is [firmware build #17](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/runs/34375843564), produced from repository commit `d6c84b2c36c60351031f53b3336baeb2ee7553ff`.
+The historical compilation reference is [firmware build #17](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/runs/34375843564), produced from repository commit `d6c84b2c36c60351031f53b3336baeb2ee7553ff`. **It does not contain the current runtime repairs and should not be treated as a fixed release.** Build a new image from the repair commit and complete the on-router checks before distributing it as stable.
 
 | File | Size | SHA256 |
 |---|---:|---|
@@ -216,7 +239,7 @@ The latest verified artifact at the time of this README is [firmware build #17](
 | `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-initramfs-kernel.bin` | 32,768,000 bytes | `b695ae9bdfbba1bd8417aff36183e2baad545bb404af0c6dec9ccd4c879d89ed` |
 | `openwrt-mediatek-filogic-zbtlink_zbt-z8803be.manifest` | 10,637 bytes | `0d5549156a7a55cb8e216331de1da93e238a52b83ed266a74b79c46150c1675f` |
 
-[Download the validated build #17 artifact](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/runs/34375843564/artifacts/10121345151). GitHub Actions artifacts have limited retention; if the link has expired, run the workflow again from the pinned source.
+[Historical build #17 artifact](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/runs/34375843564/artifacts/10121345151). These hashes identify that old artifact only; use the new run's checksums for a repaired image. GitHub Actions artifacts have limited retention.
 
 The sysupgrade metadata identifies:
 
@@ -340,24 +363,36 @@ The same host should have roughly 40–50 GiB available for a clean build. More 
 | `firmware/profiles/` | Pinned baseline config, required package list, and kernel fragment |
 | `firmware/files/` | Files embedded into the router root filesystem |
 | `firmware/feeds/luci-app-modem-watchdog/` | Custom modem health and recovery LuCI application |
-| `firmware/feeds/luci-app-speedtest-lite/` | Custom graphical speed-test LuCI application |
+| `firmware/feeds/luci-app-speedtest-lite/` | Authenticated, interface-bound HTTPS speed-sample LuCI application |
+| `firmware/feeds/luci-app-tailscale/` | Tailscale status/sign-in UI and authenticated RPC backend |
+| `firmware/patches/` | Strict patches against pinned QModem and mwan3 userspace sources |
+| `firmware/tests/` | Mocked runtime regressions, pinned-source patch checks, and isolated nginx/proxy test |
 | `firmware/scripts/check-build-inputs.sh` | Static source, checksum, and input validation |
 | `firmware/scripts/verify-router-runtime.sh` | Post-flash runtime inspection helper |
 | `firmware/README-build.md` | Lower-level implementation and builder notes |
 
 ## Validation model
 
-A green workflow confirms all of the following:
+A green **firmware build** confirms the following build-time checks (the separate Sanity workflow does not compile firmware):
 
 - source URL, tag, commit, device target, and required configuration symbols;
 - reviewed Speedify downloads and pinned SHA256 values;
 - successful toolchain, Go bootstrap, package, kernel, and image compilation;
-- required modem, QModem, MHI, mwan3, VPN, custom LuCI, and Speedify dependency packages in the final 354-package manifest;
+- required modem, QModem, MHI, mwan3, VPN, custom LuCI, and Speedify dependency packages in that run's final manifest;
 - required first-boot defaults and services in the assembled root filesystem;
 - non-empty initramfs and SquashFS sysupgrade images;
 - artifact-level `sha256sums` verification.
 
 Physical validation should still cover boot, Ethernet, SFP+, all three Wi-Fi bands, each installed modem, failover, recovery, and any carrier-specific behavior.
+
+Run source-level regressions with Node.js 22, BusyBox, jq, patch, and ripgrep installed:
+
+```sh
+bash firmware/scripts/check-build-inputs.sh
+node firmware/tests/check-patches.cjs
+```
+
+The second command downloads only the exact pinned public source files, tests forward/reverse patch application, and runs behavioral tests in temporary fixtures. It never contacts a router, sends real AT commands, or toggles GPIOs.
 
 ## Troubleshooting
 
@@ -382,7 +417,11 @@ uci get network.4_1.proto
 uci get network.2_1.proto
 ```
 
-Both should report `none`. Adding DHCP to these QModem-managed interfaces can create competing configuration and reconnect loops.
+For the default RM551E-GL QMI/`quectel-CM-M -d` setup, both should report `none`. Adding DHCP creates a second address manager. Do not apply this rule indiscriminately to ECM/RNDIS or another connection manager. The retired `apply-router-defaults.sh` helper intentionally refuses to modify a live router.
+
+### Modem 2 is SIM-ready but stays detached / SA band boxes are empty
+
+The supplied logs show a working SIM read but no packet-service attachment on modem 2. That is not evidence that the router has turned its power off, or that every SA band is disabled. The two RM551E-GL modules also report different internal modem firmware revisions. Read [the registration and band checklist](firmware/docs/runtime-repair-2026-09.md#remaining-hardware-checks); do not reset the modem, change SIM GPIOs, or force an SA-only mode based on an empty UI mask.
 
 ### Speedify does not install
 
@@ -395,15 +434,23 @@ curl -I https://downloads.speedify.com/
 
 The installer intentionally refuses changed APKs, missing baked dependencies, unsupported architecture, or a failed service/UI health check.
 
-### LuCI is unavailable after a Speedify attempt
+### Speedify opens a 404 or fails its health check
 
-The installer keeps `/etc/speedify-bootstrap/uhttpd.before-speedify` and restores uhttpd when the nginx/LuCI health check fails. Connect by SSH, inspect `logread -e speedify-installer`, then check both web servers:
+The vendor UI requires nginx's alias/proxy routes and `sfy-ws-auth`. Switching to uhttpd leaves the Speedify menu pointing to a URL that uhttpd cannot serve. The repaired installer keeps nginx active and separates service recovery from package installation. Check:
 
 ```sh
 /etc/init.d/nginx status
-/etc/init.d/uhttpd status
+/etc/init.d/sfy-ws-auth status
+/etc/init.d/speedify status
 nginx -t
+logread -e speedify-installer
 ```
+
+Without a login session, the protected Speedify index should return **401**, not 404 or 502. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
+
+### HTTPS warning on the router's private IP address
+
+The stock LuCI/nginx certificate is self-signed, so a browser warning at `https://192.168.1.1` is expected. A large clock correction during first boot can also affect certificate validity. Keep HTTPS enabled, set the correct time, and use a trusted local CA or a certificate for a hostname you control if you need warning-free access. Follow [OpenWrt's certificate guidance](https://openwrt.org/docs/guide-user/luci/getting_rid_of_luci_https_certificate_warnings), adapting the certificate paths to nginx. Never disable certificate verification for firmware/package downloads.
 
 ## Support and sponsorship
 

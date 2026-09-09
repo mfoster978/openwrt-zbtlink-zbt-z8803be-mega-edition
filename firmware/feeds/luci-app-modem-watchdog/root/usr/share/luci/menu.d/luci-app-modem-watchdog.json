@@ -1,6 +1,6 @@
 {
-  "admin/network/modem_watchdog": {
-    "title": "Modem Watchdog",
+  "admin/network/mwan3/speed_failover": {
+    "title": "Speed & Recovery",
     "order": 95,
     "action": {
       "type": "view",

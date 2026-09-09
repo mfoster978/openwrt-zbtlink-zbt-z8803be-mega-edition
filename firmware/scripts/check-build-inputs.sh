@@ -18,6 +18,14 @@ for script in \
   sh -n "${script}"
 done
 
+# Cover every new overlay/feed shell entry point, including rpcd backends
+# whose filenames do not end in .sh. Libraries are parsed but never run.
+while IFS= read -r script; do
+  case "$(head -n 1 "$script")" in
+    '#!/bin/sh'*) sh -n "$script" ;;
+  esac
+done < <(rg --files firmware/files firmware/feeds)
+
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config
 printf '%s  %s\n' \

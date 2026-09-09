@@ -3,7 +3,6 @@ set -u
 
 TAG='speedify-installer'
 STATE_DIR='/tmp/speedify-installer'
-BACKUP_DIR='/etc/speedify-bootstrap'
 LOCK_DIR='/var/lock/speedify-installer.lock'
 DONE_FILE='/etc/speedify.installed'
 RETRY_SECONDS="${SPEEDIFY_INSTALL_RETRY_SECONDS:-180}"
@@ -43,11 +42,17 @@ luci_healthy() {
 	service_running nginx || return 1
 	service_running sfy-ws-auth || return 1
 	nginx -t >/tmp/speedify-nginx-check.log 2>&1 || return 1
-	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/cgi-bin/luci/ 2>/dev/null || true)"
+	# Verify the actual HTTPS frontend, not a port-80 redirect. -k applies
+	# ONLY to this loopback self-signed certificate, never APK downloads.
+	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' https://127.0.0.1/cgi-bin/luci/ 2>/dev/null || true)"
 	case "$http_status" in
-		2??|3??) return 0 ;;
+		2??|3??) ;;
 		*) return 1 ;;
 	esac
+	# The protected entry point must challenge an unauthenticated request.
+	# 404 means the nginx locations were not included; 502 means proxy down.
+	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' https://127.0.0.1/luci-app-speedify/view/index.html 2>/dev/null || true)"
+	[ "$http_status" = 401 ]
 }
 
 runtime_healthy() {
@@ -64,31 +69,27 @@ wait_for_runtime() {
 	return 1
 }
 
-backup_uhttpd() {
-	[ "$INSTALL_LUCI" = '1' ] || return 0
-	mkdir -p "$BACKUP_DIR"
-	if [ -f /etc/config/uhttpd ] && [ ! -f "$BACKUP_DIR/uhttpd.before-speedify" ]; then
-		cp -p /etc/config/uhttpd "$BACKUP_DIR/uhttpd.before-speedify"
-	fi
-}
-
-restore_uhttpd() {
-	[ -f "$BACKUP_DIR/uhttpd.before-speedify" ] || return 0
-	cp -p "$BACKUP_DIR/uhttpd.before-speedify" /etc/config/uhttpd
-	/etc/init.d/nginx stop >/dev/null 2>&1 || true
-	/etc/init.d/uhttpd enable >/dev/null 2>&1 || true
-	/etc/init.d/uhttpd restart >/dev/null 2>&1 || true
-}
-
 activate_services() {
 	/etc/init.d/speedify enable >/dev/null 2>&1 || return 1
-	/etc/init.d/speedify restart >/tmp/speedify-service.log 2>&1 || return 1
+	service_running speedify || /etc/init.d/speedify start >/tmp/speedify-service.log 2>&1
 	if [ "$INSTALL_LUCI" = '1' ]; then
+		# uhttpd cannot serve the vendor's authenticated nginx alias/proxy UI.
+		# Keep the existing nginx LuCI frontend even if the VPN daemon fails.
+		if [ -f /usr/share/luci-app-speedify/luci-app-speedify.locations ]; then
+			if [ "$(readlink /etc/nginx/conf.d/luci-app-speedify.locations 2>/dev/null)" != /usr/share/luci-app-speedify/luci-app-speedify.locations ]; then
+				rm -f /etc/nginx/conf.d/luci-app-speedify.locations
+				ln -s /usr/share/luci-app-speedify/luci-app-speedify.locations /etc/nginx/conf.d/luci-app-speedify.locations || return 1
+			fi
+			# Old preserved CGI routing predates the authenticated vendor proxy.
+			rm -f /etc/nginx/conf.d/luci-cgi-speedify.locations
+		fi
 		/etc/init.d/sfy-ws-auth enable >/dev/null 2>&1 || return 1
-		/etc/init.d/sfy-ws-auth restart >/tmp/speedify-ws-auth.log 2>&1 || return 1
+		service_running sfy-ws-auth || /etc/init.d/sfy-ws-auth start >/tmp/speedify-ws-auth.log 2>&1
+		nginx -t >/tmp/speedify-nginx-check.log 2>&1 || return 1
 		/etc/init.d/uhttpd stop >/dev/null 2>&1 || true
+		/etc/init.d/uhttpd disable >/dev/null 2>&1 || true
 		/etc/init.d/nginx enable >/dev/null 2>&1 || return 1
-		/etc/init.d/nginx restart >/tmp/speedify-nginx.log 2>&1 || return 1
+		/etc/init.d/nginx reload >/tmp/speedify-nginx.log 2>&1 || /etc/init.d/nginx start >>/tmp/speedify-nginx.log 2>&1 || return 1
 	fi
 }
 
@@ -102,10 +103,15 @@ finalize_luci_webserver() {
 
 finish_if_ready() {
 	packages_complete || return 1
-	backup_uhttpd
+	# Expose the installed UI for diagnosis even while the VPN daemon is
+	# unhealthy. Do not make menu visibility depend on a successful VPN start.
+	if [ "$INSTALL_LUCI" = 1 ] && [ ! -f "$STATE_DIR/menu-refreshed" ]; then
+		rm -f /tmp/luci-indexcache /tmp/luci-indexcache.json
+		/etc/init.d/rpcd reload >/dev/null 2>&1 || true
+		touch "$STATE_DIR/menu-refreshed"
+	fi
 	if ! activate_services || ! wait_for_runtime; then
-		log 'packages are present but a service health check failed'
-		[ "$INSTALL_LUCI" = '1' ] && restore_uhttpd
+		log "health pending: speedify=$(service_running speedify && echo up || echo down) nginx=$(service_running nginx && echo up || echo down) sfy-ws-auth=$(service_running sfy-ws-auth && echo up || echo down); preserving nginx and installed packages"
 		return 1
 	fi
 	finalize_luci_webserver
@@ -205,6 +211,13 @@ fi
 rm -f "$DONE_FILE"
 
 while :; do
+	# A runtime failure is not an installation failure. Reinstalling here
+	# reran the vendor's network/firewall setup every three minutes.
+	if packages_complete; then
+		finish_if_ready && exit 0
+		sleep "$RETRY_SECONDS"
+		continue
+	fi
 	if ! baked_dependencies_present; then
 		sleep "$RETRY_SECONDS"
 		continue
@@ -214,11 +227,9 @@ while :; do
 		sleep "$CONNECTIVITY_RETRY_SECONDS"
 		continue
 	fi
-	backup_uhttpd
 	if download_bundle && install_bundle && finish_if_ready; then
 		exit 0
 	fi
-	[ "$INSTALL_LUCI" = '1' ] && restore_uhttpd
 	log "installation failed; retrying in ${RETRY_SECONDS}s"
 	sleep "$RETRY_SECONDS"
 done

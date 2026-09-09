@@ -1,0 +1,39 @@
+#!/bin/sh
+. /usr/lib/zbt/dual-modem.sh
+while :; do
+	for section in 4_1 2_1; do
+		zbt_slot "$section"
+		led="/sys/class/leds/$ZBT_LED"
+		[ -d "$led" ] || continue
+		device=$(zbt_netdev "$section") || device=''
+		state=off
+		if [ -n "$device" ] && [ "$(cat "/sys/class/gpio/$ZBT_POWER/value" 2>/dev/null)" = 1 ]; then
+			state=waiting
+			if ip addr show dev "$device" scope global 2>/dev/null | grep -qE 'inet6? '; then state="data:$device"; fi
+		fi
+		# Restore our trigger if a later LED service reload changed it. Do not
+		# continually reset a healthy netdev/timer trigger or its blink phase.
+		eval "previous=\${last_$section:-}"
+		if [ "$previous" = "$state" ]; then
+			trigger=$(sed -n 's/.*\[\([^]]*\)\].*/\1/p' "$led/trigger")
+			case "$state:$trigger" in
+				off:none) [ "$(cat "$led/brightness")" = 0 ] && continue ;;
+				waiting:timer) continue ;;
+				data:*:netdev) [ "$(cat "$led/device_name")" = "$device" ] && continue ;;
+			esac
+		fi
+		printf none > "$led/trigger"
+		case "$state" in
+			off) printf 0 > "$led/brightness" ;;
+			waiting)
+				printf timer > "$led/trigger"
+				printf 1000 > "$led/delay_on"; printf 1000 > "$led/delay_off" ;;
+			data:*)
+				printf netdev > "$led/trigger"
+				printf '%s' "$device" > "$led/device_name"
+				printf 1 > "$led/link"; printf 1 > "$led/rx"; printf 1 > "$led/tx" ;;
+		esac
+		eval "last_$section=\$state"
+	done
+	sleep 5
+done

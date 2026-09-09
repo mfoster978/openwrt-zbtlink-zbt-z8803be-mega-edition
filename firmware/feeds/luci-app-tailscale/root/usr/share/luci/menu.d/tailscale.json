@@ -1,0 +1,7 @@
+{
+  "admin/services/tailscale": {
+    "title": "Tailscale", "order": 65,
+    "action": { "type": "view", "path": "tailscale/status" },
+    "depends": { "acl": ["luci-app-tailscale"] }
+  }
+}

@@ -40,6 +40,29 @@ if [[ -d "${CUSTOM_FEED_DIR}" ]]; then
 fi
 ./scripts/feeds update -a
 ./scripts/feeds install -a
+# The userspace fixes below are reviewed against these exact feed revisions.
+[[ "$(git -C feeds/qmodem rev-parse HEAD)" = a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf ]] || {
+  echo 'Unexpected QModem revision; review runtime patches before building' >&2; exit 3;
+}
+[[ "$(git -C feeds/packages rev-parse HEAD)" = db3b315119519f9194dad8aa668aa40618df9b20 ]] || {
+  echo 'Unexpected packages revision; review mwan3 patch before building' >&2; exit 3;
+}
+# Strict userspace-only patch against the pinned QModem feed. No kernel,
+# modem driver, device tree, or wireless firmware revision changes.
+runtime_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-dual-runtime.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$runtime_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$runtime_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$runtime_patch" >/dev/null; then
+  echo 'Pinned QModem runtime patch no longer matches; refusing an unpatched build' >&2
+  exit 3
+fi
+policy_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/mwan3-speed-policy.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/packages < "$policy_patch" >/dev/null; then
+  echo 'mwan3 speed-policy patch does not match pinned feed' >&2
+  exit 3
+fi
 mkdir -p files
 if [[ -d "${FILES_OVERLAY_DIR}" ]]; then
   rsync -a "${FILES_OVERLAY_DIR}/" files/
@@ -47,6 +70,8 @@ fi
 if [[ -d "files/etc/uci-defaults" ]]; then
   chmod +x files/etc/uci-defaults/* 2>/dev/null || true
 fi
+# Git-created overlay helpers must be executable in the image.
+find files/etc/init.d files/etc/hotplug.d files/usr/sbin files/usr/libexec/rpcd -type f -exec chmod 755 {} +
 if [[ "${INCLUDE_BACKUP_IMAGES}" = "1" && -d "${BACKUP_IMAGES_DIR}" ]]; then
   mkdir -p files/root/router-backups
   rsync -a "${BACKUP_IMAGES_DIR}/" files/root/router-backups/
@@ -124,6 +149,7 @@ required_config_flags=(
   "CONFIG_PACKAGE_mwan3=y"
   "CONFIG_PACKAGE_luci-app-mwan3=y"
   "CONFIG_PACKAGE_tailscale=y"
+  "CONFIG_PACKAGE_luci-app-tailscale=y"
   "CONFIG_PACKAGE_luci-app-modem-watchdog=y"
   "CONFIG_PACKAGE_luci-app-speedtest-lite=y"
   "CONFIG_PACKAGE_ca-bundle=y"
@@ -164,7 +190,7 @@ required_image_packages=(
   luci-app-qmodem-ttlfw4 quectel-CM-5G-M ndisc6
   kmod-mhi-bus kmod-mhi-net kmod-mhi-pci-generic
   kmod-mhi-wwan-ctrl kmod-mhi-wwan-mbim mwan3 kmod-tun
-  luci-app-modem-watchdog luci-app-speedtest-lite tailscale
+  luci-app-modem-watchdog luci-app-speedtest-lite tailscale luci-app-tailscale
   ca-bundle curl libstdcpp6 libkeyutils1 libatomic1
   iptables-nft kmod-nft-tproxy
   iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra
@@ -189,6 +215,20 @@ required_overlay_files=(
   etc/uci-defaults/99-speedify-bootstrap
   etc/init.d/speedify-installer
   usr/sbin/speedify-installer-loop
+  usr/sbin/zbt-speed-sample
+  usr/libexec/rpcd/zbt.speedtest
+  usr/libexec/rpcd/zbt.tailscale
+  usr/lib/zbt/dual-modem.sh
+  usr/lib/zbt/quectel-bands.sh
+  usr/lib/zbt/speed-lock.sh
+  usr/lib/zbt/speed-policy.sh
+  usr/lib/zbt/mwan3-speed-metric.sh
+  usr/sbin/zbt-qmodem-profile
+  usr/sbin/zbt-modem-led-poller
+  usr/sbin/zbt-mwan-apply
+  etc/init.d/qmodem_network
+  usr/share/rpcd/acl.d/zbt-speedtest.json
+  usr/share/luci/menu.d/tailscale.json
 )
 for overlay_file in "${required_overlay_files[@]}"; do
   if [[ ! -s "${rootfs_dir}/${overlay_file}" ]]; then

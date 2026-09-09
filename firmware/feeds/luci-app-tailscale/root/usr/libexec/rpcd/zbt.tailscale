@@ -1,0 +1,34 @@
+#!/bin/sh
+umask 077
+case "$1" in
+	list) echo '{"status":{},"login":{},"stop":{}}' ;;
+	call)
+		case "$2" in
+			status)
+				data=$(tailscale status --json 2>/dev/null) || true
+				printf '%s' "$data" | jq -e 'type == "object"' >/dev/null 2>&1 || data='{}'
+				error=''
+				if [ -f /tmp/zbt-tailscale-login.failed ]; then
+					error='Sign-in command did not complete. Check connectivity and /tmp/zbt-tailscale-login.log; existing CLI flags were not reset.'
+				fi
+				printf '%s' "$data" | jq --arg error "$error" '{state:(.BackendState // "Unavailable"),ips:(.TailscaleIPs // []),auth_url:(.AuthURL // ""),error:$error}'
+				;;
+			login)
+				/etc/init.d/tailscale enable >/dev/null 2>&1
+				if ! /etc/init.d/tailscale start >/dev/null 2>&1; then
+					echo '{"error":"Unable to start Tailscale; check its service log"}'; exit 0
+				fi
+				# Never reset existing flags or bake account keys into firmware.
+				# Return promptly; status() polls the daemon's AuthURL.
+				if mkdir /tmp/zbt-tailscale-login.lock 2>/dev/null; then
+					( trap 'rmdir /tmp/zbt-tailscale-login.lock 2>/dev/null || true' EXIT
+					  rm -f /tmp/zbt-tailscale-login.failed
+					  timeout 10 tailscale up --timeout=5s >/tmp/zbt-tailscale-login.log 2>&1 ||
+					    touch /tmp/zbt-tailscale-login.failed
+					) </dev/null >/dev/null 2>&1 &
+				fi
+				echo '{"auth_url":"","message":"Waiting for sign-in link; status refreshes automatically."}'
+				;;
+			stop) tailscale down >/dev/null 2>&1 && echo '{"ok":true}' || echo '{"ok":false}' ;;
+		esac ;;
+esac

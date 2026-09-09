@@ -1,0 +1,9 @@
+--- a/net/mwan3/files/lib/mwan3/mwan3.sh
++++ b/net/mwan3/files/lib/mwan3/mwan3.sh
+@@ -580,1 +580,5 @@
+-	config_get metric "$1" metric 1
++	config_get metric "$1" metric 1
++	if [ -r /usr/lib/zbt/mwan3-speed-metric.sh ]; then
++		. /usr/lib/zbt/mwan3-speed-metric.sh
++		metric=$(zbt_speed_metric "$1" "$iface" "$metric")
++	fi

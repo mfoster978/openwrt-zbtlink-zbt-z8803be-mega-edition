@@ -1,70 +1,42 @@
 'use strict';
 'require view';
+'require rpc';
+'require poll';
+var start = rpc.declare({ object: 'zbt.speedtest', method: 'start', params: ['interface'] });
+var status = rpc.declare({ object: 'zbt.speedtest', method: 'status' });
 return view.extend({
+	handleSave: null, handleSaveApply: null, handleReset: null,
 	render: function() {
-		var root = E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, _('Speed Test Utility')),
-			E('div', { 'class': 'cbi-section-descr' }, _('Run a speed test on the current internet connection.')),
-			E('p', {}, [
-				E('button', { 'class': 'btn cbi-button cbi-button-apply', 'id': 'speedtest-run-btn' }, _('Run speed test'))
-			]),
-			E('div', { 'id': 'speedtest-status' }, _('Idle')),
-			E('div', { 'id': 'speedtest-results', 'style': 'margin-top:10px;display:none;' }, [
-				E('div', {}, [E('strong', {}, _('Runner: ')), E('span', { 'id': 'st-runner' }, '-')]),
-				E('div', {}, [E('strong', {}, _('Server: ')), E('span', { 'id': 'st-server' }, '-')]),
-				E('div', {}, [E('strong', {}, _('Ping: ')), E('span', { 'id': 'st-ping' }, '-')]),
-				E('div', { 'style': 'margin-top:8px;' }, [
-					E('div', {}, _('Download (Mbps)')),
-					E('div', { 'style': 'height:16px;background:#ddd;border-radius:3px;' }, [
-						E('div', { 'id': 'st-dl-bar', 'style': 'height:16px;width:0%;background:#3b82f6;border-radius:3px;' }, [])
-					]),
-					E('div', { 'id': 'st-dl-text' }, '-')
-				]),
-				E('div', { 'style': 'margin-top:8px;' }, [
-					E('div', {}, _('Upload (Mbps)')),
-					E('div', { 'style': 'height:16px;background:#ddd;border-radius:3px;' }, [
-						E('div', { 'id': 'st-ul-bar', 'style': 'height:16px;width:0%;background:#22c55e;border-radius:3px;' }, [])
-					]),
-					E('div', { 'id': 'st-ul-text' }, '-')
-				])
-			])
+		var output = E('p', {}, _('Ready'));
+		var select = E('select', { 'class': 'cbi-input-select' }, [
+			E('option', { value: 'default' }, _('Current default connection (may use VPN)')),
+			E('option', { value: 'wan' }, _('Wired WAN')),
+			E('option', { value: 'wan_sfp' }, _('SFP WAN')),
+			E('option', { value: '4_1' }, _('Modem 1 / 5G1')),
+			E('option', { value: '2_1' }, _('Modem 2 / 5G2'))
 		]);
-
-		setTimeout(function() {
-			var btn = document.getElementById('speedtest-run-btn');
-			var status = document.getElementById('speedtest-status');
-			var results = document.getElementById('speedtest-results');
-			btn.addEventListener('click', function() {
-				btn.disabled = true;
-				status.textContent = 'Running speed test...';
-				fetch('/cgi-bin/speedtest-lite-run', { method: 'GET', cache: 'no-store' })
-					.then(function(r) { return r.json(); })
-					.then(function(data) {
-						if (!data.ok) {
-							status.textContent = 'Speed test failed: ' + (data.error || 'unknown error');
-							return;
-						}
-						status.textContent = 'Completed';
-						results.style.display = '';
-						document.getElementById('st-runner').textContent = data.runner || '-';
-						document.getElementById('st-server').textContent = data.server || '-';
-						document.getElementById('st-ping').textContent = (data.ping_ms || 0) + ' ms';
-						var dl = Number(data.download_mbps || 0);
-						var ul = Number(data.upload_mbps || 0);
-						var dlPct = Math.min(100, Math.max(0, dl));
-						var ulPct = Math.min(100, Math.max(0, ul));
-						document.getElementById('st-dl-bar').style.width = dlPct + '%';
-						document.getElementById('st-ul-bar').style.width = ulPct + '%';
-						document.getElementById('st-dl-text').textContent = dl.toFixed(2);
-						document.getElementById('st-ul-text').textContent = ul.toFixed(2);
-					})
-					.catch(function(err) {
-						status.textContent = 'Speed test failed: ' + err;
-					})
-					.finally(function() { btn.disabled = false; });
-			});
-		}, 0);
-
-		return root;
+		var button = E('button', { 'class': 'btn cbi-button-action', click: function() {
+			button.disabled = true;
+			start(select.value).then(function(r) {
+				if (!r.ok) throw new Error(r.error || _('Unable to start sample'));
+				output.textContent = _('Sampling… this can take up to one minute.');
+			}).catch(function(e) { output.textContent = e.message; button.disabled = false; });
+		}}, _('Run speed sample'));
+		poll.add(function() {
+			return status().then(function(r) {
+				if (r.running) { button.disabled = true; return; }
+				button.disabled = false;
+				if (r.ok) output.textContent = _('Download: %s Mbps · Upload: %s Mbps · TCP connect: %s ms · Device: %s')
+					.format(Number(r.download_mbps).toFixed(2), r.upload_mbps == null ? '—' : Number(r.upload_mbps).toFixed(2),
+						Number(r.latency_ms).toFixed(1), r.device || _('default route'));
+				else if (r.error) output.textContent = r.error;
+			}).catch(function(e) { output.textContent = _('Cannot read sample status: %s').format(e.message); });
+		}, 2);
+		return E('div', { 'class': 'cbi-map' }, [
+			E('h2', {}, _('Speed Test Utility')),
+			E('p', {}, _('Bounded, single-stream HTTPS throughput sample, not an Ookla benchmark. Uses up to 30 MB per test. Cellular data charges may apply.')),
+			E('p', {}, _('A selected interface is bound directly; it is never substituted with the other modem. VPN policy can still affect routing.')),
+			select, ' ', button, output
+		]);
 	}
 });

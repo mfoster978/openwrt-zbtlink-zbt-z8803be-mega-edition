@@ -1,0 +1,5 @@
+#!/bin/sh /etc/rc.common
+START=99
+# Compatibility stub for the inherited first-boot script. No second owner.
+start() { return 0; }
+stop() { return 0; }
