@@ -1,0 +1,13 @@
+{
+  "admin/services/speedtest_lite": {
+    "title": "Speed Test Utility",
+    "order": 75,
+    "action": {
+      "type": "view",
+      "path": "speedtest-lite/config"
+    },
+    "depends": {
+      "acl": [ "luci-app-speedtest-lite" ]
+    }
+  }
+}

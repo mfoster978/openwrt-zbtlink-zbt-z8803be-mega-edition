@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+# Keep watchdog/failover controls installed but safe-defaulted off until user enables.
+uci -q set modem_watchdog.global.enabled='0'
+uci -q set modem_watchdog.global.actions_enabled='0'
+uci -q set modem_watchdog.global.failover='0'
+uci -q set modem_watchdog.global.prefer_fastest='0'
+
+# GPIO power lines for both modem slots.
+printf 1 > /sys/class/gpio/5g1/value 2>/dev/null || true
+printf 1 > /sys/class/gpio/5g2/value 2>/dev/null || true
+
+# Modem bring-up defaults.
+uci -q set qmodem.main.enable_dial='1'
+uci -q set qmodem.main.block_auto_probe='0'
+uci -q set qmodem.4_1.state='enabled'
+uci -q set qmodem.2_1.state='disabled'
+uci -q set qmodem.4_1.enable_dial='1'
+uci -q set qmodem.2_1.enable_dial='0'
+uci -q set qmodem.4_1.alias='modem1'
+uci -q set qmodem.2_1.alias='modem2'
+
+# Link and startup defaults.
+uci -q set network.4_1.auto='1'
+uci -q set network.4_1.disabled='0'
+uci -q set network.4_1v6.auto='1'
+uci -q set network.4_1v6.disabled='0'
+uci -q set network.2_1.auto='0'
+uci -q set network.2_1.disabled='1'
+uci -q set network.2_1.defaultroute='0'
+uci -q set network.2_1.peerdns='0'
+uci -q set network.2_1v6.auto='0'
+uci -q set network.2_1v6.disabled='1'
+uci -q set network.2_1v6.defaultroute='0'
+
+# Conservative MTU baseline for cellular paths to reduce USB/QMI fragmentation issues seen in field captures.
+uci -q set network.4_1.mtu='1472'
+uci -q set network.4_1.metric='200'
+uci -q set network.2_1.metric='210'
+
+uci -q commit modem_watchdog
+uci -q commit qmodem
+uci -q commit network
+
+exit 0

@@ -1,0 +1,18 @@
+{
+  "usr/sbin/zbt-qmodem-watchdog-loop": {
+    "original_sha256": "ee99199598bd853925b6e0f32dcf453e79db6412df60fe2cb4a5d8d400ce3ca8",
+    "staged_sha256": "3c989acc3b9acef56dc5db428e2a118888496b847b5d19af75317253073d93f2"
+  },
+  "etc/hotplug.d/usb/40-zbt-qmodem-autoenable": {
+    "original_sha256": "85fd895286f0661e115a0030bf711055d34d4c86adc321131cbab9920d92d087",
+    "staged_sha256": "f62a28f05feccd1a554dc62df0589b957b329f69f9abfef9e9cb3c939438b2e4"
+  },
+  "etc/hotplug.d/net/20-zbt-modem-led": {
+    "original_sha256": "e07958c82225dc615de5dbf431236ae0f91ab3e7ba2dbb7d6cd9b3188836b8dc",
+    "staged_sha256": "43e2723f767c442ec497380972f92ab1b8eedebacea94d747206d409032a4a6d"
+  },
+  "usr/sbin/zbt-modem-led-poller": {
+    "original_sha256": "2382a61d5b70796aba393399d36e5c5aa00c54d8285b015372f6daa24e65d86c",
+    "staged_sha256": "e1dddaccfc0d40e14bb6645a8ba956959b9550b0c004bd03e2c2fc51673680fa"
+  }
+}

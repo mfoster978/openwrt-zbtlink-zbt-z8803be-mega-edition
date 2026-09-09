@@ -1,0 +1,11 @@
+{
+  "luci-app-modem-watchdog": {
+    "description": "Grant access to modem watchdog UCI",
+    "read": {
+      "uci": [ "modem_watchdog", "qmodem", "network", "firewall" ]
+    },
+    "write": {
+      "uci": [ "modem_watchdog", "qmodem", "network", "firewall" ]
+    }
+  }
+}

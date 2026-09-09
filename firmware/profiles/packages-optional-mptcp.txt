@@ -1,0 +1,13 @@
+# Optional heavier profile: MPTCP-oriented components
+# OpenMPTCProuter itself is a full stack and usually built from its own tree,
+# but these packages are useful when testing MPTCP-capable userland pieces.
+mptcpize
+mptcp
+luci-app-mptcp
+luci-app-openmptcprouter
+omr-tracker
+luci-app-omr-tracker
+ip-full
+tc
+tcpdump
+conntrack

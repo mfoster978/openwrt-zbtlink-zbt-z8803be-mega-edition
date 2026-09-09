@@ -1,0 +1,94 @@
+name: Build OpenWrt Firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      openwrt_git_ref:
+        description: "OpenWrt git ref/branch/tag"
+        required: true
+        default: "openwrt-23.05"
+      enable_openmptcp:
+        description: "Enable OpenMPTCProuter feed/packages"
+        required: true
+        default: "true"
+      include_backup_images:
+        description: "Include artifacts/router-backups into image (if present)"
+        required: true
+        default: "false"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    env:
+      OPENWRT_ROOT: /workspace/openwrt
+      OPENWRT_GIT_URL: https://github.com/openwrt/openwrt.git
+      OPENWRT_GIT_REF: ${{ github.event.inputs.openwrt_git_ref }}
+      ALLOW_CLONE_OPENWRT: "1"
+      CUSTOM_FEED_DIR: /workspace/firmware/feeds
+      FILES_OVERLAY_DIR: /workspace/firmware/files
+      PROFILE_PACKAGES_FILE: /workspace/firmware/profiles/packages-default.txt
+      PROFILE_KCONFIG_FILE: /workspace/firmware/profiles/kconfig-fragment.conf
+      ENABLE_OPENMPTCP: ${{ github.event.inputs.enable_openmptcp == 'true' && '1' || '0' }}
+      INCLUDE_BACKUP_IMAGES: ${{ github.event.inputs.include_backup_images == 'true' && '1' || '0' }}
+      BACKUP_IMAGES_DIR: /workspace/artifacts/router-backups
+      TARGET: mediatek/filogic
+      SUBTARGET: filogic
+      DEVICE: zbtlink_zbt-z8803be
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create output directories
+        run: |
+          mkdir -p artifacts/build-logs
+          mkdir -p artifacts/build-output
+
+      - name: Build remote builder image
+        run: |
+          docker build -f firmware/docker/Dockerfile.remote-builder -t owrt-remote-builder .
+
+      - name: Run OpenWrt build
+        run: |
+          set -o pipefail
+          docker run --rm \
+            -e OPENWRT_ROOT \
+            -e OPENWRT_GIT_URL \
+            -e OPENWRT_GIT_REF \
+            -e ALLOW_CLONE_OPENWRT \
+            -e CUSTOM_FEED_DIR \
+            -e FILES_OVERLAY_DIR \
+            -e PROFILE_PACKAGES_FILE \
+            -e PROFILE_KCONFIG_FILE \
+            -e ENABLE_OPENMPTCP \
+            -e INCLUDE_BACKUP_IMAGES \
+            -e BACKUP_IMAGES_DIR \
+            -e TARGET \
+            -e SUBTARGET \
+            -e DEVICE \
+            -v "${PWD}:/workspace" \
+            owrt-remote-builder \
+            bash /workspace/firmware/docker/build-openwrt.sh \
+            | tee artifacts/build-logs/openwrt-build.log
+
+      - name: Collect build evidence
+        if: always()
+        run: |
+          if [ -f openwrt/.config ]; then cp openwrt/.config artifacts/build-output/resolved.config; fi
+          if [ -f openwrt/.config.bak ]; then cp openwrt/.config.bak artifacts/build-output/resolved.config.bak; fi
+          if [ -d openwrt/bin/targets ]; then cp -a openwrt/bin/targets artifacts/build-output/targets; fi
+          if [ -f firmware/scripts/verify-router-runtime.sh ]; then cp firmware/scripts/verify-router-runtime.sh artifacts/build-output/verify-router-runtime.sh; fi
+          if [ -d firmware/files ]; then cp -a firmware/files artifacts/build-output/files-overlay; fi
+
+      - name: Upload firmware artifacts and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-firmware-build-${{ github.run_number }}
+          path: |
+            artifacts/build-logs
+            artifacts/build-output
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+src="/usr/share/luci/menu.d/luci-app-openmptcprouter.json"
+dst="/usr/share/luci/menu.d/zz-openmptcprouter-network.json"
+
+[ -f "$src" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+key="$(jq -r 'keys[] | select(test("openmptcprouter"))' "$src" | head -n1)"
+[ -n "${key:-}" ] || exit 0
+
+jq -c --arg key "$key" '
+  {
+    "admin/network/openmptcprouter":
+      (.[$key] + {"order": 96})
+  }
+' "$src" > "$dst.tmp" && mv "$dst.tmp" "$dst"
+
+exit 0

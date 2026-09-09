@@ -1,0 +1,48 @@
+#!/bin/sh
+set -eu
+printf 'Content-Type: application/json\r\n\r\n'
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+run_speedtest_netperf() {
+	tmp="/tmp/speedtest-netperf.$$.$RANDOM.json"
+	if speedtest-netperf --json >"$tmp" 2>/tmp/speedtest-lite.err; then
+		dl="$(jq -r '.download_mbps // 0' "$tmp" 2>/dev/null || echo 0)"
+		ul="$(jq -r '.upload_mbps // 0' "$tmp" 2>/dev/null || echo 0)"
+		ping="$(jq -r '.latency_ms // 0' "$tmp" 2>/dev/null || echo 0)"
+		server="$(jq -r '.server_name // .server // "speedtest-netperf"' "$tmp" 2>/dev/null || echo speedtest-netperf)"
+		rm -f "$tmp"
+		echo "{\"ok\":true,\"runner\":\"speedtest-netperf\",\"download_mbps\":$dl,\"upload_mbps\":$ul,\"ping_ms\":$ping,\"server\":\"$(json_escape "$server")\"}"
+		return 0
+	fi
+	return 1
+}
+
+run_speedtest_go() {
+	tmp="/tmp/speedtest-go.$$.$RANDOM.json"
+	if speedtest-go --json >"$tmp" 2>/tmp/speedtest-lite.err; then
+		dl_bps="$(jq -r '.download.bandwidth // 0' "$tmp" 2>/dev/null || echo 0)"
+		ul_bps="$(jq -r '.upload.bandwidth // 0' "$tmp" 2>/dev/null || echo 0)"
+		ping="$(jq -r '.ping.latency // .ping.jitter // 0' "$tmp" 2>/dev/null || echo 0)"
+		server="$(jq -r '.server.name // "speedtest-go"' "$tmp" 2>/dev/null || echo speedtest-go)"
+		dl="$(awk -v b="$dl_bps" 'BEGIN { printf "%.2f", (b*8/1000000) }')"
+		ul="$(awk -v b="$ul_bps" 'BEGIN { printf "%.2f", (b*8/1000000) }')"
+		rm -f "$tmp"
+		echo "{\"ok\":true,\"runner\":\"speedtest-go\",\"download_mbps\":$dl,\"upload_mbps\":$ul,\"ping_ms\":$ping,\"server\":\"$(json_escape "$server")\"}"
+		return 0
+	fi
+	return 1
+}
+
+if command -v speedtest-netperf >/dev/null 2>&1 && run_speedtest_netperf; then
+	exit 0
+fi
+if command -v speedtest-go >/dev/null 2>&1 && run_speedtest_go; then
+	exit 0
+fi
+
+err="$(cat /tmp/speedtest-lite.err 2>/dev/null || true)"
+echo "{\"ok\":false,\"error\":\"$(json_escape "$err")\"}"
+exit 0

@@ -1,0 +1,13 @@
+{
+  "admin/network/modem_watchdog": {
+    "title": "Modem Watchdog",
+    "order": 95,
+    "action": {
+      "type": "view",
+      "path": "modem-watchdog/config"
+    },
+    "depends": {
+      "acl": [ "luci-app-modem-watchdog" ]
+    }
+  }
+}

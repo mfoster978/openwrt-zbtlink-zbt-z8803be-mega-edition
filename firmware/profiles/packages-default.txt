@@ -1,0 +1,18 @@
+# Core LuCI + multiwan + VPN + speed test UX
+luci
+luci-ssl
+mwan3
+luci-app-mwan3
+tailscale
+luci-app-tailscale
+openvpn-openssl
+luci-app-openvpn
+kmod-tun
+speedtest-netperf
+speedtest-go
+ethtool
+jq
+curl
+# custom UX package in this repo feed
+luci-app-modem-watchdog
+luci-app-speedtest-lite

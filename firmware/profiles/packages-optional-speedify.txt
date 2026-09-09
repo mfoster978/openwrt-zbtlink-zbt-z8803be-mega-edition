@@ -1,0 +1,3 @@
+# Optional Speedify bundle (requires a feed that provides these package names).
+speedify
+luci-app-speedify

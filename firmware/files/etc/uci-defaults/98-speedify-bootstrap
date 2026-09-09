@@ -1,0 +1,56 @@
+#!/bin/sh
+set -eu
+
+log() { logger -t speedify-bootstrap "$*"; }
+
+already_installed() {
+	if command -v speedify_cli >/dev/null 2>&1; then
+		return 0
+	fi
+	[ -x /usr/share/speedify/speedify_cli ]
+}
+
+install_with_official_script() {
+	wget -q https://get.speedify.com -O- | sh >/tmp/speedify-bootstrap.log 2>&1
+}
+
+install_manual_fallback() {
+	if command -v opkg >/dev/null 2>&1; then
+		opkg update >/tmp/speedify-opkg-update.log 2>&1 || true
+		arch="$(opkg print-architecture | awk 'END{print $2}')"
+		[ -n "${arch:-}" ] || return 1
+		wget -q "https://downloads.speedify.com/speedify_${arch}.ipk" -O /tmp/speedify.ipk || return 1
+		wget -q "https://downloads.speedify.com/luci-app-speedify_all.ipk" -O /tmp/luci-app-speedify_all.ipk || return 1
+		opkg install /tmp/speedify.ipk /tmp/luci-app-speedify_all.ipk >/tmp/speedify-opkg-install.log 2>&1 || return 1
+		return 0
+	fi
+	if command -v apk >/dev/null 2>&1; then
+		apk update >/tmp/speedify-apk-update.log 2>&1 || true
+		arch="$(cat /etc/apk/arch 2>/dev/null || true)"
+		[ -n "${arch:-}" ] || return 1
+		wget -q "https://downloads.speedify.com/speedify_${arch}.apk" -O /tmp/speedify.apk || return 1
+		wget -q "https://downloads.speedify.com/luci-app-speedify_noarch.apk" -O /tmp/luci-app-speedify_noarch.apk || return 1
+		apk add /tmp/speedify.apk /tmp/luci-app-speedify_noarch.apk >/tmp/speedify-apk-install.log 2>&1 || return 1
+		return 0
+	fi
+	return 1
+}
+
+if already_installed; then
+	log "already installed"
+	exit 0
+fi
+
+if install_with_official_script; then
+	if already_installed; then
+		log "installed via official script"
+		exit 0
+	fi
+fi
+if install_manual_fallback; then
+	log "installed via manual fallback"
+	exit 0
+fi
+
+log "installation failed; check /tmp/speedify-bootstrap.log and /tmp/speedify-*-install.log"
+exit 0
