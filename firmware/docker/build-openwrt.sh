@@ -98,6 +98,27 @@ if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
 fi
+required_config_flags=(
+  "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y"
+  "CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y"
+  "CONFIG_PACKAGE_kmod-usb-wdm=y"
+  "CONFIG_PACKAGE_kmod-usb-serial-option=y"
+  "CONFIG_PACKAGE_uqmi=y"
+  "CONFIG_PACKAGE_umbim=y"
+  "CONFIG_PACKAGE_qmodem=y"
+  "CONFIG_PACKAGE_luci-app-qmodem=y"
+  "CONFIG_PACKAGE_mwan3=y"
+  "CONFIG_PACKAGE_luci-app-mwan3=y"
+  "CONFIG_PACKAGE_tailscale=y"
+  "CONFIG_PACKAGE_luci-app-modem-watchdog=y"
+  "CONFIG_PACKAGE_luci-app-speedtest-lite=y"
+)
+for cfg in "${required_config_flags[@]}"; do
+  if ! grep -q "^${cfg}$" .config; then
+    echo "Required package missing from resolved config: ${cfg}" >&2
+    exit 3
+  fi
+done
 make tools/install -j1 V=s
 make toolchain/install -j1 V=s
 make package/feeds/packages/golang-bootstrap/host/compile -j1 V=s
