@@ -63,7 +63,7 @@ jobs:
             '876ec301cee1a2bb9136ccef6c050762456525b15ac645581b44f0c16630947d' \
             "${speedify_apk}" | sha256sum -c -
           printf '%s  %s\n' \
-            'efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167d' \
+            'efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167' \
             "${speedify_luci_apk}" | sha256sum -c -
 
       - name: Free runner disk space

@@ -44,7 +44,14 @@ grep -q "EXPECTED_OPENWRT_COMMIT:-edc738504fe8fae81eb15de967456204699b1830" \
 grep -q "EXPECTED_ARCH='aarch64_cortex-a53'" firmware/files/usr/sbin/speedify-installer-loop
 grep -q "SPEEDIFY_SHA256='876ec301cee1a2bb9136ccef6c050762456525b15ac645581b44f0c16630947d'" \
   firmware/files/usr/sbin/speedify-installer-loop
-grep -q "LUCI_SHA256='efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167d'" \
+grep -q "LUCI_SHA256='efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167'" \
   firmware/files/usr/sbin/speedify-installer-loop
+while IFS= read -r checksum; do
+  [[ "${checksum}" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "Invalid Speedify SHA256 constant: ${checksum}" >&2
+    exit 1
+  }
+done < <(sed -n "s/^\(SPEEDIFY_SHA256\|LUCI_SHA256\)='\([^']*\)'$/\2/p" \
+  firmware/files/usr/sbin/speedify-installer-loop)
 
 echo 'firmware_input_checks=passed'
