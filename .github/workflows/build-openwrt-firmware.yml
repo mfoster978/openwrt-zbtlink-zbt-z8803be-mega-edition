@@ -10,7 +10,7 @@ on:
       enable_openmptcp:
         description: "Enable OpenMPTCProuter feed/packages"
         required: true
-        default: "true"
+        default: "false"
       include_backup_images:
         description: "Include artifacts/router-backups into image (if present)"
         required: true

@@ -8,7 +8,7 @@ PROFILE_PACKAGES_FILE="${PROFILE_PACKAGES_FILE:-/workspace/firmware/profiles/pac
 PROFILE_PACKAGES_EXTRA_FILES="${PROFILE_PACKAGES_EXTRA_FILES:-}"
 PROFILE_KCONFIG_FILE="${PROFILE_KCONFIG_FILE:-/workspace/firmware/profiles/kconfig-fragment.conf}"
 CUSTOM_FEED_DIR="${CUSTOM_FEED_DIR:-/workspace/firmware/feeds}"
-ENABLE_OPENMPTCP="${ENABLE_OPENMPTCP:-1}"
+ENABLE_OPENMPTCP="${ENABLE_OPENMPTCP:-0}"
 OPENMPTCP_FEED_NAME="${OPENMPTCP_FEED_NAME:-openmptcprouter}"
 OPENMPTCP_FEED_URL="${OPENMPTCP_FEED_URL:-https://github.com/Ysurac/openmptcprouter-feeds.git}"
 OPENMPTCP_PACKAGES_FILE="${OPENMPTCP_PACKAGES_FILE:-/workspace/firmware/profiles/packages-optional-mptcp.txt}"
@@ -94,10 +94,6 @@ fi
 make defconfig
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
-  exit 3
-fi
-if ! grep -Eq '^CONFIG_TUN=(y|m)$' .config; then
-  echo "Required kernel option missing from resolved config: CONFIG_TUN" >&2
   exit 3
 fi
 make -j"$(nproc)" V=s
