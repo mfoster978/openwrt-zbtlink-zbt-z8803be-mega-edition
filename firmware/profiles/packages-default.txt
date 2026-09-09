@@ -21,6 +21,8 @@ tailscale
 luci-app-tailscale
 openvpn-openssl
 luci-app-openvpn
+luci-nginx
+python3-light
 kmod-tun
 speedtest-netperf
 speedtest-go

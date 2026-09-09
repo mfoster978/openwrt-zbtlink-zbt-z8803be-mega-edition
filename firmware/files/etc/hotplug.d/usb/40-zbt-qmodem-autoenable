@@ -1,8 +1,7 @@
 #!/bin/sh
 # Auto-enable the QModem profile for the physical Quectel modem that emitted
-# this USB event. 5G1 is powered by default, while 5G2 remains opt-in through
-# its GPIO switch; when 5G2 is powered and enumerates, it must receive the
-# same QModem and firewall integration without modifying the 5G1 profile.
+# this USB event. Both modem slots are expected to be powered by default; this
+# hook reconciles only the emitting slot and preserves the peer slot state.
 
 [ "$ACTION" = "add" ] || exit 0
 [ -n "$DEVICENAME" ] || exit 0
