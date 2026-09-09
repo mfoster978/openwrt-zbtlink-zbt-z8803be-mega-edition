@@ -80,8 +80,8 @@ jobs:
           docker system prune --all --force
           df -h /
           available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-          if [ "${available_kb}" -lt 47185920 ]; then
-            echo "Less than 45 GiB is available for the OpenWrt build" >&2
+          if [ "${available_kb}" -lt 41943040 ]; then
+            echo "Less than 40 GiB is available for the OpenWrt build" >&2
             exit 1
           fi
 
