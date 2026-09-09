@@ -31,8 +31,8 @@ jobs:
       FILES_OVERLAY_DIR: /workspace/firmware/files
       PROFILE_PACKAGES_FILE: /workspace/firmware/profiles/packages-default.txt
       PROFILE_KCONFIG_FILE: /workspace/firmware/profiles/kconfig-fragment.conf
-      ENABLE_OPENMPTCP: ${{ github.event.inputs.enable_openmptcp == 'true' && '1' || '0' }}
-      INCLUDE_BACKUP_IMAGES: ${{ github.event.inputs.include_backup_images == 'true' && '1' || '0' }}
+      ENABLE_OPENMPTCP_INPUT: ${{ github.event.inputs.enable_openmptcp }}
+      INCLUDE_BACKUP_IMAGES_INPUT: ${{ github.event.inputs.include_backup_images }}
       BACKUP_IMAGES_DIR: /workspace/artifacts/router-backups
       TARGET: mediatek/filogic
       SUBTARGET: filogic
@@ -53,6 +53,10 @@ jobs:
       - name: Run OpenWrt build
         run: |
           set -o pipefail
+          ENABLE_OPENMPTCP=0
+          INCLUDE_BACKUP_IMAGES=0
+          if [ "${ENABLE_OPENMPTCP_INPUT}" = "true" ]; then ENABLE_OPENMPTCP=1; fi
+          if [ "${INCLUDE_BACKUP_IMAGES_INPUT}" = "true" ]; then INCLUDE_BACKUP_IMAGES=1; fi
           docker run --rm \
             -e OPENWRT_ROOT \
             -e OPENWRT_GIT_URL \
@@ -62,8 +66,8 @@ jobs:
             -e FILES_OVERLAY_DIR \
             -e PROFILE_PACKAGES_FILE \
             -e PROFILE_KCONFIG_FILE \
-            -e ENABLE_OPENMPTCP \
-            -e INCLUDE_BACKUP_IMAGES \
+            -e ENABLE_OPENMPTCP="${ENABLE_OPENMPTCP}" \
+            -e INCLUDE_BACKUP_IMAGES="${INCLUDE_BACKUP_IMAGES}" \
             -e BACKUP_IMAGES_DIR \
             -e TARGET \
             -e SUBTARGET \
