@@ -78,31 +78,6 @@ physical_device() {
 	printf '%s\n' "$found"
 }
 
-# Enumeration is not proof of SIM readiness. Never activate from this helper.
-prepare_sim2_offline() {
-	local device metric spec key value dirty=0
-	device="$(physical_device 2_1)" || return 1
-	metric="$(configured_metric 2_1)" || return 1
-	# Preparation must not silently select a route preference supplied by old defaults.
-	[ "$metric" = 210 ] || return 1
-	for spec in \
-		"2_1=interface" "2_1.proto=dhcp" "2_1.device=$device" \
-		"2_1.ifname=$device" "2_1.modem_config=2_1" "2_1.metric=$metric" \
-		"2_1.auto=0" "2_1.disabled=1" "2_1.defaultroute=0" "2_1.peerdns=0" \
-		"2_1v6=interface" "2_1v6.proto=dhcpv6" "2_1v6.device=@2_1" \
-		"2_1v6.modem_config=2_1" "2_1v6.metric=$metric" \
-		"2_1v6.auto=0" "2_1v6.disabled=1" "2_1v6.defaultroute=0"
-	do
-		key=${spec%%=*}
-		value=${spec#*=}
-		if [ "$(uci -q get "network.$key")" != "$value" ]; then
-			uci -q set "network.$key=$value" || return 1
-			dirty=1
-		fi
-	done
-	[ "$dirty" = 0 ] || uci -q commit network
-	# No runtime reload, ifup, firewall reload, GPIO or modem control.
-}
 
 is_active_rndis() {
 	local netdev sysdev usbdev driver
@@ -150,10 +125,6 @@ is_active_rndis && exit 0
 		return 0
 	}
 
-	if [ "$section" = 2_1 ]; then
-		prepare_sim2_offline
-		exit 0
-	fi
 	metric="$(configured_metric "$section")" || exit 0
 
 	qdirty=0
