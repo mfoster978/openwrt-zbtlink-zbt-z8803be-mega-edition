@@ -12,12 +12,16 @@ printf 1 > /sys/class/gpio/5g1/value 2>/dev/null || true
 printf 1 > /sys/class/gpio/5g2/value 2>/dev/null || true
 
 # Modem bring-up defaults.
+uci -q get qmodem.4_1 >/dev/null 2>&1 || uci -q set qmodem.4_1='modem-device'
+uci -q get qmodem.2_1 >/dev/null 2>&1 || uci -q set qmodem.2_1='modem-device'
 uci -q set qmodem.main.enable_dial='1'
 uci -q set qmodem.main.block_auto_probe='0'
 uci -q set qmodem.4_1.state='enabled'
 uci -q set qmodem.2_1.state='enabled'
 uci -q set qmodem.4_1.enable_dial='1'
 uci -q set qmodem.2_1.enable_dial='1'
+uci -q set qmodem.4_1.metric='200'
+uci -q set qmodem.2_1.metric='210'
 uci -q set qmodem.4_1.pdp_type='ipv4v6'
 uci -q set qmodem.2_1.pdp_type='ipv4v6'
 uci -q set qmodem.4_1.alias='modem1'

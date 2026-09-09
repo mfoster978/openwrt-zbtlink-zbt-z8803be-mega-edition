@@ -3,13 +3,37 @@ set -eu
 
 # Ensure WAN zone tracks both cellular interfaces.
 wan_zone="$(uci -q show firewall | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p' | while read -r s; do [ "$(uci -q get "firewall.$s.name")" = "wan" ] && { echo "$s"; break; }; done)"
+HAS_WAN=0
+if uci -q get network.wan >/dev/null 2>&1; then
+	HAS_WAN=1
+fi
 if [ -n "${wan_zone:-}" ]; then
+	if [ "$HAS_WAN" = "1" ]; then
+		case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in *" wan "*) ;; *) uci -q add_list "firewall.$wan_zone.network=wan" ;; esac
+	fi
 	case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in *" 4_1 "*) ;; *) uci -q add_list "firewall.$wan_zone.network=4_1" ;; esac
 	case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in *" 2_1 "*) ;; *) uci -q add_list "firewall.$wan_zone.network=2_1" ;; esac
 	uci -q commit firewall
 fi
 
 # Interface tracking (modem2 can remain disabled until operator enables it).
+if [ "$HAS_WAN" = "1" ]; then
+	uci -q set mwan3.wan=interface
+	uci -q set mwan3.wan.enabled='1'
+	uci -q set mwan3.wan.initial_state='online'
+	uci -q set mwan3.wan.family='ipv4'
+	uci -q set mwan3.wan.track_method='ping'
+	uci -q set mwan3.wan.count='1'
+	uci -q set mwan3.wan.size='56'
+	uci -q set mwan3.wan.max_ttl='60'
+	uci -q set mwan3.wan.timeout='2'
+	uci -q set mwan3.wan.interval='5'
+	uci -q set mwan3.wan.down='3'
+	uci -q set mwan3.wan.up='2'
+	uci -q del mwan3.wan.track_ip 2>/dev/null || true
+	uci -q add_list mwan3.wan.track_ip='1.1.1.1'
+	uci -q add_list mwan3.wan.track_ip='8.8.8.8'
+fi
 uci -q set mwan3.4_1=interface
 uci -q set mwan3.4_1.enabled='1'
 uci -q set mwan3.4_1.initial_state='online'
@@ -56,15 +80,27 @@ uci -q set mwan3.m2_1_m1_w1=member
 uci -q set mwan3.m2_1_m1_w1.interface='2_1'
 uci -q set mwan3.m2_1_m1_w1.metric='1'
 uci -q set mwan3.m2_1_m1_w1.weight='1'
+if [ "$HAS_WAN" = "1" ]; then
+	uci -q set mwan3.mwan_m1_w3=member
+	uci -q set mwan3.mwan_m1_w3.interface='wan'
+	uci -q set mwan3.mwan_m1_w3.metric='1'
+	uci -q set mwan3.mwan_m1_w3.weight='3'
+fi
 
 uci -q set mwan3.balanced=policy
 uci -q del mwan3.balanced.use_member 2>/dev/null || true
+if [ "$HAS_WAN" = "1" ]; then
+	uci -q add_list mwan3.balanced.use_member='mwan_m1_w3'
+fi
 uci -q add_list mwan3.balanced.use_member='m4_1_m1_w1'
 uci -q add_list mwan3.balanced.use_member='m2_1_m1_w1'
 uci -q set mwan3.balanced.last_resort='unreachable'
 
 uci -q set mwan3.failover=policy
 uci -q del mwan3.failover.use_member 2>/dev/null || true
+if [ "$HAS_WAN" = "1" ]; then
+	uci -q add_list mwan3.failover.use_member='mwan_m1_w3'
+fi
 uci -q add_list mwan3.failover.use_member='m4_1_m1_w1'
 uci -q add_list mwan3.failover.use_member='m2_1_m2_w1'
 uci -q set mwan3.failover.last_resort='unreachable'

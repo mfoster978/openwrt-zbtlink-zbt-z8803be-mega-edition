@@ -6,6 +6,7 @@ STATE_DIR="/tmp/speedify-installer"
 DONE_FILE="/etc/speedify.installed"
 SLEEP_SECONDS="${SPEEDIFY_INSTALL_RETRY_SECONDS:-180}"
 REQUIRE_CHECKSUM="${SPEEDIFY_REQUIRE_CHECKSUM:-1}"
+CHECKSUM_INDEX_URLS="${SPEEDIFY_CHECKSUM_INDEX_URLS:-https://downloads.speedify.com/sha256sums https://downloads.speedify.com/SHA256SUMS}"
 ALLOW_OFFICIAL_SCRIPT_FALLBACK="${SPEEDIFY_ALLOW_OFFICIAL_SCRIPT_FALLBACK:-0}"
 CORE_DEPS="${SPEEDIFY_CORE_DEPS:-ca-bundle ca-certificates curl jq kmod-tun ip-full iptables-nft}"
 
@@ -33,26 +34,67 @@ install_core_deps_opkg() {
 	return 0
 }
 
-verify_checksum_from_sidecar() {
-	local file url sidecar expected actual
-	file="$1"
-	url="$2"
-	sidecar="$STATE_DIR/$(basename "$file").sha256"
+checksum_from_sidecar() {
+	local url sidecar expected
+	url="$1"
+	sidecar="$STATE_DIR/$(basename "$url").sha256"
 	wget -q "${url}.sha256" -O "$sidecar" || return 1
 	expected="$(awk '{print $1}' "$sidecar" | head -n1)"
+	[ -n "${expected:-}" ] || return 1
+	printf '%s' "$expected"
+}
+
+checksum_from_index() {
+	local filename index_url index_file expected
+	filename="$1"
+	for index_url in $CHECKSUM_INDEX_URLS; do
+		index_file="$STATE_DIR/$(basename "$index_url").txt"
+		wget -q "$index_url" -O "$index_file" || continue
+		expected="$(awk -v f="$filename" '$2==f{print $1; exit}' "$index_file")"
+		[ -n "${expected:-}" ] && {
+			printf '%s' "$expected"
+			return 0
+		}
+	done
+	return 1
+}
+
+checksum_from_override() {
+	local override_key expected
+	override_key="$1"
+	eval "expected=\${$override_key:-}"
+	[ -n "${expected:-}" ] || return 1
+	printf '%s' "$expected"
+}
+
+verify_checksum() {
+	local file url override_key expected actual basename
+	file="$1"
+	url="$2"
+	override_key="$3"
+	basename="$(basename "$url")"
+	expected=''
+	expected="$(checksum_from_override "$override_key")" || true
+	if [ -z "${expected:-}" ]; then
+		expected="$(checksum_from_sidecar "$url")" || true
+	fi
+	if [ -z "${expected:-}" ]; then
+		expected="$(checksum_from_index "$basename")" || true
+	fi
 	[ -n "${expected:-}" ] || return 1
 	actual="$(sha256sum "$file" | awk '{print $1}')"
 	[ "$expected" = "$actual" ]
 }
 
 verify_or_fail() {
-	local file url
+	local file url override_key
 	file="$1"
 	url="$2"
+	override_key="$3"
 	if [ "$REQUIRE_CHECKSUM" != "1" ]; then
 		return 0
 	fi
-	verify_checksum_from_sidecar "$file" "$url"
+	verify_checksum "$file" "$url" "$override_key"
 }
 verify_luci() {
 	[ -x /www/cgi-bin/luci ] || return 0
@@ -85,8 +127,8 @@ download_apk_bundle() {
 	luci_url="https://downloads.speedify.com/luci-app-speedify_noarch.apk"
 	wget -q "$speedify_url" -O "$STATE_DIR/speedify.apk" || return 1
 	wget -q "$luci_url" -O "$STATE_DIR/luci-app-speedify_noarch.apk" || return 1
-	verify_or_fail "$STATE_DIR/speedify.apk" "$speedify_url" || return 1
-	verify_or_fail "$STATE_DIR/luci-app-speedify_noarch.apk" "$luci_url" || return 1
+	verify_or_fail "$STATE_DIR/speedify.apk" "$speedify_url" SPEEDIFY_SHA256_SPEEDIFY_APK || return 1
+	verify_or_fail "$STATE_DIR/luci-app-speedify_noarch.apk" "$luci_url" SPEEDIFY_SHA256_LUCI_SPEEDIFY_APK || return 1
 	return 0
 }
 
@@ -106,8 +148,8 @@ install_via_opkg() {
 	luci_url="https://downloads.speedify.com/luci-app-speedify_all.ipk"
 	wget -q "$speedify_url" -O "$STATE_DIR/speedify.ipk" || return 1
 	wget -q "$luci_url" -O "$STATE_DIR/luci-app-speedify_all.ipk" || return 1
-	verify_or_fail "$STATE_DIR/speedify.ipk" "$speedify_url" || return 1
-	verify_or_fail "$STATE_DIR/luci-app-speedify_all.ipk" "$luci_url" || return 1
+	verify_or_fail "$STATE_DIR/speedify.ipk" "$speedify_url" SPEEDIFY_SHA256_SPEEDIFY_IPK || return 1
+	verify_or_fail "$STATE_DIR/luci-app-speedify_all.ipk" "$luci_url" SPEEDIFY_SHA256_LUCI_SPEEDIFY_IPK || return 1
 	opkg install "$STATE_DIR/speedify.ipk" "$STATE_DIR/luci-app-speedify_all.ipk" >/tmp/speedify-opkg-install.log 2>&1 || return 1
 	return 0
 }
