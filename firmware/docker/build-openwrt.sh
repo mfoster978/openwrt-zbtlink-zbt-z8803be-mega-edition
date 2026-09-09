@@ -7,6 +7,7 @@ ALLOW_CLONE_OPENWRT="${ALLOW_CLONE_OPENWRT:-1}"
 PROFILE_PACKAGES_FILE="${PROFILE_PACKAGES_FILE:-/workspace/firmware/profiles/packages-default.txt}"
 PROFILE_PACKAGES_EXTRA_FILES="${PROFILE_PACKAGES_EXTRA_FILES:-}"
 PROFILE_KCONFIG_FILE="${PROFILE_KCONFIG_FILE:-/workspace/firmware/profiles/kconfig-fragment.conf}"
+BASE_CONFIG_FILE="${BASE_CONFIG_FILE:-/workspace/firmware/profiles/base-config-zbt-z8803be-v25.12.021.config}"
 CUSTOM_FEED_DIR="${CUSTOM_FEED_DIR:-/workspace/firmware/feeds}"
 ENABLE_OPENMPTCP="${ENABLE_OPENMPTCP:-0}"
 OPENMPTCP_FEED_NAME="${OPENMPTCP_FEED_NAME:-openmptcprouter}"
@@ -65,9 +66,13 @@ fi
 if [[ -z "${SUBTARGET}" && -n "${target_sub}" ]]; then
   SUBTARGET="${target_sub}"
 fi
+if [[ -f "${BASE_CONFIG_FILE}" ]]; then
+  cp -f "${BASE_CONFIG_FILE}" .config
+else
 cat > .config <<EOF
 CONFIG_TARGET_${target_main}=y
 EOF
+fi
 if [[ -n "${SUBTARGET}" ]]; then
   echo "CONFIG_TARGET_${target_main}_${SUBTARGET}=y" >> .config
   echo "CONFIG_TARGET_DEVICE_${target_main}_${SUBTARGET}_DEVICE_${DEVICE}=y" >> .config
@@ -106,7 +111,10 @@ required_config_flags=(
   "CONFIG_PACKAGE_uqmi=y"
   "CONFIG_PACKAGE_umbim=y"
   "CONFIG_PACKAGE_qmodem=y"
-  "CONFIG_PACKAGE_luci-app-qmodem=y"
+  "CONFIG_PACKAGE_luci-app-qmodem-next=y"
+  "CONFIG_PACKAGE_luci-app-qmodem-monitor=y"
+  "CONFIG_PACKAGE_luci-proto-qmi=y"
+  "CONFIG_PACKAGE_luci-proto-mbim=y"
   "CONFIG_PACKAGE_mwan3=y"
   "CONFIG_PACKAGE_luci-app-mwan3=y"
   "CONFIG_PACKAGE_tailscale=y"

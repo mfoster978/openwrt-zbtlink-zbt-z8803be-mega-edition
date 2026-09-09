@@ -9,8 +9,12 @@ kmod-usb-serial-option
 uqmi
 umbim
 qmodem
-luci-app-qmodem
-quectel-cm
+luci-app-qmodem-next
+luci-app-qmodem-monitor
+luci-app-qmodem-ttlfw4
+luci-proto-qmi
+luci-proto-mbim
+quectel-CM-5G-M
 mwan3
 luci-app-mwan3
 tailscale
