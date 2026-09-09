@@ -41,6 +41,10 @@ docker run --rm -it \
 - LuCI speed test utility is available under `Services -> Speed Test Utility` to run a test on the active connection and show graphical download/upload bars plus latency.
 - `mwan3` is included for user-friendly failover/load-balance policy. True bandwidth bonding (single-flow aggregation) requires a separate architecture (e.g., MPTCP server/client stack) and should be delivered via a dedicated build profile.
 - Speedify is included for modem/WAN bonding support.
+- Speed testing support is baked in via `speedtest-netperf`, `speedtest-go`, and `luci-app-speedtest-lite`.
+- Failover and load-balancing support is baked in via `mwan3`, `luci-app-mwan3`, and first-boot defaults in `firmware/files/etc/uci-defaults/95-mwan3-defaults`.
+- VPN support is baked in via `tailscale`, `luci-app-tailscale`, `openvpn-openssl`, and `luci-app-openvpn`.
+- Required tunnel/kernel support is baked in via `kmod-tun` and `CONFIG_TUN=y` (`firmware/profiles/kconfig-fragment.conf`).
 - When Speedify LuCI UI is desired, `luci-nginx` and `python3-light` are baked in alongside Speedify bootstrap support.
 - OpenMPTCProuter support is optional and off by default (`ENABLE_OPENMPTCP=0`). The LuCI entry remap under `Network` is applied only when `luci-app-openmptcprouter` is present.
 - To produce a remote Docker environment, run the same container on a remote Docker host (or CI runner) and mount both your OpenWrt source tree and this repository into `/workspace`.
@@ -49,3 +53,5 @@ docker run --rm -it \
 - Enforced required modem stack packages and fail-fast config checks in the bake script so missing modem symbols stop the build immediately.
 - Aligned modem defaults to current router behavior: both modem slots default on, aliases fixed as `modem1`/`modem2`, and `proto=none` retained intentionally for QModem-managed data paths.
 - Added/kept custom integration features: LuCI Modem Watchdog app, LuCI Speed Test Utility app, mwan3 default failover/load-balance templates, OpenMPTCProuter network-menu remap hook, and boot-time cellular defaults overlay.
+- Replaced the old one-shot Speedify bootstrap flow with a managed installer service entrypoint and boot hook integration.
+- Baked additional UI/runtime dependencies for Speedify LuCI integration: `luci-nginx` and `python3-light`.
