@@ -6,7 +6,7 @@ on:
       openwrt_git_ref:
         description: "OpenWrt git ref/branch/tag"
         required: true
-        default: "openwrt-23.05"
+        default: "main"
       enable_openmptcp:
         description: "Enable OpenMPTCProuter feed/packages"
         required: true
@@ -24,7 +24,7 @@ jobs:
       contents: read
     env:
       OPENWRT_ROOT: /workspace/openwrt
-      OPENWRT_GIT_URL: https://github.com/openwrt/openwrt.git
+      OPENWRT_GIT_URL: https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git
       OPENWRT_GIT_REF: ${{ github.event.inputs.openwrt_git_ref }}
       ALLOW_CLONE_OPENWRT: "1"
       CUSTOM_FEED_DIR: /workspace/firmware/feeds

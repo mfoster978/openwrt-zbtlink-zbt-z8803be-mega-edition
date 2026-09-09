@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 OPENWRT_ROOT="${OPENWRT_ROOT:-/workspace/openwrt}"
-OPENWRT_GIT_URL="${OPENWRT_GIT_URL:-https://github.com/openwrt/openwrt.git}"
-OPENWRT_GIT_REF="${OPENWRT_GIT_REF:-openwrt-23.05}"
+OPENWRT_GIT_URL="${OPENWRT_GIT_URL:-https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git}"
+OPENWRT_GIT_REF="${OPENWRT_GIT_REF:-main}"
 ALLOW_CLONE_OPENWRT="${ALLOW_CLONE_OPENWRT:-1}"
 PROFILE_PACKAGES_FILE="${PROFILE_PACKAGES_FILE:-/workspace/firmware/profiles/packages-default.txt}"
 PROFILE_PACKAGES_EXTRA_FILES="${PROFILE_PACKAGES_EXTRA_FILES:-}"
