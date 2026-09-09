@@ -1,192 +1,224 @@
 #!/bin/sh
-set -eu
+set -u
 
-TAG="speedify-installer"
-STATE_DIR="/tmp/speedify-installer"
-DONE_FILE="/etc/speedify.installed"
-SLEEP_SECONDS="${SPEEDIFY_INSTALL_RETRY_SECONDS:-180}"
-REQUIRE_CHECKSUM="${SPEEDIFY_REQUIRE_CHECKSUM:-1}"
-CHECKSUM_INDEX_URLS="${SPEEDIFY_CHECKSUM_INDEX_URLS:-https://downloads.speedify.com/sha256sums https://downloads.speedify.com/SHA256SUMS}"
-ALLOW_OFFICIAL_SCRIPT_FALLBACK="${SPEEDIFY_ALLOW_OFFICIAL_SCRIPT_FALLBACK:-0}"
-CORE_DEPS="${SPEEDIFY_CORE_DEPS:-ca-bundle ca-certificates curl jq kmod-tun ip-full iptables-nft}"
+TAG='speedify-installer'
+STATE_DIR='/tmp/speedify-installer'
+BACKUP_DIR='/etc/speedify-bootstrap'
+LOCK_DIR='/var/lock/speedify-installer.lock'
+DONE_FILE='/etc/speedify.installed'
+RETRY_SECONDS="${SPEEDIFY_INSTALL_RETRY_SECONDS:-180}"
+CONNECTIVITY_RETRY_SECONDS='30'
+EXPECTED_ARCH='aarch64_cortex-a53'
+SPEEDIFY_VERSION='17.1.0-r12947'
+SPEEDIFY_URL='https://downloads.speedify.com/speedify_aarch64_cortex-a53.apk'
+SPEEDIFY_SHA256='876ec301cee1a2bb9136ccef6c050762456525b15ac645581b44f0c16630947d'
+LUCI_URL='https://downloads.speedify.com/luci-app-speedify_noarch.apk'
+LUCI_SHA256='efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167d'
+CORE_DEPS='busybox ca-bundle curl kmod-tun libstdcpp6 iptables-nft libkeyutils1 libatomic1 kmod-nft-tproxy iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra iptables-mod-conntrack-extra'
+UI_DEPS='luci-nginx python3-light'
+INSTALL_LUCI="$(uci -q get speedify_bootstrap.main.install_luci 2>/dev/null || echo 1)"
 
-log() { logger -t "$TAG" "$*"; }
-
-already_installed() {
-	command -v speedify_cli >/dev/null 2>&1 || [ -x /usr/share/speedify/speedify_cli ]
+log() {
+	logger -t "$TAG" "$*"
 }
 
-install_core_deps_apk() {
-	local pkg
-	apk update >/tmp/speedify-apk-update.log 2>&1 || true
-	for pkg in $CORE_DEPS; do
-		apk info -e "$pkg" >/dev/null 2>&1 || apk add "$pkg" >/tmp/speedify-apk-deps.log 2>&1 || return 1
-	done
-	return 0
+package_installed() {
+	apk info -e "$1" >/dev/null 2>&1
 }
 
-install_core_deps_opkg() {
-	local pkg
-	opkg update >/tmp/speedify-opkg-update.log 2>&1 || true
-	for pkg in $CORE_DEPS; do
-		opkg status "$pkg" 2>/dev/null | grep -q '^Status:.* installed' || opkg install "$pkg" >/tmp/speedify-opkg-deps.log 2>&1 || return 1
-	done
-	return 0
+packages_complete() {
+	package_installed speedify || return 1
+	command -v speedify_cli >/dev/null 2>&1 || [ -x /usr/share/speedify/speedify_cli ] || return 1
+	if [ "$INSTALL_LUCI" = '1' ]; then
+		package_installed luci-app-speedify || return 1
+	fi
 }
 
-checksum_from_sidecar() {
-	local url sidecar expected
-	url="$1"
-	sidecar="$STATE_DIR/$(basename "$url").sha256"
-	wget -q "${url}.sha256" -O "$sidecar" || return 1
-	expected="$(awk '{print $1}' "$sidecar" | head -n1)"
-	[ -n "${expected:-}" ] || return 1
-	printf '%s' "$expected"
+service_running() {
+	[ -x "/etc/init.d/$1" ] && "/etc/init.d/$1" status >/dev/null 2>&1
 }
 
-checksum_from_index() {
-	local filename index_url index_file expected
-	filename="$1"
-	for index_url in $CHECKSUM_INDEX_URLS; do
-		index_file="$STATE_DIR/$(basename "$index_url").txt"
-		wget -q "$index_url" -O "$index_file" || continue
-		expected="$(awk -v f="$filename" '$2==f{print $1; exit}' "$index_file")"
-		[ -n "${expected:-}" ] && {
-			printf '%s' "$expected"
-			return 0
-		}
+luci_healthy() {
+	[ "$INSTALL_LUCI" = '1' ] || return 0
+	service_running nginx || return 1
+	service_running sfy-ws-auth || return 1
+	nginx -t >/tmp/speedify-nginx-check.log 2>&1 || return 1
+	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/cgi-bin/luci/ 2>/dev/null || true)"
+	case "$http_status" in
+		2??|3??) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+runtime_healthy() {
+	service_running speedify && luci_healthy
+}
+
+wait_for_runtime() {
+	attempt='0'
+	while [ "$attempt" -lt 15 ]; do
+		runtime_healthy && return 0
+		attempt=$((attempt + 1))
+		sleep 2
 	done
 	return 1
 }
 
-checksum_from_override() {
-	local override_key expected
-	override_key="$1"
-	eval "expected=\${$override_key:-}"
-	[ -n "${expected:-}" ] || return 1
-	printf '%s' "$expected"
-}
-
-verify_checksum() {
-	local file url override_key expected actual basename
-	file="$1"
-	url="$2"
-	override_key="$3"
-	basename="$(basename "$url")"
-	expected=''
-	expected="$(checksum_from_override "$override_key")" || true
-	if [ -z "${expected:-}" ]; then
-		expected="$(checksum_from_sidecar "$url")" || true
+backup_uhttpd() {
+	[ "$INSTALL_LUCI" = '1' ] || return 0
+	mkdir -p "$BACKUP_DIR"
+	if [ -f /etc/config/uhttpd ] && [ ! -f "$BACKUP_DIR/uhttpd.before-speedify" ]; then
+		cp -p /etc/config/uhttpd "$BACKUP_DIR/uhttpd.before-speedify"
 	fi
-	if [ -z "${expected:-}" ]; then
-		expected="$(checksum_from_index "$basename")" || true
+}
+
+restore_uhttpd() {
+	[ -f "$BACKUP_DIR/uhttpd.before-speedify" ] || return 0
+	cp -p "$BACKUP_DIR/uhttpd.before-speedify" /etc/config/uhttpd
+	/etc/init.d/nginx stop >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd enable >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+}
+
+activate_services() {
+	/etc/init.d/speedify enable >/dev/null 2>&1 || return 1
+	/etc/init.d/speedify restart >/tmp/speedify-service.log 2>&1 || return 1
+	if [ "$INSTALL_LUCI" = '1' ]; then
+		/etc/init.d/sfy-ws-auth enable >/dev/null 2>&1 || return 1
+		/etc/init.d/sfy-ws-auth restart >/tmp/speedify-ws-auth.log 2>&1 || return 1
+		/etc/init.d/uhttpd stop >/dev/null 2>&1 || true
+		/etc/init.d/nginx enable >/dev/null 2>&1 || return 1
+		/etc/init.d/nginx restart >/tmp/speedify-nginx.log 2>&1 || return 1
 	fi
-	[ -n "${expected:-}" ] || return 1
-	actual="$(sha256sum "$file" | awk '{print $1}')"
-	[ "$expected" = "$actual" ]
 }
 
-verify_or_fail() {
-	local file url override_key
-	file="$1"
-	url="$2"
-	override_key="$3"
-	if [ "$REQUIRE_CHECKSUM" != "1" ]; then
-		return 0
+finalize_luci_webserver() {
+	[ "$INSTALL_LUCI" = '1' ] || return 0
+	uci -q delete uhttpd.main.listen_http 2>/dev/null || true
+	uci -q delete uhttpd.main.listen_https 2>/dev/null || true
+	uci -q commit uhttpd 2>/dev/null || true
+	/etc/init.d/uhttpd disable >/dev/null 2>&1 || true
+}
+
+finish_if_ready() {
+	packages_complete || return 1
+	backup_uhttpd
+	if ! activate_services || ! wait_for_runtime; then
+		log 'packages are present but a service health check failed'
+		[ "$INSTALL_LUCI" = '1' ] && restore_uhttpd
+		return 1
 	fi
-	verify_checksum "$file" "$url" "$override_key"
-}
-verify_luci() {
-	[ -x /www/cgi-bin/luci ] || return 0
-	wget -q -T 8 -O /dev/null http://127.0.0.1/cgi-bin/luci >/tmp/speedify-luci-check.log 2>&1
-}
-
-has_working_wan() {
-	ping -c1 -W2 1.1.1.1 >/dev/null 2>&1
-}
-
-has_working_dns() {
-	nslookup get.speedify.com >/dev/null 2>&1
-}
-
-wait_for_connectivity() {
-	while :; do
-		if has_working_wan && has_working_dns; then
-			return 0
-		fi
-		log "waiting for WAN and DNS before install attempt"
-		sleep 20
-	done
-}
-
-download_apk_bundle() {
-	local arch speedify_url luci_url
-	arch="$(cat /etc/apk/arch 2>/dev/null || true)"
-	[ -n "${arch:-}" ] || return 1
-	speedify_url="https://downloads.speedify.com/speedify_${arch}.apk"
-	luci_url="https://downloads.speedify.com/luci-app-speedify_noarch.apk"
-	wget -q "$speedify_url" -O "$STATE_DIR/speedify.apk" || return 1
-	wget -q "$luci_url" -O "$STATE_DIR/luci-app-speedify_noarch.apk" || return 1
-	verify_or_fail "$STATE_DIR/speedify.apk" "$speedify_url" SPEEDIFY_SHA256_SPEEDIFY_APK || return 1
-	verify_or_fail "$STATE_DIR/luci-app-speedify_noarch.apk" "$luci_url" SPEEDIFY_SHA256_LUCI_SPEEDIFY_APK || return 1
-	return 0
-}
-
-install_via_apk() {
-	install_core_deps_apk || return 1
-	download_apk_bundle || return 1
-	apk add --allow-untrusted "$STATE_DIR/speedify.apk" "$STATE_DIR/luci-app-speedify_noarch.apk" >/tmp/speedify-apk-install.log 2>&1 || return 1
-	return 0
-}
-
-install_via_opkg() {
-	local arch speedify_url luci_url
-	install_core_deps_opkg || return 1
-	arch="$(opkg print-architecture | awk 'END{print $2}')"
-	[ -n "${arch:-}" ] || return 1
-	speedify_url="https://downloads.speedify.com/speedify_${arch}.ipk"
-	luci_url="https://downloads.speedify.com/luci-app-speedify_all.ipk"
-	wget -q "$speedify_url" -O "$STATE_DIR/speedify.ipk" || return 1
-	wget -q "$luci_url" -O "$STATE_DIR/luci-app-speedify_all.ipk" || return 1
-	verify_or_fail "$STATE_DIR/speedify.ipk" "$speedify_url" SPEEDIFY_SHA256_SPEEDIFY_IPK || return 1
-	verify_or_fail "$STATE_DIR/luci-app-speedify_all.ipk" "$luci_url" SPEEDIFY_SHA256_LUCI_SPEEDIFY_IPK || return 1
-	opkg install "$STATE_DIR/speedify.ipk" "$STATE_DIR/luci-app-speedify_all.ipk" >/tmp/speedify-opkg-install.log 2>&1 || return 1
-	return 0
-}
-
-install_via_official_script() {
-	wget -q https://get.speedify.com -O- | sh >/tmp/speedify-bootstrap.log 2>&1
-}
-
-mkdir -p "$STATE_DIR"
-
-if already_installed; then
-	log "already installed"
-	verify_luci && log "luci health probe passed" || log "luci health probe failed; see /tmp/speedify-luci-check.log"
+	finalize_luci_webserver
 	touch "$DONE_FILE"
+	/etc/init.d/speedify-installer disable >/dev/null 2>&1 || true
+	log "Speedify ${SPEEDIFY_VERSION} installation and health checks completed"
+	return 0
+}
+
+baked_dependencies_present() {
+	missing=''
+	deps="$CORE_DEPS"
+	[ "$INSTALL_LUCI" = '1' ] && deps="$deps $UI_DEPS"
+	for package in $deps; do
+		package_installed "$package" || missing="$missing $package"
+	done
+	if [ -n "$missing" ]; then
+		log "required baked packages are missing:$missing"
+		return 1
+	fi
+	return 0
+}
+
+download_checked() {
+	url="$1"
+	destination="$2"
+	expected="$3"
+	partial="${destination}.part"
+	rm -f "$partial"
+	curl -fL --connect-timeout 20 --max-time 600 --retry 3 --retry-delay 5 \
+		-o "$partial" "$url" >/tmp/speedify-download.log 2>&1 || {
+		rm -f "$partial"
+		return 1
+	}
+	actual="$(sha256sum "$partial" | awk '{print $1}')"
+	if [ "$actual" != "$expected" ]; then
+		log "refusing $(basename "$url"): expected SHA256 $expected, got $actual"
+		rm -f "$partial"
+		return 1
+	fi
+	mv -f "$partial" "$destination"
+}
+
+download_bundle() {
+	download_checked "$SPEEDIFY_URL" "$STATE_DIR/speedify.apk" "$SPEEDIFY_SHA256" || return 1
+	if [ "$INSTALL_LUCI" = '1' ]; then
+		download_checked "$LUCI_URL" "$STATE_DIR/luci-app-speedify.apk" "$LUCI_SHA256" || return 1
+	fi
+}
+
+install_bundle() {
+	set -- "$STATE_DIR/speedify.apk"
+	[ "$INSTALL_LUCI" = '1' ] && set -- "$@" "$STATE_DIR/luci-app-speedify.apk"
+	# Dependencies must come from the matching firmware build. Never fetch a
+	# kernel module from a live repository during first-boot installation.
+	apk add --allow-untrusted --no-network "$@" >/tmp/speedify-apk-install.log 2>&1
+}
+
+has_download_connectivity() {
+	curl -fsSI --connect-timeout 10 --max-time 20 "$SPEEDIFY_URL" >/dev/null 2>&1
+}
+
+[ "$(cat /etc/apk/arch 2>/dev/null || true)" = "$EXPECTED_ARCH" ] || {
+	log "unsupported APK architecture; expected $EXPECTED_ARCH"
+	exit 1
+}
+
+mkdir -p "$STATE_DIR" /var/lock
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+	lock_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+	case "$lock_pid" in
+		''|*[!0-9]*) lock_pid='' ;;
+	esac
+	if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+		log 'another installer instance is already running'
+		exit 0
+	fi
+	rm -f "$LOCK_DIR/pid"
+	rmdir "$LOCK_DIR" 2>/dev/null || {
+		log 'installer lock could not be recovered'
+		exit 1
+	}
+	mkdir "$LOCK_DIR" || exit 1
+fi
+printf '%s\n' "$$" > "$LOCK_DIR/pid"
+cleanup() {
+	rm -f "$STATE_DIR"/*.part
+	rm -f "$LOCK_DIR/pid"
+	rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM
+
+if finish_if_ready; then
 	exit 0
 fi
+rm -f "$DONE_FILE"
 
 while :; do
-	wait_for_connectivity
-	if command -v apk >/dev/null 2>&1 && install_via_apk && already_installed; then
-		log "installed via apk allow-untrusted bundle"
-		verify_luci && log "luci health probe passed" || log "luci health probe failed; see /tmp/speedify-luci-check.log"
-		touch "$DONE_FILE"
+	if ! baked_dependencies_present; then
+		sleep "$RETRY_SECONDS"
+		continue
+	fi
+	if ! has_download_connectivity; then
+		log 'waiting for HTTPS connectivity before installing Speedify'
+		sleep "$CONNECTIVITY_RETRY_SECONDS"
+		continue
+	fi
+	backup_uhttpd
+	if download_bundle && install_bundle && finish_if_ready; then
 		exit 0
 	fi
-	if command -v opkg >/dev/null 2>&1 && install_via_opkg && already_installed; then
-		log "installed via opkg bundle"
-		verify_luci && log "luci health probe passed" || log "luci health probe failed; see /tmp/speedify-luci-check.log"
-		touch "$DONE_FILE"
-		exit 0
-	fi
-	if [ "$ALLOW_OFFICIAL_SCRIPT_FALLBACK" = "1" ] && install_via_official_script && already_installed; then
-		log "installed via official script fallback"
-		verify_luci && log "luci health probe passed" || log "luci health probe failed; see /tmp/speedify-luci-check.log"
-		touch "$DONE_FILE"
-		exit 0
-	fi
-	log "install attempt failed; retrying in ${SLEEP_SECONDS}s"
-	sleep "$SLEEP_SECONDS"
+	[ "$INSTALL_LUCI" = '1' ] && restore_uhttpd
+	log "installation failed; retrying in ${RETRY_SECONDS}s"
+	sleep "$RETRY_SECONDS"
 done

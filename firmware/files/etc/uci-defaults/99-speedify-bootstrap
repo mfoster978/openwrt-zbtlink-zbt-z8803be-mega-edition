@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+uci -q get speedify_bootstrap.main >/dev/null 2>&1 || uci -q set speedify_bootstrap.main='installer'
+if ! uci -q get speedify_bootstrap.main.install_luci >/dev/null 2>&1; then
+	# This image bakes the matching nginx/Python dependencies. Set to 0 before
+	# installation to skip the proprietary Speedify UI and install core only.
+	uci -q set speedify_bootstrap.main.install_luci='1'
+fi
+uci -q commit speedify_bootstrap
+
+# This filename sorts after the cellular defaults, avoiding concurrent network
+# and firewall writes during the first installation attempt.
+if [ -x /etc/init.d/speedify-installer ]; then
+	/etc/init.d/speedify-installer enable >/dev/null 2>&1 || true
+	/etc/init.d/speedify-installer start >/dev/null 2>&1 || true
+fi
+exit 0

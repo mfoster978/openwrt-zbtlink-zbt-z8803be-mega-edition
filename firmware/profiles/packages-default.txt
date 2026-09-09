@@ -21,9 +21,21 @@ tailscale
 luci-app-tailscale
 openvpn-openssl
 luci-app-openvpn
+# Speedify 17.1.0 first-boot APK dependencies. Kernel modules must be baked
+# with this image so apk never tries to fetch ABI-mismatched modules later.
 luci-nginx
 python3-light
 kmod-tun
+libstdcpp
+libkeyutils
+libatomic
+iptables-nft
+kmod-nft-tproxy
+iptables-mod-tproxy
+kmod-tcp-bbr
+iptables-mod-extra
+iptables-mod-conntrack-extra
+ca-bundle
 speedtest-netperf
 speedtest-go
 ethtool

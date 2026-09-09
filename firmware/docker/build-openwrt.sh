@@ -2,17 +2,14 @@
 set -euo pipefail
 OPENWRT_ROOT="${OPENWRT_ROOT:-/workspace/openwrt}"
 OPENWRT_GIT_URL="${OPENWRT_GIT_URL:-https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git}"
-OPENWRT_GIT_REF="${OPENWRT_GIT_REF:-main}"
+OPENWRT_GIT_REF="${OPENWRT_GIT_REF:-v25.12.021}"
+EXPECTED_OPENWRT_COMMIT="${EXPECTED_OPENWRT_COMMIT:-edc738504fe8fae81eb15de967456204699b1830}"
 ALLOW_CLONE_OPENWRT="${ALLOW_CLONE_OPENWRT:-1}"
 PROFILE_PACKAGES_FILE="${PROFILE_PACKAGES_FILE:-/workspace/firmware/profiles/packages-default.txt}"
 PROFILE_PACKAGES_EXTRA_FILES="${PROFILE_PACKAGES_EXTRA_FILES:-}"
 PROFILE_KCONFIG_FILE="${PROFILE_KCONFIG_FILE:-/workspace/firmware/profiles/kconfig-fragment.conf}"
 BASE_CONFIG_FILE="${BASE_CONFIG_FILE:-/workspace/firmware/profiles/base-config-zbt-z8803be-v25.12.021.config}"
 CUSTOM_FEED_DIR="${CUSTOM_FEED_DIR:-/workspace/firmware/feeds}"
-ENABLE_OPENMPTCP="${ENABLE_OPENMPTCP:-0}"
-OPENMPTCP_FEED_NAME="${OPENMPTCP_FEED_NAME:-openmptcprouter}"
-OPENMPTCP_FEED_URL="${OPENMPTCP_FEED_URL:-https://github.com/Ysurac/openmptcprouter-feeds.git}"
-OPENMPTCP_PACKAGES_FILE="${OPENMPTCP_PACKAGES_FILE:-/workspace/firmware/profiles/packages-optional-mptcp.txt}"
 FILES_OVERLAY_DIR="${FILES_OVERLAY_DIR:-/workspace/firmware/files}"
 BACKUP_IMAGES_DIR="${BACKUP_IMAGES_DIR:-/workspace/artifacts/router-backups}"
 INCLUDE_BACKUP_IMAGES="${INCLUDE_BACKUP_IMAGES:-0}"
@@ -31,18 +28,15 @@ if [[ ! -d "${OPENWRT_ROOT}" ]]; then
 fi
 cd "${OPENWRT_ROOT}"
 export FORCE_UNSAFE_CONFIGURE=1
+resolved_openwrt_commit="$(git rev-parse HEAD)"
+echo "OpenWrt source: ${OPENWRT_GIT_URL} ${OPENWRT_GIT_REF} (${resolved_openwrt_commit})"
+if [[ -n "${EXPECTED_OPENWRT_COMMIT}" && "${resolved_openwrt_commit}" != "${EXPECTED_OPENWRT_COMMIT}" ]]; then
+  echo "OpenWrt ref resolved to ${resolved_openwrt_commit}; expected ${EXPECTED_OPENWRT_COMMIT}" >&2
+  exit 2
+fi
 if [[ -d "${CUSTOM_FEED_DIR}" ]]; then
   grep -q "^src-link ${CUSTOM_FEED_NAME} " feeds.conf.default || \
     echo "src-link ${CUSTOM_FEED_NAME} ${CUSTOM_FEED_DIR}" >> feeds.conf.default
-fi
-if [[ "${ENABLE_OPENMPTCP}" = "1" ]]; then
-  grep -q "^src-git ${OPENMPTCP_FEED_NAME} " feeds.conf.default || \
-    echo "src-git ${OPENMPTCP_FEED_NAME} ${OPENMPTCP_FEED_URL}" >> feeds.conf.default
-  if [[ -n "${PROFILE_PACKAGES_EXTRA_FILES}" ]]; then
-    PROFILE_PACKAGES_EXTRA_FILES="${PROFILE_PACKAGES_EXTRA_FILES},${OPENMPTCP_PACKAGES_FILE}"
-  else
-    PROFILE_PACKAGES_EXTRA_FILES="${OPENMPTCP_PACKAGES_FILE}"
-  fi
 fi
 ./scripts/feeds update -a
 ./scripts/feeds install -a
@@ -75,10 +69,11 @@ EOF
 fi
 if [[ -n "${SUBTARGET}" ]]; then
   echo "CONFIG_TARGET_${target_main}_${SUBTARGET}=y" >> .config
-  echo "CONFIG_TARGET_DEVICE_${target_main}_${SUBTARGET}_DEVICE_${DEVICE}=y" >> .config
+  target_device_config="CONFIG_TARGET_${target_main}_${SUBTARGET}_DEVICE_${DEVICE}"
 else
-  echo "CONFIG_TARGET_DEVICE_${target_main}_DEVICE_${DEVICE}=y" >> .config
+  target_device_config="CONFIG_TARGET_${target_main}_DEVICE_${DEVICE}"
 fi
+echo "${target_device_config}=y" >> .config
 if [[ -f "${PROFILE_PACKAGES_FILE}" ]]; then
   while IFS= read -r pkg; do
     [[ -z "${pkg}" || "${pkg}" =~ ^# ]] && continue
@@ -104,6 +99,7 @@ if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   exit 3
 fi
 required_config_flags=(
+  "${target_device_config}=y"
   "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y"
   "CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y"
   "CONFIG_PACKAGE_kmod-usb-wdm=y"
@@ -113,13 +109,37 @@ required_config_flags=(
   "CONFIG_PACKAGE_qmodem=y"
   "CONFIG_PACKAGE_luci-app-qmodem-next=y"
   "CONFIG_PACKAGE_luci-app-qmodem-monitor=y"
+  "CONFIG_PACKAGE_luci-app-qmodem-ttlfw4=y"
+  "CONFIG_PACKAGE_luci-app-qmodem_INCLUDE_ADD_QFIREHOSE_SUPPORT=y"
+  "CONFIG_PACKAGE_luci-app-qmodem_INCLUDE_generic-qmi-wwan=y"
   "CONFIG_PACKAGE_luci-proto-qmi=y"
   "CONFIG_PACKAGE_luci-proto-mbim=y"
+  "CONFIG_PACKAGE_quectel-CM-5G-M=y"
+  "CONFIG_PACKAGE_ndisc6=y"
+  "CONFIG_PACKAGE_kmod-mhi-bus=y"
+  "CONFIG_PACKAGE_kmod-mhi-net=y"
+  "CONFIG_PACKAGE_kmod-mhi-pci-generic=y"
+  "CONFIG_PACKAGE_kmod-mhi-wwan-ctrl=y"
+  "CONFIG_PACKAGE_kmod-mhi-wwan-mbim=y"
   "CONFIG_PACKAGE_mwan3=y"
   "CONFIG_PACKAGE_luci-app-mwan3=y"
   "CONFIG_PACKAGE_tailscale=y"
   "CONFIG_PACKAGE_luci-app-modem-watchdog=y"
   "CONFIG_PACKAGE_luci-app-speedtest-lite=y"
+  "CONFIG_PACKAGE_ca-bundle=y"
+  "CONFIG_PACKAGE_curl=y"
+  "CONFIG_PACKAGE_kmod-tun=y"
+  "CONFIG_PACKAGE_libstdcpp=y"
+  "CONFIG_PACKAGE_libkeyutils=y"
+  "CONFIG_PACKAGE_libatomic=y"
+  "CONFIG_PACKAGE_iptables-nft=y"
+  "CONFIG_PACKAGE_kmod-nft-tproxy=y"
+  "CONFIG_PACKAGE_iptables-mod-tproxy=y"
+  "CONFIG_PACKAGE_kmod-tcp-bbr=y"
+  "CONFIG_PACKAGE_iptables-mod-extra=y"
+  "CONFIG_PACKAGE_iptables-mod-conntrack-extra=y"
+  "CONFIG_PACKAGE_luci-nginx=y"
+  "CONFIG_PACKAGE_python3-light=y"
 )
 for cfg in "${required_config_flags[@]}"; do
   if ! grep -q "^${cfg}$" .config; then
@@ -131,3 +151,58 @@ make tools/install -j1 V=s
 make toolchain/install -j1 V=s
 make package/feeds/packages/golang-bootstrap/host/compile -j1 V=s
 make -j"${FINAL_MAKE_JOBS}" V=s
+
+manifest="$(find "bin/targets/${target_main}/${SUBTARGET}" -maxdepth 1 -type f -name "*zbt-z8803be*.manifest" -print -quit)"
+if [[ -z "${manifest}" ]]; then
+  echo "No ZBT-Z8803BE image manifest was produced" >&2
+  exit 4
+fi
+required_image_packages=(
+  kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim kmod-usb-wdm
+  kmod-usb-serial-option uqmi umbim luci-proto-qmi luci-proto-mbim
+  qmodem luci-app-qmodem-next luci-app-qmodem-monitor
+  luci-app-qmodem-ttlfw4 quectel-CM-5G-M ndisc6
+  kmod-mhi-bus kmod-mhi-net kmod-mhi-pci-generic
+  kmod-mhi-wwan-ctrl kmod-mhi-wwan-mbim mwan3 kmod-tun
+  luci-app-modem-watchdog luci-app-speedtest-lite tailscale
+  ca-bundle curl libstdcpp6 libkeyutils1 libatomic1
+  iptables-nft kmod-nft-tproxy
+  iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra
+  iptables-mod-conntrack-extra luci-nginx python3-light
+)
+for package in "${required_image_packages[@]}"; do
+  if ! grep -q "^${package} - " "${manifest}"; then
+    echo "Required runtime package missing from image manifest: ${package}" >&2
+    exit 4
+  fi
+done
+echo "Validated image manifest: ${manifest}"
+
+rootfs_dir="$(find build_dir -maxdepth 2 -type d -name 'root-mediatek' -print -quit)"
+if [[ -z "${rootfs_dir}" ]]; then
+  echo "Unable to locate the built MediaTek root filesystem" >&2
+  exit 4
+fi
+required_overlay_files=(
+  etc/uci-defaults/95-mwan3-defaults
+  etc/uci-defaults/99-cellular-multiwan-defaults
+  etc/uci-defaults/99-speedify-bootstrap
+  etc/init.d/speedify-installer
+  usr/sbin/speedify-installer-loop
+)
+for overlay_file in "${required_overlay_files[@]}"; do
+  if [[ ! -s "${rootfs_dir}/${overlay_file}" ]]; then
+    echo "Required overlay file missing from built root filesystem: ${overlay_file}" >&2
+    exit 4
+  fi
+done
+echo "Validated files overlay in root filesystem: ${rootfs_dir}"
+
+for image_pattern in '*zbt-z8803be-initramfs-kernel.bin' '*zbt-z8803be-squashfs-sysupgrade.bin'; do
+  image="$(find "bin/targets/${target_main}/${SUBTARGET}" -maxdepth 1 -type f -size +0c -name "${image_pattern}" -print -quit)"
+  if [[ -z "${image}" ]]; then
+    echo "Required ZBT-Z8803BE image was not produced: ${image_pattern}" >&2
+    exit 4
+  fi
+  echo "Validated firmware image: ${image}"
+done

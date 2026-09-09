@@ -6,15 +6,15 @@ on:
       openwrt_git_ref:
         description: "OpenWrt git ref/branch/tag"
         required: true
-        default: "main"
-      enable_openmptcp:
-        description: "Enable OpenMPTCProuter feed/packages"
-        required: true
-        default: "false"
+        default: "v25.12.021"
       include_backup_images:
         description: "Include artifacts/router-backups into image (if present)"
         required: true
         default: "false"
+
+concurrency:
+  group: openwrt-firmware-build
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,7 +31,6 @@ jobs:
       FILES_OVERLAY_DIR: /workspace/firmware/files
       PROFILE_PACKAGES_FILE: /workspace/firmware/profiles/packages-default.txt
       PROFILE_KCONFIG_FILE: /workspace/firmware/profiles/kconfig-fragment.conf
-      ENABLE_OPENMPTCP_INPUT: ${{ github.event.inputs.enable_openmptcp }}
       INCLUDE_BACKUP_IMAGES_INPUT: ${{ github.event.inputs.include_backup_images }}
       BACKUP_IMAGES_DIR: /workspace/artifacts/router-backups
       TARGET: mediatek/filogic
@@ -45,19 +44,58 @@ jobs:
       - name: Create output directories
         run: |
           mkdir -p artifacts/build-logs
+          mkdir -p artifacts/build-diagnostics
           mkdir -p artifacts/build-output
+
+      - name: Validate firmware inputs
+        run: bash firmware/scripts/check-build-inputs.sh
+
+      - name: Verify pinned Speedify downloads
+        run: |
+          speedify_apk="$(mktemp)"
+          speedify_luci_apk="$(mktemp)"
+          trap 'rm -f "${speedify_apk}" "${speedify_luci_apk}"' EXIT
+          curl -fL --retry 3 --retry-all-errors --connect-timeout 20 --max-time 600 \
+            -o "${speedify_apk}" https://downloads.speedify.com/speedify_aarch64_cortex-a53.apk
+          curl -fL --retry 3 --retry-all-errors --connect-timeout 20 --max-time 600 \
+            -o "${speedify_luci_apk}" https://downloads.speedify.com/luci-app-speedify_noarch.apk
+          printf '%s  %s\n' \
+            '876ec301cee1a2bb9136ccef6c050762456525b15ac645581b44f0c16630947d' \
+            "${speedify_apk}" | sha256sum -c -
+          printf '%s  %s\n' \
+            'efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167d' \
+            "${speedify_luci_apk}" | sha256sum -c -
+
+      - name: Free runner disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/share/boost
+          sudo apt-get clean
+          docker system prune --all --force
+          df -h /
+          available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
+          if [ "${available_kb}" -lt 47185920 ]; then
+            echo "Less than 45 GiB is available for the OpenWrt build" >&2
+            exit 1
+          fi
 
       - name: Build remote builder image
         run: |
           docker build -f firmware/docker/Dockerfile.remote-builder -t owrt-remote-builder .
 
       - name: Run OpenWrt build
+        id: openwrt_build
         run: |
           set -o pipefail
-          ENABLE_OPENMPTCP=0
           INCLUDE_BACKUP_IMAGES=0
-          if [ "${ENABLE_OPENMPTCP_INPUT}" = "true" ]; then ENABLE_OPENMPTCP=1; fi
           if [ "${INCLUDE_BACKUP_IMAGES_INPUT}" = "true" ]; then INCLUDE_BACKUP_IMAGES=1; fi
+          set +e
           docker run --rm \
             -e OPENWRT_ROOT \
             -e OPENWRT_GIT_URL \
@@ -67,7 +105,6 @@ jobs:
             -e FILES_OVERLAY_DIR \
             -e PROFILE_PACKAGES_FILE \
             -e PROFILE_KCONFIG_FILE \
-            -e ENABLE_OPENMPTCP="${ENABLE_OPENMPTCP}" \
             -e INCLUDE_BACKUP_IMAGES="${INCLUDE_BACKUP_IMAGES}" \
             -e BACKUP_IMAGES_DIR \
             -e TARGET \
@@ -79,12 +116,16 @@ jobs:
             bash /workspace/firmware/docker/build-openwrt.sh \
             | tee artifacts/build-logs/openwrt-build.log
           rc=${PIPESTATUS[0]}
+          set -e
           if [ "${rc}" -ne 0 ]; then
+            df -h . || true
             if [ -d openwrt/build_dir/hostpkg ]; then
               echo "===== openwrt/build_dir/hostpkg/*golang-bootstrap*/.built check ====="
               find openwrt/build_dir/hostpkg -maxdepth 2 -type d -name '*golang-bootstrap*' -print
               echo "===== openwrt/build_dir/hostpkg/*golang-bootstrap*/ logs ====="
-              find openwrt/build_dir/hostpkg -type f \( -path '*golang-bootstrap*' -o -name 'config.log' \) -print -exec sed -n '1,240p' {} \;
+              find openwrt/build_dir/hostpkg -type f -path '*golang-bootstrap*' \
+                \( -name '*.log' -o -name 'config.log' -o -name 'dump.txt' \) \
+                -print -exec sed -n '1,240p' {} \;
             fi
             if [ -f openwrt/logs/tools/tar/dump.txt ]; then
               echo "===== openwrt/logs/tools/tar/dump.txt ====="
@@ -97,22 +138,37 @@ jobs:
           fi
           exit "${rc}"
 
-      - name: Collect build evidence
-        if: always()
+      - name: Collect validated firmware
+        if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
         run: |
-          if [ -f openwrt/.config ]; then cp openwrt/.config artifacts/build-output/resolved.config; fi
-          if [ -f openwrt/.config.bak ]; then cp openwrt/.config.bak artifacts/build-output/resolved.config.bak; fi
-          if [ -d openwrt/bin/targets ]; then cp -a openwrt/bin/targets artifacts/build-output/targets; fi
-          if [ -f firmware/scripts/verify-router-runtime.sh ]; then cp firmware/scripts/verify-router-runtime.sh artifacts/build-output/verify-router-runtime.sh; fi
-          if [ -d firmware/files ]; then cp -a firmware/files artifacts/build-output/files-overlay; fi
+          cp openwrt/.config artifacts/build-output/resolved.config
+          cp -a openwrt/bin/targets artifacts/build-output/targets
+          cp firmware/scripts/verify-router-runtime.sh artifacts/build-output/verify-router-runtime.sh
 
-      - name: Upload firmware artifacts and logs
-        if: always()
+      - name: Upload validated firmware
+        if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-firmware-build-${{ github.run_number }}
+          path: artifacts/build-output
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Collect build diagnostics
+        if: always()
+        run: |
+          if [ -f openwrt/.config ]; then cp openwrt/.config artifacts/build-diagnostics/resolved.config; fi
+          if [ -f openwrt/.config.bak ]; then cp openwrt/.config.bak artifacts/build-diagnostics/resolved.config.bak; fi
+          if [ -f firmware/scripts/verify-router-runtime.sh ]; then cp firmware/scripts/verify-router-runtime.sh artifacts/build-diagnostics/verify-router-runtime.sh; fi
+          if [ -d firmware/files ]; then cp -a firmware/files artifacts/build-diagnostics/files-overlay; fi
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-build-diagnostics-${{ github.run_number }}
           path: |
             artifacts/build-logs
-            artifacts/build-output
+            artifacts/build-diagnostics
           if-no-files-found: warn
           retention-days: 14

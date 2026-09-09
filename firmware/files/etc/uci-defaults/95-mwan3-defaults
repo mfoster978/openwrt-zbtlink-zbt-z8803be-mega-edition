@@ -1,124 +1,132 @@
 #!/bin/sh
 set -eu
 
-# Ensure WAN zone tracks both cellular interfaces.
-wan_zone="$(uci -q show firewall | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p' | while read -r s; do [ "$(uci -q get "firewall.$s.name")" = "wan" ] && { echo "$s"; break; }; done)"
+network_exists() {
+	uci -q get "network.$1" >/dev/null 2>&1
+}
+
+configure_tracking() {
+	interface="$1"
+	track_ip_1="$2"
+	track_ip_2="$3"
+	uci -q set "mwan3.$interface=interface"
+	uci -q set "mwan3.$interface.enabled=1"
+	uci -q set "mwan3.$interface.initial_state=online"
+	uci -q set "mwan3.$interface.family=ipv4"
+	uci -q set "mwan3.$interface.track_method=ping"
+	uci -q set "mwan3.$interface.reliability=1"
+	uci -q set "mwan3.$interface.count=1"
+	uci -q set "mwan3.$interface.size=56"
+	uci -q set "mwan3.$interface.max_ttl=60"
+	uci -q set "mwan3.$interface.timeout=2"
+	uci -q set "mwan3.$interface.interval=5"
+	uci -q set "mwan3.$interface.down=3"
+	uci -q set "mwan3.$interface.up=2"
+	uci -q del "mwan3.$interface.track_ip" 2>/dev/null || true
+	uci -q add_list "mwan3.$interface.track_ip=$track_ip_1"
+	uci -q add_list "mwan3.$interface.track_ip=$track_ip_2"
+}
+
+configure_member() {
+	member="$1"
+	interface="$2"
+	metric="$3"
+	weight="$4"
+	uci -q set "mwan3.$member=member"
+	uci -q set "mwan3.$member.interface=$interface"
+	uci -q set "mwan3.$member.metric=$metric"
+	uci -q set "mwan3.$member.weight=$weight"
+}
+
+HAS_WAN_SFP=0
 HAS_WAN=0
-if uci -q get network.wan >/dev/null 2>&1; then
-	HAS_WAN=1
-fi
+network_exists wan_sfp && HAS_WAN_SFP=1
+network_exists wan && HAS_WAN=1
+
+# Cellular interfaces belong in the existing WAN firewall zone. Wired
+# interfaces retain the zones selected by the board defaults/operator.
+wan_zone="$(uci -q show firewall | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p' | while read -r section; do
+	[ "$(uci -q get "firewall.$section.name" 2>/dev/null || true)" = 'wan' ] && {
+		echo "$section"
+		break
+	}
+done)"
 if [ -n "${wan_zone:-}" ]; then
-	if [ "$HAS_WAN" = "1" ]; then
-		case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in *" wan "*) ;; *) uci -q add_list "firewall.$wan_zone.network=wan" ;; esac
-	fi
-	case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in *" 4_1 "*) ;; *) uci -q add_list "firewall.$wan_zone.network=4_1" ;; esac
-	case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in *" 2_1 "*) ;; *) uci -q add_list "firewall.$wan_zone.network=2_1" ;; esac
+	for interface in 4_1 2_1; do
+		case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in
+			*" $interface "*) ;;
+			*) uci -q add_list "firewall.$wan_zone.network=$interface" ;;
+		esac
+	done
 	uci -q commit firewall
 fi
 
-# Interface tracking (modem2 can remain disabled until operator enables it).
-if [ "$HAS_WAN" = "1" ]; then
-	uci -q set mwan3.wan=interface
-	uci -q set mwan3.wan.enabled='1'
-	uci -q set mwan3.wan.initial_state='online'
-	uci -q set mwan3.wan.family='ipv4'
-	uci -q set mwan3.wan.track_method='ping'
-	uci -q set mwan3.wan.count='1'
-	uci -q set mwan3.wan.size='56'
-	uci -q set mwan3.wan.max_ttl='60'
-	uci -q set mwan3.wan.timeout='2'
-	uci -q set mwan3.wan.interval='5'
-	uci -q set mwan3.wan.down='3'
-	uci -q set mwan3.wan.up='2'
-	uci -q del mwan3.wan.track_ip 2>/dev/null || true
-	uci -q add_list mwan3.wan.track_ip='1.1.1.1'
-	uci -q add_list mwan3.wan.track_ip='8.8.8.8'
+if [ "$HAS_WAN_SFP" = '1' ]; then
+	configure_tracking wan_sfp 1.1.1.1 8.8.8.8
+	configure_member balanced_wan_sfp wan_sfp 1 3
+	configure_member failover_wan_sfp wan_sfp 1 1
 fi
-uci -q set mwan3.4_1=interface
-uci -q set mwan3.4_1.enabled='1'
-uci -q set mwan3.4_1.initial_state='online'
-uci -q set mwan3.4_1.family='ipv4'
-uci -q set mwan3.4_1.track_method='ping'
-uci -q set mwan3.4_1.count='1'
-uci -q set mwan3.4_1.size='56'
-uci -q set mwan3.4_1.max_ttl='60'
-uci -q set mwan3.4_1.timeout='2'
-uci -q set mwan3.4_1.interval='5'
-uci -q set mwan3.4_1.down='3'
-uci -q set mwan3.4_1.up='2'
-uci -q del mwan3.4_1.track_ip 2>/dev/null || true
-uci -q add_list mwan3.4_1.track_ip='1.1.1.1'
-uci -q add_list mwan3.4_1.track_ip='8.8.8.8'
-
-uci -q set mwan3.2_1=interface
-uci -q set mwan3.2_1.enabled='1'
-uci -q set mwan3.2_1.initial_state='online'
-uci -q set mwan3.2_1.family='ipv4'
-uci -q set mwan3.2_1.track_method='ping'
-uci -q set mwan3.2_1.count='1'
-uci -q set mwan3.2_1.size='56'
-uci -q set mwan3.2_1.max_ttl='60'
-uci -q set mwan3.2_1.timeout='2'
-uci -q set mwan3.2_1.interval='5'
-uci -q set mwan3.2_1.down='3'
-uci -q set mwan3.2_1.up='2'
-uci -q del mwan3.2_1.track_ip 2>/dev/null || true
-uci -q add_list mwan3.2_1.track_ip='1.0.0.1'
-uci -q add_list mwan3.2_1.track_ip='9.9.9.9'
-
-uci -q set mwan3.m4_1_m1_w1=member
-uci -q set mwan3.m4_1_m1_w1.interface='4_1'
-uci -q set mwan3.m4_1_m1_w1.metric='1'
-uci -q set mwan3.m4_1_m1_w1.weight='1'
-
-uci -q set mwan3.m2_1_m2_w1=member
-uci -q set mwan3.m2_1_m2_w1.interface='2_1'
-uci -q set mwan3.m2_1_m2_w1.metric='2'
-uci -q set mwan3.m2_1_m2_w1.weight='1'
-
-uci -q set mwan3.m2_1_m1_w1=member
-uci -q set mwan3.m2_1_m1_w1.interface='2_1'
-uci -q set mwan3.m2_1_m1_w1.metric='1'
-uci -q set mwan3.m2_1_m1_w1.weight='1'
-if [ "$HAS_WAN" = "1" ]; then
-	uci -q set mwan3.mwan_m1_w3=member
-	uci -q set mwan3.mwan_m1_w3.interface='wan'
-	uci -q set mwan3.mwan_m1_w3.metric='1'
-	uci -q set mwan3.mwan_m1_w3.weight='3'
+if [ "$HAS_WAN" = '1' ]; then
+	configure_tracking wan 1.1.1.1 8.8.8.8
+	configure_member balanced_wan wan 1 3
+	configure_member failover_wan wan 2 1
 fi
 
-uci -q set mwan3.balanced=policy
+configure_tracking 4_1 1.1.1.1 8.8.8.8
+configure_tracking 2_1 1.0.0.1 9.9.9.9
+configure_member balanced_4_1 4_1 1 1
+configure_member balanced_2_1 2_1 1 1
+configure_member failover_4_1 4_1 3 1
+configure_member failover_2_1 2_1 4 1
+
+# Remove names from the earlier defaults so they cannot be reused with stale
+# same-tier metrics after an attended upgrade.
+for old_member in m4_1_m1_w1 m2_1_m1_w1 m2_1_m2_w1 mwan_m1_w3; do
+	uci -q delete "mwan3.$old_member" 2>/dev/null || true
+done
+
+uci -q set mwan3.balanced='policy'
 uci -q del mwan3.balanced.use_member 2>/dev/null || true
-if [ "$HAS_WAN" = "1" ]; then
-	uci -q add_list mwan3.balanced.use_member='mwan_m1_w3'
-fi
-uci -q add_list mwan3.balanced.use_member='m4_1_m1_w1'
-uci -q add_list mwan3.balanced.use_member='m2_1_m1_w1'
+[ "$HAS_WAN_SFP" = '1' ] && uci -q add_list mwan3.balanced.use_member='balanced_wan_sfp'
+[ "$HAS_WAN" = '1' ] && uci -q add_list mwan3.balanced.use_member='balanced_wan'
+uci -q add_list mwan3.balanced.use_member='balanced_4_1'
+uci -q add_list mwan3.balanced.use_member='balanced_2_1'
 uci -q set mwan3.balanced.last_resort='unreachable'
 
-uci -q set mwan3.failover=policy
+# Strict default order: SFP WAN, copper WAN, modem 1, then modem 2. Missing
+# wired interfaces are omitted while the remaining order stays intact.
+uci -q set mwan3.failover='policy'
 uci -q del mwan3.failover.use_member 2>/dev/null || true
-if [ "$HAS_WAN" = "1" ]; then
-	uci -q add_list mwan3.failover.use_member='mwan_m1_w3'
-fi
-uci -q add_list mwan3.failover.use_member='m4_1_m1_w1'
-uci -q add_list mwan3.failover.use_member='m2_1_m2_w1'
+[ "$HAS_WAN_SFP" = '1' ] && uci -q add_list mwan3.failover.use_member='failover_wan_sfp'
+[ "$HAS_WAN" = '1' ] && uci -q add_list mwan3.failover.use_member='failover_wan'
+uci -q add_list mwan3.failover.use_member='failover_4_1'
+uci -q add_list mwan3.failover.use_member='failover_2_1'
 uci -q set mwan3.failover.last_resort='unreachable'
 
-uci -q set mwan3.default_rule=rule
+# mwan3 evaluates rules in config order. Remove the stock HTTPS/balanced and
+# stock catch-all rules, then put the narrow speed-test rules before our only
+# IPv4 catch-all rule. mwan3 requires an exact single protocol whenever a
+# destination port is set, so TCP and UDP need separate rules.
+for old_rule in https default_rule_v4 default_rule_v6 speedtest_rule speedtest_tcp speedtest_udp default_rule; do
+	uci -q delete "mwan3.$old_rule" 2>/dev/null || true
+done
+for protocol in tcp udp; do
+	rule="speedtest_$protocol"
+	uci -q set "mwan3.$rule=rule"
+	uci -q set "mwan3.$rule.dest_port=8080,8443"
+	uci -q set "mwan3.$rule.proto=$protocol"
+	uci -q set "mwan3.$rule.sticky=0"
+	uci -q set "mwan3.$rule.use_policy=balanced"
+	uci -q set "mwan3.$rule.family=ipv4"
+done
+
+uci -q set mwan3.default_rule='rule'
 uci -q set mwan3.default_rule.dest_ip='0.0.0.0/0'
 uci -q set mwan3.default_rule.use_policy='failover'
 uci -q set mwan3.default_rule.family='ipv4'
 uci -q set mwan3.default_rule.proto='all'
 
-uci -q set mwan3.speedtest_rule=rule
-uci -q set mwan3.speedtest_rule.dest_port='8080 8443'
-uci -q set mwan3.speedtest_rule.proto='tcp udp'
-uci -q set mwan3.speedtest_rule.sticky='0'
-uci -q set mwan3.speedtest_rule.use_policy='balanced'
-uci -q set mwan3.speedtest_rule.family='ipv4'
-
-uci -q set mwan3.globals=globals
+uci -q set mwan3.globals='globals'
 uci -q set mwan3.globals.enabled='1'
 uci -q set mwan3.globals.mmx_mask='0x3F00'
 uci -q commit mwan3

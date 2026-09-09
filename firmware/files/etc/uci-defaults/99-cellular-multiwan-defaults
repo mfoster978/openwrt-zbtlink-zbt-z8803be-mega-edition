@@ -11,6 +11,31 @@ uci -q set modem_watchdog.global.prefer_fastest='0'
 printf 1 > /sys/class/gpio/5g1/value 2>/dev/null || true
 printf 1 > /sys/class/gpio/5g2/value 2>/dev/null || true
 
+# Far5eer's board defaults create 5g2 as an off-by-default gpio_switch. Seed it
+# on once, but remember that we did so and preserve later operator changes.
+gpio_5g2=''
+if [ "$(uci -q get system.5g2 2>/dev/null || true)" = 'gpio_switch' ]; then
+	gpio_5g2='system.5g2'
+else
+	for gpio_section in $(uci -q show system 2>/dev/null | sed -n 's/^\(system\.[^=]*\)=gpio_switch$/\1/p'); do
+		if [ "$(uci -q get "$gpio_section.gpio_pin" 2>/dev/null || true)" = '5g2' ]; then
+			gpio_5g2="$gpio_section"
+			break
+		fi
+	done
+fi
+if [ -z "$gpio_5g2" ]; then
+	uci -q set system.5g2='gpio_switch'
+	uci -q set system.5g2.name='5g2'
+	uci -q set system.5g2.gpio_pin='5g2'
+	gpio_5g2='system.5g2'
+fi
+if [ "$(uci -q get "$gpio_5g2.cellular_default_seeded" 2>/dev/null || true)" != '1' ]; then
+	uci -q set "$gpio_5g2.value=1"
+	uci -q set "$gpio_5g2.cellular_default_seeded=1"
+	uci -q commit system
+fi
+
 # Modem bring-up defaults.
 uci -q get qmodem.4_1 >/dev/null 2>&1 || uci -q set qmodem.4_1='modem-device'
 uci -q get qmodem.2_1 >/dev/null 2>&1 || uci -q set qmodem.2_1='modem-device'
@@ -28,19 +53,23 @@ uci -q set qmodem.4_1.alias='modem1'
 uci -q set qmodem.2_1.alias='modem2'
 
 # Link and startup defaults.
+for network_section in 4_1 4_1v6 2_1 2_1v6; do
+	uci -q get "network.$network_section" >/dev/null 2>&1 || \
+		uci -q set "network.$network_section=interface"
+done
 uci -q set network.4_1.auto='1'
 uci -q set network.4_1.disabled='0'
 uci -q set network.4_1.proto='none'
-uci -q set network.4_1v6.auto='1'
-uci -q set network.4_1v6.disabled='0'
+uci -q set network.4_1v6.auto='0'
+uci -q set network.4_1v6.disabled='1'
 uci -q set network.4_1v6.proto='none'
 uci -q set network.2_1.auto='1'
 uci -q set network.2_1.disabled='0'
 uci -q set network.2_1.proto='none'
 uci -q set network.2_1.defaultroute='1'
 uci -q set network.2_1.peerdns='0'
-uci -q set network.2_1v6.auto='1'
-uci -q set network.2_1v6.disabled='0'
+uci -q set network.2_1v6.auto='0'
+uci -q set network.2_1v6.disabled='1'
 uci -q set network.2_1v6.proto='none'
 uci -q set network.2_1v6.defaultroute='1'
 
