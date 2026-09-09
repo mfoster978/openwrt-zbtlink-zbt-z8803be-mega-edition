@@ -159,16 +159,13 @@ is_active_rndis && exit 0
 	[ -n "$device" ] || device=wwan0
 	uci -q get "network.$section" >/dev/null 2>&1 || { uci -q set "network.$section=interface"; ndirty=1; }
 	uci -q get "network.${section}v6" >/dev/null 2>&1 || { uci -q set "network.${section}v6=interface"; ndirty=1; }
-	# proto must be what QModem itself would choose ('dhcp' for a Quectel
-	# dialing QMI); asserting 'none' here made QModem rewrite it and re-run
-	# ifup on every dial. See 30-zbt-z8803be-wan-failover for the detail.
-	set_q "network.$section.proto" dhcp && ndirty=1
+	set_q "network.$section.proto" none && ndirty=1
 	set_q "network.$section.device" "$device" && ndirty=1
 	set_q "network.$section.ifname" "$device" && ndirty=1
 	set_q "network.$section.metric" "$metric" && ndirty=1
 	set_q "network.$section.defaultroute" 1 && ndirty=1
 	set_q "network.$section.peerdns" 0 && ndirty=1
-	set_q "network.${section}v6.proto" dhcpv6 && ndirty=1
+	set_q "network.${section}v6.proto" none && ndirty=1
 	set_q "network.${section}v6.device" "$device" && ndirty=1
 	set_q "network.${section}v6.metric" "$metric" && ndirty=1
 	set_q "network.${section}v6.disabled" 1 && ndirty=1

@@ -140,13 +140,12 @@ reassert_section() {
 
 	# Respect the QModem-owned configured metric; never force it.
 
-# proto must match what QModem's set_if() would itself choose for this
-# modem: 'dhcp' for a Quectel dialing QMI. See 32-zbt-z8803be-wan-failover.
+# Keep direct QModem-managed data paths; netifd proto must stay none.
 	for spec in \
-		"$sec=interface" "${sec}.proto=dhcp" "${sec}.device=$device" \
+		"$sec=interface" "${sec}.proto=none" "${sec}.device=$device" \
 		"${sec}.ifname=$device" "${sec}.metric=$metric" \
 		"${sec}.defaultroute=1" "${sec}.peerdns=0" \
-		"${sec}v6=interface" "${sec}v6.proto=dhcpv6" \
+		"${sec}v6=interface" "${sec}v6.proto=none" \
 		"${sec}v6.device=$device" "${sec}v6.metric=$metric" \
 		"${sec}v6.disabled=1"
 	do
