@@ -28,6 +28,7 @@ if [[ ! -d "${OPENWRT_ROOT}" ]]; then
   fi
 fi
 cd "${OPENWRT_ROOT}"
+export FORCE_UNSAFE_CONFIGURE=1
 if [[ -d "${CUSTOM_FEED_DIR}" ]]; then
   grep -q "^src-link ${CUSTOM_FEED_NAME} " feeds.conf.default || \
     echo "src-link ${CUSTOM_FEED_NAME} ${CUSTOM_FEED_DIR}" >> feeds.conf.default
