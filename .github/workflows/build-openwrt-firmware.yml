@@ -37,6 +37,7 @@ jobs:
       TARGET: mediatek/filogic
       SUBTARGET: filogic
       DEVICE: zbtlink_zbt-z8803be
+      FINAL_MAKE_JOBS: "2"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,12 +73,19 @@ jobs:
             -e TARGET \
             -e SUBTARGET \
             -e DEVICE \
+            -e FINAL_MAKE_JOBS \
             -v "${PWD}:/workspace" \
             owrt-remote-builder \
             bash /workspace/firmware/docker/build-openwrt.sh \
             | tee artifacts/build-logs/openwrt-build.log
           rc=${PIPESTATUS[0]}
           if [ "${rc}" -ne 0 ]; then
+            if [ -d openwrt/build_dir/hostpkg ]; then
+              echo "===== openwrt/build_dir/hostpkg/*golang-bootstrap*/.built check ====="
+              find openwrt/build_dir/hostpkg -maxdepth 2 -type d -name '*golang-bootstrap*' -print
+              echo "===== openwrt/build_dir/hostpkg/*golang-bootstrap*/ logs ====="
+              find openwrt/build_dir/hostpkg -type f \( -path '*golang-bootstrap*' -o -name 'config.log' \) -print -exec sed -n '1,240p' {} \;
+            fi
             if [ -f openwrt/logs/tools/tar/dump.txt ]; then
               echo "===== openwrt/logs/tools/tar/dump.txt ====="
               cat openwrt/logs/tools/tar/dump.txt

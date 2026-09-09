@@ -19,6 +19,7 @@ CUSTOM_FEED_NAME="${CUSTOM_FEED_NAME:-custom_local}"
 TARGET="${TARGET:-mediatek/filogic}"
 SUBTARGET="${SUBTARGET:-}"
 DEVICE="${DEVICE:-zbtlink_zbt-z8803be}"
+FINAL_MAKE_JOBS="${FINAL_MAKE_JOBS:-$(nproc)}"
 if [[ ! -d "${OPENWRT_ROOT}" ]]; then
   if [[ "${ALLOW_CLONE_OPENWRT}" = "1" ]]; then
     git clone --depth 1 --branch "${OPENWRT_GIT_REF}" "${OPENWRT_GIT_URL}" "${OPENWRT_ROOT}"
@@ -99,4 +100,5 @@ if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
 fi
 make tools/install -j1 V=s
 make toolchain/install -j1 V=s
-make -j"$(nproc)" V=s
+make package/feeds/packages/golang-bootstrap/host/compile -j1 V=s
+make -j"${FINAL_MAKE_JOBS}" V=s
