@@ -3,7 +3,7 @@ PKG_NAME:=luci-app-speedtest-lite
 PKG_VERSION:=1
 PKG_RELEASE:=1
 LUCI_TITLE:=LuCI speed test utility page
-LUCI_DEPENDS:=+luci-base +rpcd +jq +curl +speedtest-netperf +speedtest-go
+LUCI_DEPENDS:=+luci-base +rpcd +jq +curl +speedtest-netperf
 include $(TOPDIR)/feeds/luci/luci.mk
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d

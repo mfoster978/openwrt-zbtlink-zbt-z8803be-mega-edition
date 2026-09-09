@@ -96,4 +96,6 @@ if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
 fi
+make tools/install -j1 V=s
+make toolchain/install -j1 V=s
 make -j"$(nproc)" V=s
