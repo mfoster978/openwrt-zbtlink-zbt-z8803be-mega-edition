@@ -225,7 +225,8 @@ test('speed sample errors are not fabricated zero-speed successes', () => {
 });
 
 test('Speedify health requires authenticated nginx route (401, never 404/502)', () => {
-  const installer = source('firmware/files/usr/sbin/speedify-installer-loop').split('\n[ "$(cat /etc/apk/arch')[0];
+  const installer = source('firmware/files/usr/sbin/speedify-installer-loop').split('\n[ "$(cat /etc/apk/arch')[0]
+    .replace('\t[ -S /var/run/luci-webui.socket ] || return 1', '\t: # fixture models an available uWSGI socket');
   const mocks = `
 service_running() { return 0; }
 nginx() { return 0; }
@@ -239,6 +240,25 @@ luci_healthy && echo healthy || echo unhealthy
   const runtimeLoop = file('firmware/files/usr/sbin/speedify-installer-loop').split('while :; do')[1];
   const installedBranch = runtimeLoop.split('if packages_complete; then')[1].split('\n\tfi')[0];
   assert.doesNotMatch(installedBranch, /install_bundle|download_bundle/);
+});
+
+test('LuCI recovery makes nginx the only frontend and repairs a 502 backend once', () => {
+  const checker = file('firmware/files/usr/sbin/zbt-luci-backend-check');
+  const migration = file('firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery');
+  const service = file('firmware/files/etc/init.d/zbt-luci-backend');
+  assert.match(service, /^START=81$/m);
+  assert.match(service, /procd_set_param oneshot 1/);
+  assert.match(migration, /uhttpd disable/);
+  assert.match(migration, /uwsgi enable/);
+  assert.match(migration, /nginx enable/);
+  assert.match(migration, /zbt-luci-backend start/);
+  assert.match(checker, /\[ -S "\$SOCKET" \]/);
+  assert.match(checker, /\[ "\$http_status" = 502 \]/);
+  assert.match(checker, /restart_uwsgi/);
+  assert.match(checker, /\/rom\/etc\/uwsgi/);
+  assert.match(checker, /\.pre-zbt-repair/);
+  assert.doesNotMatch(checker, /while :/);
+  assert.doesNotMatch(checker, /\/etc\/config\/network|qmodem|gpio/);
 });
 
 test('Tailscale backend lists methods and survives unavailable/invalid daemon JSON', () => {

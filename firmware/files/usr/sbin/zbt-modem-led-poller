@@ -2,20 +2,9 @@
 . /usr/lib/zbt/modem-leds.sh
 
 cycle() {
-	local section key previous result owner expected=0 online=0 bytes=0 value status_state
+	local section key previous result owner
 	for section in 4_1 2_1; do
 		zbt_led_detect "$section" || continue
-		if [ "$ZBT_LED_POWER" = 1 ] || [ -d "${ZBT_SYSFS:-/sys}/bus/usb/devices/$ZBT_USB" ]; then
-			expected=$((expected + 1))
-			if [ "$ZBT_LED_STATE" = data ]; then
-				online=$((online + 1))
-				for value in rx_bytes tx_bytes; do
-					value=$(cat "${ZBT_SYSFS:-/sys}/class/net/$ZBT_LED_DEVICE/statistics/$value" 2>/dev/null)
-					case "$value" in ''|*[!0-9]*) value=0 ;; esac
-					bytes=$((bytes + value))
-				done
-			fi
-		fi
 		result=ok
 		if [ "$1" != status ]; then
 			zbt_led_apply || result=write_failed
@@ -33,19 +22,6 @@ cycle() {
 			eval "last_$section=\$key"
 		fi
 	done
-	if [ "$1" != status ]; then
-		if ! ip -4 route show default 2>/dev/null | grep -q '^default'; then
-			status_state=offline
-		elif [ "$expected" -gt 0 ] && [ "$online" -lt "$expected" ]; then
-			status_state=fault
-		elif [ -n "${last_status_bytes:-}" ] && [ "$bytes" -ne "$last_status_bytes" ]; then
-			status_state=traffic
-		else
-			status_state=connected
-		fi
-		zbt_status_apply "$status_state" || logger -t zbt-modem-leds "SYS LED update failed: $status_state"
-		last_status_bytes=$bytes
-	fi
 }
 
 case "${1:-daemon}" in

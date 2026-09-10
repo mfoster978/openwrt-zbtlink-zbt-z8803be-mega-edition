@@ -39,6 +39,8 @@ service_running() {
 
 luci_healthy() {
 	[ "$INSTALL_LUCI" = '1' ] || return 0
+	service_running uwsgi || return 1
+	[ -S /var/run/luci-webui.socket ] || return 1
 	service_running nginx || return 1
 	service_running sfy-ws-auth || return 1
 	nginx -t >/tmp/speedify-nginx-check.log 2>&1 || return 1
@@ -73,6 +75,9 @@ activate_services() {
 	/etc/init.d/speedify enable >/dev/null 2>&1 || return 1
 	service_running speedify || /etc/init.d/speedify start >/tmp/speedify-service.log 2>&1
 	if [ "$INSTALL_LUCI" = '1' ]; then
+		# Keep LuCI itself healthy independently of the optional vendor UI.
+		# This also repairs a preserved, incompatible uWSGI configuration once.
+		/usr/sbin/zbt-luci-backend-check >/tmp/speedify-luci-backend.log 2>&1 || return 1
 		# uhttpd cannot serve the vendor's authenticated nginx alias/proxy UI.
 		# Keep the existing nginx LuCI frontend even if the VPN daemon fails.
 		if [ -f /usr/share/luci-app-speedify/luci-app-speedify.locations ]; then

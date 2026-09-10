@@ -1,0 +1,15 @@
+#!/bin/sh
+# Upgrade migration for the nginx/uWSGI LuCI stack. It is intentionally
+# independent of Speedify so the router login remains available even when the
+# optional Speedify download has not happened yet.
+if [ -x /etc/init.d/uwsgi ] && [ -x /etc/init.d/nginx ]; then
+	/etc/init.d/uhttpd stop >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd disable >/dev/null 2>&1 || true
+	/etc/init.d/uwsgi enable >/dev/null 2>&1 || true
+	/etc/init.d/nginx enable >/dev/null 2>&1 || true
+	/etc/init.d/zbt-luci-backend enable >/dev/null 2>&1 || true
+	# rcS expands its service list before uci-defaults creates the S81 link,
+	# so start the one-shot repair explicitly on this first upgraded boot.
+	( sleep 5; /etc/init.d/zbt-luci-backend start >/dev/null 2>&1 || true ) &
+fi
+exit 0

@@ -32,6 +32,13 @@ nft list chain inet fw4 zbt_qmodem_ttl_postrouting 2>/dev/null || true
 printf '\n%s\n' 'Physical modem LED status (read-only)'
 /usr/sbin/zbt-modem-led-poller status
 /etc/init.d/zbt-modem-leds status 2>/dev/null || true
+printf '%s\n' 'Factory status LED owner and channels'
+/etc/init.d/zbt-leds status 2>/dev/null || true
+for lamp in red:status green:wan blue:power; do
+	printf 'led=%s trigger=%s brightness=%s\n' "$lamp" \
+		"$(sed -n 's/.*\[\([^]]*\)\].*/\1/p' "/sys/class/leds/$lamp/trigger" 2>/dev/null)" \
+		"$(cat "/sys/class/leds/$lamp/brightness" 2>/dev/null)"
+done
 printf '\n%s\n' 'Ethernet jack LED controls (read-only; amber/green metadata may mean orange)'
 for lamp in mt7530-0:00:green:lan mt7530-0:02:green:lan mt7530-0:03:green:lan mdio-bus:0f:amber:wan; do
 	printf 'led=%s' "$lamp"
@@ -55,11 +62,14 @@ printf '\n%s\n' 'Installed UI packages and service health'
 for package in luci-app-mwan3 luci-app-speedtest-lite zbt-speedtest luci-app-tailscale speedify luci-app-speedify; do
 	apk info -e "$package" >/dev/null 2>&1 && printf '%s=installed\n' "$package" || printf '%s=missing\n' "$package"
 done
-for service in nginx sfy-ws-auth speedify speedify-installer tailscale qmodem_network; do
+for service in uwsgi nginx zbt-luci-backend sfy-ws-auth speedify speedify-installer tailscale qmodem_network; do
 	printf '%s=' "$service"
 	"/etc/init.d/$service" status 2>/dev/null || true
 done
 nginx -t 2>&1
+printf 'luci_backend_socket=%s\n' "$([ -S /var/run/luci-webui.socket ] && echo present || echo missing)"
+printf 'luci_https_status='
+curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/cgi-bin/luci/
 printf 'speedify_installer_done=%s\n' "$([ -f /etc/speedify.installed ] && echo yes || echo no)"
 printf 'speedify_unauthenticated_http_status='
 # Self-signed local health probe only. Upstream HTTPS downloads stay verified.

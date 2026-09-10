@@ -167,20 +167,6 @@ uci() {
   assert.equal(f.read('class/leds/blue:mobile-1/device_name'), 'wwan8');
 });
 
-test('the multicolor SYS lens distinguishes modem fault, connection and traffic', () => {
-  const f = fixture();
-  const channel = name => f.read(`class/leds/${name}/brightness`);
-  run(led + mocks + '\nzbt_status_apply fault', f.env);
-  assert.deepEqual([channel('red:status'), channel('green:wan'), channel('blue:power')], ['255', '0', '0']);
-  run(led + mocks + '\nzbt_status_apply connected', f.env);
-  assert.deepEqual([channel('red:status'), channel('green:wan'), channel('blue:power')], ['0', '255', '0']);
-  run(led + mocks + '\nzbt_status_apply traffic', f.env);
-  assert.equal(f.read('class/leds/green:wan/trigger'), 'timer');
-  assert.deepEqual([channel('red:status'), channel('blue:power')], ['0', '0']);
-  run(led + mocks + '\nzbt_status_apply offline', f.env);
-  assert.deepEqual([channel('red:status'), channel('green:wan'), channel('blue:power')], ['0', '0', '255']);
-});
-
 test('missing trigger attributes or unreliable carrier use a visible fallback', () => {
   for (const failure of ['unsupported', 'attribute', 'carrier']) {
     const f = fixture();
@@ -194,28 +180,29 @@ test('missing trigger attributes or unreliable carrier use a visible fallback', 
   }
 });
 
-test('poller status is read-only and boot service starts after generic LED initialization', () => {
+test('poller status is read-only and has one Far5eer-compatible S95 owner', () => {
   const f = fixture();
   const poller = file('firmware/files/usr/sbin/zbt-modem-led-poller').replace('. /usr/lib/zbt/modem-leds.sh', '');
   const output = run(led + mocks + poller, f.env, ['status']);
   assert.match(output, /modem=4_1 usb=4-1.*device=wwan8 state=data/);
   assert.match(output, /modem=2_1 usb=2-1.*device=wwan3 state=waiting/);
   assert.equal(fs.existsSync(f.env.CALLS), false);
-  assert.match(file('firmware/files/etc/init.d/zbt-modem-leds'), /^START=97$/m);
+  assert.match(file('firmware/files/etc/init.d/zbt-modem-leds'), /^START=95$/m);
   const defaults = file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds');
   assert.match(defaults, /zbt-modem-leds enable/);
+  assert.match(defaults, /S\?\?zbt-modem-leds/);
+  assert.match(defaults, /zbt-leds enable/);
   for (const [phy, dev] of [['00', 'lan0'], ['02', 'lan1'], ['03', 'lan2']]) {
     assert.match(defaults, new RegExp(`mt7530-0:${phy}:green:lan' ${dev}`));
   }
   assert.match(defaults, /mdio-bus:0f:amber:wan' eth1/);
   assert.match(defaults, /system\.\$section\.mode=link tx rx/);
-  for (const sysfs of ['blue:mobile-1', 'blue:mobile-2', 'red:status', 'green:wan', 'blue:power']) {
-    assert.match(defaults, new RegExp(`ensure_automatic_led '[^']+' '${sysfs}'`));
-  }
-  assert.match(defaults, /system\.\$section\.zbt_automatic=1/);
+  assert.doesNotMatch(defaults, /ensure_automatic_led/);
+  assert.match(defaults, /blue:mobile-1\|blue:mobile-2\|red:status\|green:wan\|blue:power/);
+  assert.doesNotMatch(file('firmware/files/usr/sbin/zbt-modem-led-poller'), /zbt_status_apply|red:status|green:wan|blue:power/);
 });
 
-test('LED migration seeds all four jacks once and preserves administrator settings', () => {
+test('LED migration removes broken automatic rows, seeds four jacks, and preserves administrator settings', () => {
   const f = fixture(), db = path.join(f.dir, 'uci');
   fs.mkdirSync(db);
   const board = path.join(f.dir, 'board_name');
@@ -237,6 +224,7 @@ uci() {
       while [ -f "$DB/system.led$u_index" ]; do u_index=$((u_index+1)); done
       echo led > "$DB/system.led$u_index"
       echo "led$u_index" ;;
+    delete) rm -f "$DB/$2" "$DB/$2".* ;;
     commit) : ;;
     *) return 1 ;;
   esac
@@ -245,8 +233,16 @@ uci() {
   const defaults = file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds')
     .replaceAll('/tmp/sysinfo/board_name', board)
     .replaceAll('/usr/sbin/zbt-qmodem-profile', ':')
-    .replaceAll('/etc/init.d/zbt-modem-leds', ':');
+    .replaceAll('/etc/init.d/zbt-modem-leds', ':')
+    .replaceAll('/etc/init.d/zbt-leds', ':')
+    .replaceAll('/etc/rc.d/', path.join(f.dir, 'rc.d') + '/');
   const env = { ...f.env, DB: db };
+  for (const [name, sysfs] of [['stale5g', 'blue:mobile-1'], ['stalestatus', 'green:wan']]) {
+    fs.writeFileSync(path.join(db, `system.${name}`), 'led');
+    fs.writeFileSync(path.join(db, `system.${name}.sysfs`), sysfs);
+    fs.writeFileSync(path.join(db, `system.${name}.trigger`), 'none');
+    fs.writeFileSync(path.join(db, `system.${name}.zbt_automatic`), '1');
+  }
   run(uci + defaults, env);
   const read = name => fs.readFileSync(path.join(db, name), 'utf8').trim();
   for (const [index, lamp, device] of [
@@ -258,7 +254,8 @@ uci() {
     assert.equal(read(`system.led${index}.trigger`), 'netdev');
     assert.equal(read(`system.led${index}.mode`), 'link tx rx');
   }
-  assert.equal(fs.readdirSync(db).filter(n => /^system\.led\d+$/.test(n)).length, 9);
+  assert.equal(fs.readdirSync(db).filter(n => /^system\.led\d+$/.test(n)).length, 4);
+  assert.equal(fs.readdirSync(db).some(n => n.includes('stale5g') || n.includes('stalestatus')), false);
   fs.writeFileSync(path.join(db, 'system.led3.mode'), 'rx');
   fs.writeFileSync(path.join(db, 'system.led3.name'), 'Custom WAN');
   const snapshot = () => Object.fromEntries(fs.readdirSync(db).sort().map(n => [n, read(n)]));

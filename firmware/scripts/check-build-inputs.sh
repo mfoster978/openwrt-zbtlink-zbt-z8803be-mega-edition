@@ -8,11 +8,14 @@ bash -n firmware/docker/build-openwrt.sh
 python3 firmware/tests/mega-release.test.py
 for script in \
   firmware/files/etc/init.d/speedify-installer \
+  firmware/files/etc/init.d/zbt-luci-backend \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
   firmware/files/etc/uci-defaults/99-speedify-bootstrap \
   firmware/files/etc/uci-defaults/99-cellular-multiwan-defaults \
   firmware/files/etc/hotplug.d/usb/40-zbt-qmodem-autoenable \
   firmware/files/usr/sbin/speedify-installer-loop \
+  firmware/files/usr/sbin/zbt-luci-backend-check \
   firmware/files/usr/sbin/zbt-qmodem-watchdog-loop \
   firmware/scripts/apply-router-defaults.sh \
   firmware/scripts/verify-router-runtime.sh; do

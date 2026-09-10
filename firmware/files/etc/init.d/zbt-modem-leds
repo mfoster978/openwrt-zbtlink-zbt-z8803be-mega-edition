@@ -1,7 +1,8 @@
 #!/bin/sh /etc/rc.common
-# LED-only service, after gpio_switch (94) and generic LED defaults (96).
+# LED-only service. Keep Far5eer's original S95 ordering; the migration removes
+# the accidental S97 link shipped by the previous Mega/Minimal release.
 # No AT polling, modem resets or power writes.
-START=97
+START=95
 STOP=05
 USE_PROCD=1
 

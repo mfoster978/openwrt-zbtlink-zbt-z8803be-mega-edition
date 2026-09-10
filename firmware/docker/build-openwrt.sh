@@ -273,7 +273,9 @@ required_overlay_files=(
   etc/uci-defaults/99-cellular-multiwan-defaults
   etc/uci-defaults/99-speedify-bootstrap
   etc/init.d/speedify-installer
+  etc/init.d/zbt-luci-backend
   usr/sbin/speedify-installer-loop
+  usr/sbin/zbt-luci-backend-check
   usr/sbin/zbt-speed-sample
   usr/libexec/rpcd/zbt.speedtest
   usr/libexec/rpcd/zbt.tailscale
@@ -281,6 +283,7 @@ required_overlay_files=(
   usr/lib/zbt/modem-leds.sh
   etc/init.d/zbt-modem-leds
   etc/uci-defaults/49-zbt-modem-labels-leds
+  etc/uci-defaults/50-zbt-luci-web-recovery
   usr/lib/zbt/quectel-bands.sh
   usr/lib/zbt/speed-lock.sh
   usr/lib/zbt/speed-policy.sh
@@ -299,15 +302,37 @@ for overlay_file in "${required_overlay_files[@]}"; do
   fi
 done
 echo "Validated files overlay in root filesystem: ${rootfs_dir}"
-# A package/base-files install must not silently restore the older LED code.
-[ "$(readlink "${rootfs_dir}/etc/rc.d/S97zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
-  echo 'Modem LED boot service is not enabled at S97 in the image' >&2; exit 4;
+# A package/base-files install must expose exactly one modem LED owner. The
+# affected release contained both S95 and S97 links and raced Far5eer's status
+# state machine.
+[ "$(readlink "${rootfs_dir}/etc/rc.d/S95zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
+  echo 'Modem LED boot service is not enabled at S95 in the image' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile etc/uci-defaults/49-zbt-modem-labels-leds; do
+mapfile -t modem_led_links < <(find "${rootfs_dir}/etc/rc.d" -maxdepth 1 -type l -name 'S??zbt-modem-leds' -print)
+[ "${#modem_led_links[@]}" -eq 1 ] || {
+  printf 'Expected one modem LED startup link, found %s: %s\n' "${#modem_led_links[@]}" "${modem_led_links[*]}" >&2
+  exit 4
+}
+[ "$(readlink "${rootfs_dir}/etc/rc.d/S10zbt-leds")" = ../init.d/zbt-leds ] || {
+  echo 'Far5eer status LED state machine is not enabled at S10' >&2; exit 4;
+}
+test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/iface/40-zbt-status-led" || {
+  echo 'Far5eer status LED runtime is missing from the image' >&2; exit 4;
+}
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile etc/uci-defaults/49-zbt-modem-labels-leds etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
 done
+[ "$(readlink "${rootfs_dir}/etc/rc.d/S79uwsgi")" = ../init.d/uwsgi ] || {
+  echo 'LuCI uWSGI backend is not enabled at S79' >&2; exit 4;
+}
+[ "$(readlink "${rootfs_dir}/etc/rc.d/S80nginx")" = ../init.d/nginx ] || {
+  echo 'LuCI nginx frontend is not enabled at S80' >&2; exit 4;
+}
+grep -q '/etc/init.d/uhttpd disable' "${rootfs_dir}/etc/uci-defaults/50-zbt-luci-web-recovery" || {
+  echo 'LuCI web-stack migration does not disable the competing uhttpd listener' >&2; exit 4;
+}
 # Keep the upstream package from silently restoring the global-only TTL UI
 # or old init/hotplug/default writers over this firmware's independent policy.
 for overlay_file in \

@@ -1,0 +1,89 @@
+#!/bin/sh
+# Recover the nginx -> uWSGI LuCI path without changing network or modem state.
+set -u
+
+TAG='zbt-luci-backend'
+SOCKET='/var/run/luci-webui.socket'
+
+log() { logger -t "$TAG" "$*"; }
+running() { [ -x "/etc/init.d/$1" ] && "/etc/init.d/$1" status >/dev/null 2>&1; }
+
+wait_for_socket() {
+	local attempts=0
+	while [ "$attempts" -lt "${1:-10}" ]; do
+		[ -S "$SOCKET" ] && return 0
+		attempts=$((attempts + 1))
+		sleep 1
+	done
+	return 1
+}
+
+restore_packaged_uwsgi() {
+	local relative current packaged backup changed=0
+	for relative in emperor.ini vassals/luci-webui.ini vassals/luci-cgi_io.ini; do
+		current="/etc/uwsgi/$relative"
+		packaged="/rom/etc/uwsgi/$relative"
+		[ -s "$packaged" ] || continue
+		cmp -s "$packaged" "$current" 2>/dev/null && continue
+		backup="${current}.pre-zbt-repair"
+		[ -e "$current" ] && [ -e "$backup" ] || {
+			mkdir -p "${current%/*}"
+			[ ! -e "$current" ] || cp -p "$current" "$backup" 2>/dev/null || true
+		}
+		cp -f "$packaged" "$current" || return 1
+		changed=1
+	done
+	[ "$changed" = 0 ] || log 'restored packaged uWSGI LuCI configuration; previous files kept with .pre-zbt-repair suffix'
+}
+
+restart_uwsgi() {
+	/etc/init.d/uwsgi stop >/dev/null 2>&1 || true
+	rm -f /var/run/luci-webui.socket /var/run/luci-cgi_io.socket /var/run/uwsgi.pid
+	restore_packaged_uwsgi || return 1
+	/etc/init.d/uwsgi start >/tmp/zbt-luci-uwsgi.log 2>&1 || return 1
+	wait_for_socket 15
+}
+
+[ -x /etc/init.d/uwsgi ] && [ -x /etc/init.d/nginx ] || exit 0
+
+# This firmware intentionally uses luci-nginx. Leaving uhttpd enabled creates
+# a boot-time race for ports 80/443 and can strand nginx after upgrades.
+if [ -x /etc/init.d/uhttpd ]; then
+	/etc/init.d/uhttpd stop >/dev/null 2>&1 || true
+	/etc/init.d/uhttpd disable >/dev/null 2>&1 || true
+fi
+/etc/init.d/uwsgi enable >/dev/null 2>&1 || true
+/etc/init.d/nginx enable >/dev/null 2>&1 || true
+
+if ! running uwsgi; then
+	rm -f "$SOCKET"
+	/etc/init.d/uwsgi start >/tmp/zbt-luci-uwsgi.log 2>&1 || true
+fi
+if ! wait_for_socket 10; then
+	log 'LuCI uWSGI socket missing; performing one guarded backend repair'
+	restart_uwsgi || { log 'LuCI uWSGI repair failed'; exit 1; }
+fi
+
+if ! nginx -t >/tmp/zbt-luci-nginx-check.log 2>&1; then
+	log 'nginx configuration check failed; refusing to replace administrator nginx configuration'
+	exit 1
+fi
+if running nginx; then
+	/etc/init.d/nginx reload >/tmp/zbt-luci-nginx.log 2>&1 || true
+else
+	/etc/init.d/nginx start >/tmp/zbt-luci-nginx.log 2>&1 || { log 'nginx failed to start'; exit 1; }
+fi
+
+# A socket can be stale even when it exists. Probe only loopback; -k is used
+# solely because the stock router certificate is self-signed.
+if command -v curl >/dev/null 2>&1; then
+	http_status=$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' \
+		https://127.0.0.1/cgi-bin/luci/ 2>/dev/null || true)
+	if [ "$http_status" = 502 ]; then
+		log 'nginx returned 502 for LuCI; restarting the uWSGI backend once'
+		restart_uwsgi || { log 'LuCI backend remained unavailable after restart'; exit 1; }
+		/etc/init.d/nginx reload >/tmp/zbt-luci-nginx.log 2>&1 || true
+	fi
+fi
+
+exit 0

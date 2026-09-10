@@ -52,46 +52,6 @@ zbt_led_name_user_managed() {
 
 zbt_led_user_managed() { zbt_led_name_user_managed "$ZBT_LED"; }
 
-zbt_status_user_managed() {
-	local led
-	for led in red:status green:wan blue:power; do
-		zbt_led_name_user_managed "$led" && return 0
-	done
-	return 1
-}
-
-zbt_status_channel() {
-	local path="${ZBT_SYSFS:-/sys}/class/leds/$1" value="$2" maximum
-	[ -d "$path" ] || return 0
-	[ -e "$path/trigger" ] && printf '%s\n' none > "$path/trigger"
-	maximum=$(cat "$path/max_brightness" 2>/dev/null)
-	case "$maximum" in ''|*[!0-9]*|0) maximum=1 ;; esac
-	[ "$value" = 1 ] || maximum=0
-	[ -e "$path/brightness" ] && printf '%s\n' "$maximum" > "$path/brightness"
-}
-
-zbt_status_blink() {
-	local path="${ZBT_SYSFS:-/sys}/class/leds/$1"
-	[ -d "$path" ] || return 0
-	printf '%s\n' timer > "$path/trigger" || return 1
-	[ -e "$path/delay_on" ] && printf '%s\n' 150 > "$path/delay_on"
-	[ -e "$path/delay_off" ] && printf '%s\n' 150 > "$path/delay_off"
-}
-
-# Preserve the familiar chassis meanings: blue is no Internet, green is
-# Internet available, red is a degraded cellular setup where an expected
-# modem lacks a data session. Green blinks only while cellular counters move.
-zbt_status_apply() {
-	zbt_status_user_managed && return 0
-	case "$1" in
-		fault)     zbt_status_channel red:status 1; zbt_status_channel green:wan 0; zbt_status_channel blue:power 0 ;;
-		connected) zbt_status_channel red:status 0; zbt_status_channel green:wan 1; zbt_status_channel blue:power 0 ;;
-		traffic)   zbt_status_channel red:status 0; zbt_status_channel blue:power 0; zbt_status_blink green:wan ;;
-		offline)   zbt_status_channel red:status 0; zbt_status_channel green:wan 0; zbt_status_channel blue:power 1 ;;
-		*) return 1 ;;
-	esac
-}
-
 zbt_led_apply() {
 	local trigger maximum carrier
 	[ -d "$ZBT_LED_PATH" ] || return 1
