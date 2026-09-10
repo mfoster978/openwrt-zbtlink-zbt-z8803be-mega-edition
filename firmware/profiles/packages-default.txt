@@ -38,6 +38,7 @@ iptables-mod-conntrack-extra
 ca-bundle
 speedtest-netperf
 speedtest-go
+zbt-speedtest
 ethtool
 jq
 curl

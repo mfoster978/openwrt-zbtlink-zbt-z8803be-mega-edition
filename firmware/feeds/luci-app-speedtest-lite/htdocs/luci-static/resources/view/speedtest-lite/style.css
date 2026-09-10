@@ -1,0 +1,81 @@
+.zst-panel {
+	--zst-cyan: #38d5e6; --zst-purple: #ad85ff; --zst-fg: #f4f5fc;
+	--zst-muted: #a5abc5; --zst-border: #30364d; --zst-accent: var(--zst-cyan);
+	background: radial-gradient(ellipse at 50% 26%, #1d2741 0, #161b2e 50%, #121729 100%);
+	color: var(--zst-fg); border: 1px solid var(--zst-border); border-radius: 20px;
+	padding: 28px; max-width: 1080px; margin: 12px auto; box-sizing: border-box;
+	font-family: system-ui, sans-serif; font-variant-numeric: tabular-nums;
+	box-shadow: 0 14px 48px #0003;
+}
+.zst-panel * { box-sizing: border-box; }
+.zst-panel h2 { color: var(--zst-fg); font-size: 30px; margin: 4px 0 8px; font-weight: 650; border: 0; background: none; padding: 0; }
+.zst-panel p { color: var(--zst-muted); margin: 0; line-height: 1.6; font-size: 13px; }
+.zst-header { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding-bottom: 24px; }
+.zst-eyebrow { font-size: 10px; letter-spacing: .18em; color: var(--zst-muted); }
+.zst-badge { font-size: 10px; letter-spacing: .1em; border: 1px solid var(--zst-border); padding: 6px 12px; border-radius: 20px; white-space: nowrap; }
+.zst-is-live { color: var(--zst-cyan); border-color: var(--zst-cyan); }
+.zst-results { display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; border-top: 1px solid var(--zst-border); border-bottom: 1px solid var(--zst-border); padding: 20px 0; }
+.zst-metric { padding: 0 16px; border-right: 1px solid var(--zst-border); min-width: 0; }
+.zst-metric:first-child { padding-left: 0; }
+.zst-metric:last-child { border: 0; }
+.zst-metric-label { display: block; font-size: 11px; letter-spacing: .09em; margin-bottom: 6px; }
+.zst-metric strong { font-size: clamp(20px, 3vw, 34px); font-weight: 500; color: var(--zst-fg); }
+.zst-unit { color: var(--zst-muted); font-size: 11px; margin-left: 6px; }
+.zst-download { color: var(--zst-cyan); }
+.zst-upload { color: var(--zst-purple); }
+.zst-uploading { --zst-accent: var(--zst-purple); }
+.zst-instrument { text-align: center; }
+.zst-gauge { position: relative; width: min(100%, 420px); margin: 8px auto -15px; }
+.zst-gauge svg { width: 100%; display: block; overflow: visible; }
+.zst-track { stroke: #31384f; }
+.zst-inner { stroke: #3a435e; }
+.zst-arc { stroke: var(--zst-accent); filter: drop-shadow(0 0 6px #38d5e633); }
+.zst-ticks path { stroke: #69748f; stroke-width: 1; }
+.zst-ticks text { fill: var(--zst-muted); font-size: 11px; }
+.zst-needle { fill: var(--zst-accent); transform-origin: 200px 190px; transition: transform .45s ease-out, opacity .3s; }
+.zst-value { position: absolute; top: 62%; left: 0; width: 100%; line-height: 1.15; color: var(--zst-muted); font-size: 13px; }
+.zst-caption { font-size: 10px; letter-spacing: .16em; }
+.zst-reading { color: var(--zst-fg); font-size: clamp(38px, 8vw, 58px); font-weight: 350; letter-spacing: -.04em; padding: 4px 0; }
+.zst-phase { font-size: 13px; color: var(--zst-muted); min-height: 24px; margin-bottom: 14px; }
+.zst-actions { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.zst-panel button { cursor: pointer; border-radius: 30px; line-height: 1.4; font-family: inherit; box-shadow: none; height: auto; }
+.zst-go { color: #081f2b !important; background: var(--zst-cyan) !important; border: 1px solid var(--zst-cyan) !important; font-size: 14px; font-weight: 750; padding: 13px 36px; min-width: 116px; }
+.zst-stop, .zst-secondary { color: var(--zst-fg) !important; background: transparent !important; border: 1px solid #65718b !important; padding: 10px 18px; font-size: 12px; }
+.zst-panel button:disabled { opacity: .4; cursor: not-allowed; }
+.zst-panel button:focus-visible, .zst-panel select:focus-visible, .zst-panel input:focus-visible { outline: 2px solid var(--zst-cyan); outline-offset: 3px; }
+.zst-chart { margin: 28px 0 22px; padding: 14px 16px; background: #080f2066; border: 1px solid var(--zst-border); border-radius: 10px; }
+.zst-chart svg { width: 100%; height: 100px; display: block; margin: 8px 0; }
+.zst-chart-labels { display: flex; justify-content: space-between; color: var(--zst-muted); font-size: 10px; letter-spacing: .05em; }
+.zst-grid { stroke: var(--zst-border); fill: none; }
+.zst-down-line { stroke: var(--zst-cyan); }
+.zst-up-line { stroke: var(--zst-purple); }
+.zst-controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+.zst-controls label > span { display: block; font-size: 12px; color: var(--zst-muted); margin-bottom: 6px; }
+.zst-controls select, .zst-controls input { width: 100%; max-width: 100%; background: #20283e; border: 1px solid #48536f; color: var(--zst-fg); border-radius: 8px; padding: 9px 10px; font-size: 12px; height: 40px; }
+.zst-controls input { margin-top: 8px; }
+.zst-controls [hidden] { display: none; }
+.zst-controls label { min-width: 0; }
+.zst-consent { display: flex; gap: 10px; align-items: flex-start; margin: 18px 0; color: var(--zst-muted); font-size: 12px; line-height: 1.6; cursor: pointer; }
+.zst-consent input { flex: 0 0 auto; margin-top: 4px; accent-color: var(--zst-cyan); }
+.zst-notice:not(:empty) { background: #421f30; color: #ffb1ba; border: 1px solid #754251; padding: 12px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; overflow-wrap: anywhere; }
+.zst-details { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 0; border-top: 1px solid var(--zst-border); }
+.zst-details div > span { display: block; font-size: 10px; color: var(--zst-muted); margin-bottom: 6px; letter-spacing: .1em; }
+.zst-details strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.zst-details > span { grid-column: 1 / -1; font-size: 11px; color: var(--zst-muted); }
+.zst-panel footer { border-top: 1px solid var(--zst-border); padding-top: 16px; }
+.zst-panel footer p { font-size: 11px; margin-bottom: 5px; }
+@media (max-width: 650px) {
+	.zst-panel { padding: 18px 14px; border-radius: 12px; }
+	.zst-header { align-items: flex-start; }
+	.zst-panel h2 { font-size: 26px; }
+	.zst-header p { max-width: 240px; font-size: 12px; }
+	.zst-results { grid-template-columns: 1fr 1fr; row-gap: 18px; }
+	.zst-metric:nth-child(2) { border-right: 0; }
+	.zst-metric:nth-child(3) { padding-left: 0; }
+	.zst-metric strong { font-size: 30px; }
+	.zst-controls { grid-template-columns: 1fr; }
+	.zst-secondary { justify-self: start; }
+	.zst-phase { font-size: 12px; }
+	.zst-details { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .zst-needle { transition: none; } }

@@ -262,7 +262,7 @@ test('LuCI read-only utility pages have no Save/Apply, and use authenticated RPC
   }
   const acl = JSON.parse(file('firmware/files/usr/share/rpcd/acl.d/zbt-speedtest.json'))['luci-app-speedtest-lite'];
   assert.deepEqual(acl.read.ubus['zbt.speedtest'], ['status']);
-  assert.deepEqual(acl.write.ubus['zbt.speedtest'], ['start']);
+  assert.deepEqual(acl.write.ubus['zbt.speedtest'], ['start', 'cancel']);
   assert.ok(JSON.parse(file('firmware/feeds/luci-app-modem-watchdog/root/usr/share/luci/menu.d/luci-app-modem-watchdog.json'))['admin/network/mwan3/speed_failover']);
 });
 

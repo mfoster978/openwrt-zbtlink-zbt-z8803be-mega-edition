@@ -163,6 +163,7 @@ required_config_flags=(
   "CONFIG_PACKAGE_luci-app-tailscale=y"
   "CONFIG_PACKAGE_luci-app-modem-watchdog=y"
   "CONFIG_PACKAGE_luci-app-speedtest-lite=y"
+  "CONFIG_PACKAGE_zbt-speedtest=y"
   "CONFIG_PACKAGE_ca-bundle=y"
   "CONFIG_PACKAGE_curl=y"
   "CONFIG_PACKAGE_kmod-tun=y"
@@ -202,6 +203,7 @@ required_image_packages=(
   kmod-mhi-bus kmod-mhi-net kmod-mhi-pci-generic
   kmod-mhi-wwan-ctrl kmod-mhi-wwan-mbim mwan3 kmod-tun
   luci-app-modem-watchdog luci-app-speedtest-lite tailscale luci-app-tailscale
+  zbt-speedtest
   ca-bundle curl libstdcpp6 libkeyutils1 libatomic1
   iptables-nft kmod-nft-tproxy
   iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra
@@ -220,6 +222,13 @@ if [[ -z "${rootfs_dir}" ]]; then
   echo "Unable to locate the built MediaTek root filesystem" >&2
   exit 4
 fi
+test -x "${rootfs_dir}/usr/bin/zbt-speedtest" || {
+  echo 'Live speed test engine missing from firmware' >&2; exit 4;
+}
+cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/config.js" \
+  "${rootfs_dir}/www/luci-static/resources/view/speedtest-lite/config.js"
+cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/style.css" \
+  "${rootfs_dir}/www/luci-static/resources/view/speedtest-lite/style.css"
 required_overlay_files=(
   etc/uci-defaults/95-mwan3-defaults
   etc/uci-defaults/99-cellular-multiwan-defaults

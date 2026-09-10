@@ -52,7 +52,7 @@ done
 uci -q show modem_watchdog
 ip -4 route show default
 printf '\n%s\n' 'Installed UI packages and service health'
-for package in luci-app-mwan3 luci-app-speedtest-lite luci-app-tailscale speedify luci-app-speedify; do
+for package in luci-app-mwan3 luci-app-speedtest-lite zbt-speedtest luci-app-tailscale speedify luci-app-speedify; do
 	apk info -e "$package" >/dev/null 2>&1 && printf '%s=installed\n' "$package" || printf '%s=missing\n' "$package"
 done
 for service in nginx sfy-ws-auth speedify speedify-installer tailscale qmodem_network; do

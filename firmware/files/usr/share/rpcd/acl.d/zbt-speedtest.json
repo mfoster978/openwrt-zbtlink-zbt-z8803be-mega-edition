@@ -1,7 +1,7 @@
 {
   "luci-app-speedtest-lite": {
-    "description": "Run bounded speed samples",
+    "description": "Run and stop Speedtest.net-server tests",
     "read": { "ubus": { "zbt.speedtest": ["status"] } },
-    "write": { "ubus": { "zbt.speedtest": ["start"] } }
+    "write": { "ubus": { "zbt.speedtest": ["start", "cancel"] } }
   }
 }

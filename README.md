@@ -91,7 +91,7 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 
 ### Connectivity tools and VPNs
 
-- **Services → Speed Test Utility** runs an authenticated, bounded HTTPS sample with download/upload Mbps and TCP connection timing. It is not an Ookla benchmark and has no Save/Apply buttons.
+- **Services → Speed Test Utility** is a live speed-test dashboard: a responsive speedometer, measured download/upload graph, ping/jitter, server selection, and a Stop button. It performs real multi-connection transfers against **Speedtest.net servers**, using the pinned open-source [speedtest-go client](https://github.com/showwin/speedtest-go/tree/v1.7.10), not the official Ookla app. There are no Save/Apply buttons or simulated speed values. See [how the live test works](firmware/docs/live-speedtest.md).
 - Choose the current default route, wired WAN, SFP WAN, modem 1, or modem 2. Physical-interface binding prevents substituting the other modem when their private IP addresses overlap.
 - `speedtest-netperf` and `speedtest-go` remain available separately at the command line.
 - **Services → Tailscale** provides a locally packaged status/sign-in page; each user authenticates their own account. Advanced Tailscale route/exit-node options remain CLI-managed.
@@ -187,7 +187,7 @@ The safe defaults are:
 
 Start with monitoring only. Confirm that interface names, APNs, and ping behavior are correct before enabling redial or power-cycle actions.
 
-Each background sample downloads up to **25 MB per modem**; the interactive utility adds up to 5 MB upload. At a 15-minute interval on both modems, background sampling can consume about **4.8 GB/day**. Consider cellular plan limits before enabling it. Samples use [Cloudflare's HTTPS endpoints](https://github.com/cloudflare/speedtest/blob/main/README.md) with [curl device binding](https://curl.se/docs/manpage.html#--interface), not the full Cloudflare or Ookla measurement algorithm.
+Each background sample downloads up to **25 MB per modem**. At a 15-minute interval on both modems, background sampling can consume about **4.8 GB/day**. Consider cellular plan limits before enabling it. Background samples still use [Cloudflare's HTTPS endpoints](https://github.com/cloudflare/speedtest/blob/main/README.md) with [curl device binding](https://curl.se/docs/manpage.html#--interface), not the full Cloudflare or Ookla measurement algorithm. The separate interactive Speed Test Utility now uses Speedtest.net servers and **can consume hundreds of MB or exceed 1 GB per run**; it requires an explicit data-use confirmation. It does not have the old 30 MB cap. Interactive tests and background samples share an exclusive measurement lock.
 
 Only fresh, successful samples count toward the speed threshold. DNS, TLS, timeout, and server failures are not fabricated as zero Mbps. Speed demotion changes only the project's cellular failover-member preferences in RAM, retaining both wired WAN priorities. Custom member layouts are left alone. Existing flows may remain on their original link; this is not seamless bonding. Slow throughput alone never triggers a modem power cycle.
 
@@ -373,7 +373,8 @@ The same host should have roughly 40–50 GiB available for a clean build. More 
 | `firmware/profiles/` | Pinned baseline config, required package list, and kernel fragment |
 | `firmware/files/` | Files embedded into the router root filesystem |
 | `firmware/feeds/luci-app-modem-watchdog/` | Custom modem health and recovery LuCI application |
-| `firmware/feeds/luci-app-speedtest-lite/` | Authenticated, interface-bound HTTPS speed-sample LuCI application |
+| `firmware/feeds/luci-app-speedtest-lite/` | Live speedometer, throughput graph, server/modem selection, and authenticated test controls |
+| `firmware/feeds/zbt-speedtest/` | Pinned speedtest-go measurement engine with live reporting, socket-level modem binding, and cancellation |
 | `firmware/feeds/luci-app-tailscale/` | Tailscale status/sign-in UI and authenticated RPC backend |
 | `firmware/patches/` | Strict patches against pinned QModem and mwan3 userspace sources |
 | `firmware/tests/` | Mocked runtime regressions, pinned-source patch checks, and isolated nginx/proxy test |
