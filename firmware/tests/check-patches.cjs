@@ -11,6 +11,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zbt-pinned-patches-'));
 const specs = [
   ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', 'qmodem-dual-runtime.patch', ''],
   ['packages', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'mwan3-speed-policy.patch', ''],
+  ['mwan3-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-mwan3-route-metric.patch', ''],
   ['mlo', '0xFar5eer/openwrt25.12_ZBT_Z8803BE', 'edc738504fe8fae81eb15de967456204699b1830', 'luci-app-mlo-shared-iface.patch', 'package/luci-app-mlo/']
 ];
 function run(command, args, options = {}) {
@@ -45,13 +46,21 @@ function run(command, args, options = {}) {
     run('patch', ['--batch', '--fuzz=0', '--forward', '-p1', '-d', tree], { input: patch });
     run('patch', ['--dry-run', '--batch', '--fuzz=0', '--reverse', '-p1', '-d', tree], { input: patch });
     for (const p of files) {
-      if (p.endsWith('.js')) new Function(fs.readFileSync(path.join(tree, p), 'utf8'));
+      const contents = fs.readFileSync(path.join(tree, p), 'utf8');
+      if (p.endsWith('.js')) new Function(contents);
+      else if (p.endsWith('.json')) JSON.parse(contents);
       else run('busybox', ['sh', '-n', path.join(tree, p)]);
     }
     console.log(`${name}: exact pinned patch, reverse/idempotence check and syntax passed (${commit})`);
   }
   const result = run(process.execPath, ['--test', path.join(__dirname, 'runtime.test.cjs'), path.join(__dirname, 'led-labels.test.cjs'), path.join(__dirname, 'ttl.test.cjs'), path.join(__dirname, 'bands.test.cjs'), path.join(__dirname, 'band-ui.test.cjs'), path.join(__dirname, 'mlo-ui.test.cjs')], {
-    env: { ...process.env, QMODEM_TEST_TREE: path.join(tmp, 'qmodem'), MWAN3_TEST_TREE: path.join(tmp, 'packages'), MLO_TEST_TREE: path.join(tmp, 'mlo') }
+    env: {
+      ...process.env,
+      QMODEM_TEST_TREE: path.join(tmp, 'qmodem'),
+      MWAN3_TEST_TREE: path.join(tmp, 'packages'),
+      MWAN3_LUCI_TEST_TREE: path.join(tmp, 'mwan3-luci'),
+      MLO_TEST_TREE: path.join(tmp, 'mlo')
+    }
   });
   process.stdout.write(result);
 })().catch(e => { console.error(e); process.exitCode = 1; })

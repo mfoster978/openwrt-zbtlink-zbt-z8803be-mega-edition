@@ -2,14 +2,56 @@
 'require view';
 'require form';
 'require uci';
+'require fs';
+'require ui';
 return view.extend({
 	load: function() {
 		return uci.load('modem_watchdog');
 	},
 	render: function() {
 		var m, s, o;
-		m = new form.Map('modem_watchdog', _('Speed & Recovery'),
-			_('Optional per-modem speed thresholds and recovery. Wired WAN keeps priority. Disabled by default; each download sample uses up to 25 MB per modem. Two successful samples clear a low-speed condition. Custom mwan3 member layouts are not overridden.'));
+		var applyPreset = function(preset) {
+			ui.showModal(_('Applying routing preset'), [
+				E('p', { 'class': 'spinning' }, _('Updating MWAN3 policy without restarting either modem…'))
+			]);
+			return fs.exec('/usr/sbin/zbt-mwan-preset', [preset]).then(function(res) {
+				if (res.code !== 0)
+					throw new Error((res.stderr || res.stdout || _('Preset command failed')).trim());
+				window.location.reload();
+			}).catch(function(err) {
+				ui.hideModal();
+				ui.addNotification(null, E('p', {}, err.message), 'error');
+			});
+		};
+
+		m = new form.Map('modem_watchdog', _('Multi-WAN Presets & Recovery'),
+			_('MWAN3 owns router-wide priority. QModem only brings each cellular link online. Base order is SFP, WAN, Modem 1, then Modem 2. Optional speed automation is disabled until selected below.'));
+
+		var presets = m.section(form.NamedSection, 'global', 'modem_watchdog', _('Easy routing presets'),
+			_('Applying a preset updates only the firmware-managed MWAN3 members and route metrics. It does not reboot, redial, or power-cycle a modem.'));
+		o = presets.option(form.DummyValue, 'routing_preset', _('Current preset'));
+		o.cfgvalue = function(section_id) {
+			var value = uci.get('modem_watchdog', section_id, 'routing_preset') || 'priority';
+			return ({
+				priority: _('Priority failover'),
+				failover: _('Fast health failover'),
+				fastest: _('Fastest cellular modem'),
+				custom: _('Custom settings')
+			})[value] || value;
+		};
+		o = presets.option(form.Button, '_priority', _('Priority failover'),
+			_('Recommended default: SFP → WAN → Modem 1 → Modem 2. MWAN3 removes an unhealthy link after three failed checks and restores it after two good checks. Speed tests and recovery actions stay off.'));
+		o.inputstyle = 'apply';
+		o.onclick = function() { return applyPreset('priority'); };
+		o = presets.option(form.Button, '_failover', _('Fast health failover'),
+			_('Uses the same safe priority order, but fails over after two failed checks and returns to the preferred link after its first successful check. Speed tests and modem reset actions stay off.'));
+		o.inputstyle = 'apply';
+		o.onclick = function() { return applyPreset('failover'); };
+		o = presets.option(form.Button, '_fastest', _('Prefer the fastest cellular modem'),
+			_('Keeps SFP and WAN first. When both wired links are unavailable, periodically samples Modem 1 and Modem 2 and gives the faster healthy modem priority. Each sample can download up to 25 MB per modem. Recovery actions stay off.'));
+		o.inputstyle = 'apply';
+		o.onclick = function() { return applyPreset('fastest'); };
+
 		s = m.section(form.TypedSection, 'modem_watchdog', _('Global settings'));
 		s.anonymous = true;
 		o = s.option(form.Flag, 'enabled', _('Enable watchdog service'));

@@ -3,6 +3,24 @@
 # independent of Speedify so the router login remains available even when the
 # optional Speedify download has not happened yet.
 if [ -x /etc/init.d/uwsgi ] && [ -x /etc/init.d/nginx ]; then
+	# A public firmware image cannot ship a browser-trusted certificate for a
+	# private address such as 192.168.1.1. Serve the same LAN-only LuCI site on
+	# port 80 as the warning-free default, while retaining optional HTTPS on
+	# port 443. Run this migration once so a later administrator choice to
+	# disable HTTP is preserved.
+	if [ "$(uci -q get system.zbt_luci_http.nginx_migrated 2>/dev/null || true)" != 1 ]; then
+		uci -q delete nginx._redirect2ssl 2>/dev/null || true
+		uci -q del_list nginx._lan.listen='80' 2>/dev/null || true
+		uci -q del_list nginx._lan.listen='80 default_server' 2>/dev/null || true
+		uci -q del_list nginx._lan.listen='[::]:80' 2>/dev/null || true
+		uci -q del_list nginx._lan.listen='[::]:80 default_server' 2>/dev/null || true
+		uci -q add_list nginx._lan.listen='80 default_server'
+		uci -q add_list nginx._lan.listen='[::]:80 default_server'
+		uci -q commit nginx
+		uci -q set system.zbt_luci_http='defaults'
+		uci -q set system.zbt_luci_http.nginx_migrated='1'
+		uci -q commit system
+	fi
 	/etc/init.d/uhttpd stop >/dev/null 2>&1 || true
 	/etc/init.d/uhttpd disable >/dev/null 2>&1 || true
 	/etc/init.d/uwsgi enable >/dev/null 2>&1 || true

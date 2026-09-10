@@ -1,8 +1,40 @@
 #!/bin/sh
 set -eu
 
+# Seed this firmware generation once. Later manual MWAN3 edits belong to the
+# operator and must survive a settings-preserving sysupgrade.
+DEFAULTS_VERSION=1
+[ "$(uci -q get system.zbt_mwan_defaults.version 2>/dev/null || true)" = "$DEFAULTS_VERSION" ] && exit 0
+
 network_exists() {
 	uci -q get "network.$1" >/dev/null 2>&1
+}
+
+ensure_route_metric() {
+	interface="$1"
+	metric="$2"
+	if ! network_exists "$interface"; then
+		case "$interface" in
+			4_1|2_1)
+				uci -q set "network.$interface=interface"
+				uci -q set "network.$interface.proto=none"
+				uci -q set "network.$interface.modem_config=$interface"
+				;;
+			*) return 0 ;;
+		esac
+	fi
+	[ -n "$(uci -q get "network.$interface.metric" 2>/dev/null || true)" ] ||
+		uci -q set "network.$interface.metric=$metric"
+	case "$interface" in
+		4_1|2_1)
+			[ -n "$(uci -q get "network.$interface.modem_config" 2>/dev/null || true)" ] ||
+				uci -q set "network.$interface.modem_config=$interface"
+			[ -n "$(uci -q get "network.$interface.defaultroute" 2>/dev/null || true)" ] ||
+				uci -q set "network.$interface.defaultroute=1"
+			[ -n "$(uci -q get "network.$interface.peerdns" 2>/dev/null || true)" ] ||
+				uci -q set "network.$interface.peerdns=0"
+			;;
+	esac
 }
 
 configure_tracking() {
@@ -38,6 +70,14 @@ configure_member() {
 	uci -q set "mwan3.$member.weight=$weight"
 }
 
+ensure_route_metric wan_sfp 9
+ensure_route_metric wan_sfp6 9
+ensure_route_metric wan 10
+ensure_route_metric wan6 10
+ensure_route_metric 4_1 200
+ensure_route_metric 2_1 210
+uci -q commit network
+
 HAS_WAN_SFP=0
 HAS_WAN=0
 network_exists wan_sfp && HAS_WAN_SFP=1
@@ -53,10 +93,13 @@ wan_zone="$(uci -q show firewall | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$
 done)"
 if [ -n "${wan_zone:-}" ]; then
 	for interface in 4_1 2_1; do
-		case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in
-			*" $interface "*) ;;
-			*) uci -q add_list "firewall.$wan_zone.network=$interface" ;;
-		esac
+		owned=0
+		for zone in $(uci -q show firewall 2>/dev/null | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p'); do
+			case " $(uci -q get "firewall.$zone.network" 2>/dev/null || true) " in
+				*" $interface "*) owned=1; break ;;
+			esac
+		done
+		[ "$owned" = 1 ] || uci -q add_list "firewall.$wan_zone.network=$interface"
 	done
 	uci -q commit firewall
 fi
@@ -81,8 +124,14 @@ configure_member failover_2_1 2_1 4 1
 
 # Remove names from the earlier defaults so they cannot be reused with stale
 # same-tier metrics after an attended upgrade.
-for old_member in m4_1_m1_w1 m2_1_m1_w1 m2_1_m2_w1 mwan_m1_w3; do
+for old_member in \
+	m4_1_m1_w1 m2_1_m1_w1 m2_1_m2_w1 mwan_m1_w3 \
+	wan_m1_w3 wan_m2_w3 wanb_m1_w2 wanb_m1_w3 wanb_m2_w2 \
+	wan6_m1_w3 wan6_m2_w3 wanb6_m1_w2 wanb6_m1_w3 wanb6_m2_w2; do
 	uci -q delete "mwan3.$old_member" 2>/dev/null || true
+done
+for sample in wan6 wanb wanb6 wan_only wanb_only wan_wanb wanb_wan; do
+	uci -q delete "mwan3.$sample" 2>/dev/null || true
 done
 
 uci -q set mwan3.balanced='policy'
@@ -118,5 +167,17 @@ uci -q set mwan3.globals='globals'
 uci -q set mwan3.globals.enabled='1'
 uci -q set mwan3.globals.mmx_mask='0x3F00'
 uci -q commit mwan3
+
+# Presets are opt-in. The safe wired-first policy above is active, while the
+# measurement/recovery daemon remains disabled until the user selects it.
+if uci -q get modem_watchdog.global >/dev/null 2>&1; then
+	[ -n "$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || true)" ] ||
+		uci -q set modem_watchdog.global.routing_preset='priority'
+	uci -q commit modem_watchdog
+fi
+
+uci -q set system.zbt_mwan_defaults=defaults
+uci -q set "system.zbt_mwan_defaults.version=$DEFAULTS_VERSION"
+uci -q commit system
 
 exit 0

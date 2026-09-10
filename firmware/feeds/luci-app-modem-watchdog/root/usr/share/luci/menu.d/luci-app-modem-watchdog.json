@@ -1,6 +1,6 @@
 {
   "admin/network/mwan3/speed_failover": {
-    "title": "Speed & Recovery",
+    "title": "Presets & Recovery",
     "order": 95,
     "action": {
       "type": "view",

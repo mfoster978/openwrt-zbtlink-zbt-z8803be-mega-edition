@@ -11,11 +11,13 @@ for script in \
   firmware/files/etc/init.d/zbt-luci-backend \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
+  firmware/files/etc/uci-defaults/99-zbt-route-priority-repair \
   firmware/files/etc/uci-defaults/99-speedify-bootstrap \
   firmware/files/etc/uci-defaults/99-cellular-multiwan-defaults \
   firmware/files/etc/hotplug.d/usb/40-zbt-qmodem-autoenable \
   firmware/files/usr/sbin/speedify-installer-loop \
   firmware/files/usr/sbin/zbt-luci-backend-check \
+  firmware/files/usr/sbin/zbt-mwan-preset \
   firmware/files/usr/sbin/zbt-qmodem-watchdog-loop \
   firmware/scripts/apply-router-defaults.sh \
   firmware/scripts/verify-router-runtime.sh; do
@@ -32,8 +34,38 @@ done < <(rg --files firmware/files firmware/feeds)
 
 test -s firmware/patches/luci-app-mlo-shared-iface.patch
 grep -Fq 'writeCommon(mldIface, selectedDevices);' firmware/patches/luci-app-mlo-shared-iface.patch
+test -s firmware/patches/luci-app-mwan3-route-metric.patch
+grep -Fq "uci.set('network', section_id, 'metric', value);" \
+  firmware/patches/luci-app-mwan3-route-metric.patch
+grep -Fq '"network"' firmware/patches/luci-app-mwan3-route-metric.patch
 grep -Fq "uci -q add_list \"wireless.\${first}.device=\${device}\"" \
   firmware/files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair
+
+# LuCI must remain reachable over warning-free LAN HTTP while preserving the
+# optional HTTPS listener. This is a one-time migration so operator changes
+# made after first boot are not overwritten on every upgrade.
+grep -Fq "uci -q delete nginx._redirect2ssl" \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq "uci -q add_list nginx._lan.listen='80 default_server'" \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq "uci -q add_list nginx._lan.listen='[::]:80 default_server'" \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq "system.zbt_luci_http.nginx_migrated" \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+
+# MWAN3 owns route selection; QModem preserves stable interfaces and consumes
+# their network metrics instead of deleting or overwriting them on redial.
+grep -Fq 'network_metric=$(uci -q get network.${interface_name}.metric)' \
+  firmware/patches/qmodem-dual-runtime.patch
+grep -Fq 'Keep the stable 4_1/2_1 record that MWAN3 tracks' \
+  firmware/patches/qmodem-dual-runtime.patch
+grep -Fq "form.DummyValue, '_route_metric'" firmware/patches/qmodem-dual-runtime.patch
+grep -Fq "uci.load('network')" firmware/patches/qmodem-dual-runtime.patch
+grep -Fq 'ensure_route_metric wan_sfp 9' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'ensure_route_metric wan 10' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'ensure_route_metric 4_1 200' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'ensure_route_metric 2_1 210' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'option routing_preset' firmware/feeds/luci-app-modem-watchdog/root/etc/config/modem_watchdog
 
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config

@@ -1,4 +1,5 @@
 config modem_watchdog 'global'
+	option routing_preset 'priority'
 	option enabled '0'
 	option actions_enabled '0'
 	option interval_seconds '30'

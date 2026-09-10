@@ -56,6 +56,9 @@ fi
 [[ "$(git -C feeds/packages rev-parse HEAD)" = db3b315119519f9194dad8aa668aa40618df9b20 ]] || {
   echo 'Unexpected packages revision; review mwan3 patch before building' >&2; exit 3;
 }
+[[ "$(git -C feeds/luci rev-parse HEAD)" = a611522a2bfc24ca2625e8cd2fcc9404288532a6 ]] || {
+  echo 'Unexpected LuCI revision; review mwan3 route-metric patch before building' >&2; exit 3;
+}
 # Strict userspace-only patch against the pinned QModem feed. No kernel,
 # modem driver or wireless firmware revision changes.
 runtime_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-dual-runtime.patch"
@@ -117,6 +120,13 @@ if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_p
   patch --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch"
 elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/packages < "$policy_patch" >/dev/null; then
   echo 'mwan3 speed-policy patch does not match pinned feed' >&2
+  exit 3
+fi
+mwan_luci_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/luci-app-mwan3-route-metric.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/luci < "$mwan_luci_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/luci < "$mwan_luci_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci < "$mwan_luci_patch" >/dev/null; then
+  echo 'MWAN3 route-metric UI patch does not match pinned LuCI feed' >&2
   exit 3
 fi
 mkdir -p files
@@ -189,6 +199,7 @@ make defconfig
 # an existing package stamp in a reused local tree. Always rebuild this small
 # LuCI package so the firmware cannot ship the stale per-band MLO writer.
 make package/luci-app-mlo/clean
+make package/feeds/luci/luci-app-mwan3/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
@@ -337,7 +348,9 @@ required_overlay_files=(
   usr/sbin/zbt-qmodem-profile
   usr/sbin/zbt-modem-led-poller
   usr/sbin/zbt-mwan-apply
+  usr/sbin/zbt-mwan-preset
   etc/init.d/qmodem_network
+  etc/uci-defaults/99-zbt-route-priority-repair
   usr/share/rpcd/acl.d/zbt-speedtest.json
   usr/share/luci/menu.d/tailscale.json
 )
@@ -367,11 +380,27 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
 done
+grep -Fq 'network_metric=$(uci -q get network.${interface_name}.metric)' \
+  "${rootfs_dir}/usr/share/qmodem/modem_dial.sh" || {
+  echo 'QModem is not consuming the persistent network route metric' >&2; exit 4;
+}
+grep -Fq "form.DummyValue, '_route_metric'" \
+  "${rootfs_dir}/www/luci-static/resources/view/qmodem/network_config.js" || {
+  echo 'QModem still exposes an independent editable route metric' >&2; exit 4;
+}
+grep -Fq "uci.set('network', section_id, 'metric', value);" \
+  "${rootfs_dir}/www/luci-static/resources/view/mwan3/network/interface.js" || {
+  echo 'MultiWAN Manager route-metric editor is missing from the image' >&2; exit 4;
+}
+grep -Fq '"network"' \
+  "${rootfs_dir}/usr/share/rpcd/acl.d/luci-app-mwan3.json" || {
+  echo 'MultiWAN Manager lacks permission to persist network metrics' >&2; exit 4;
+}
 [ "$(readlink "${rootfs_dir}/etc/rc.d/S79uwsgi")" = ../init.d/uwsgi ] || {
   echo 'LuCI uWSGI backend is not enabled at S79' >&2; exit 4;
 }

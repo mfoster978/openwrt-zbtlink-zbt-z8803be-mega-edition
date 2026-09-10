@@ -1,0 +1,257 @@
+#!/bin/sh
+# Apply bounded, documented routing presets without restarting either modem.
+set -eu
+
+mode="${1:-status}"
+
+network_exists() {
+	uci -q get "network.$1" >/dev/null 2>&1
+}
+
+set_if_missing() {
+	package="$1"
+	section="$2"
+	option="$3"
+	value="$4"
+	[ -n "$(uci -q get "$package.$section.$option" 2>/dev/null || true)" ] ||
+		uci -q set "$package.$section.$option=$value"
+}
+
+ensure_route_metric() {
+	section="$1"
+	value="$2"
+	exact="$3"
+	if ! network_exists "$section"; then
+		case "$section" in
+			4_1|2_1)
+				uci -q set "network.$section=interface"
+				uci -q set "network.$section.proto=none"
+				uci -q set "network.$section.modem_config=$section"
+				;;
+			*) return 0 ;;
+		esac
+	fi
+	if [ "$exact" = 1 ] || [ -z "$(uci -q get "network.$section.metric" 2>/dev/null || true)" ]; then
+		uci -q set "network.$section.metric=$value"
+	fi
+	case "$section" in
+		4_1|2_1)
+			set_if_missing network "$section" modem_config "$section"
+			set_if_missing network "$section" proto none
+			set_if_missing network "$section" defaultroute 1
+			set_if_missing network "$section" peerdns 0
+			if uci -q get "qmodem.$section" >/dev/null 2>&1; then
+				if [ "$exact" = 1 ] || [ -z "$(uci -q get "qmodem.$section.metric" 2>/dev/null || true)" ]; then
+					uci -q set "qmodem.$section.metric=$value"
+				fi
+			fi
+			;;
+	esac
+}
+
+configure_tracking() {
+	interface="$1"
+	track_ip_1="$2"
+	track_ip_2="$3"
+	down_count="$4"
+	up_count="$5"
+	uci -q set "mwan3.$interface=interface"
+	uci -q set "mwan3.$interface.enabled=1"
+	uci -q set "mwan3.$interface.initial_state=offline"
+	uci -q set "mwan3.$interface.family=ipv4"
+	uci -q set "mwan3.$interface.track_method=ping"
+	uci -q set "mwan3.$interface.reliability=1"
+	uci -q set "mwan3.$interface.count=1"
+	uci -q set "mwan3.$interface.size=56"
+	uci -q set "mwan3.$interface.max_ttl=60"
+	uci -q set "mwan3.$interface.timeout=2"
+	uci -q set "mwan3.$interface.interval=5"
+	uci -q set "mwan3.$interface.down=$down_count"
+	uci -q set "mwan3.$interface.up=$up_count"
+	uci -q delete "mwan3.$interface.track_ip" 2>/dev/null || true
+	uci -q add_list "mwan3.$interface.track_ip=$track_ip_1"
+	uci -q add_list "mwan3.$interface.track_ip=$track_ip_2"
+}
+
+configure_member() {
+	member="$1"
+	interface="$2"
+	priority="$3"
+	weight="$4"
+	uci -q set "mwan3.$member=member"
+	uci -q set "mwan3.$member.interface=$interface"
+	uci -q set "mwan3.$member.metric=$priority"
+	uci -q set "mwan3.$member.weight=$weight"
+}
+
+remove_sample_config() {
+	# These names are the disabled example configuration shipped by mwan3,
+	# not physical interfaces on this board. Keeping them produces confusing
+	# "No interface metric set" rows in LuCI.
+	for section in \
+		wan6 wanb wanb6 \
+		m4_1_m1_w1 m2_1_m1_w1 m2_1_m2_w1 mwan_m1_w3 \
+		wan_m1_w3 wan_m2_w3 wanb_m1_w2 wanb_m1_w3 wanb_m2_w2 \
+		wan6_m1_w3 wan6_m2_w3 wanb6_m1_w2 wanb6_m1_w3 wanb6_m2_w2 \
+		wan_only wanb_only wan_wanb wanb_wan https default_rule_v4 default_rule_v6; do
+		uci -q delete "mwan3.$section" 2>/dev/null || true
+	done
+}
+
+ensure_firewall_membership() {
+	zone_owns_interface() {
+		candidate="$1"
+		for zone in $(uci -q show firewall 2>/dev/null | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p'); do
+			case " $(uci -q get "firewall.$zone.network" 2>/dev/null || true) " in
+				*" $candidate "*) return 0 ;;
+			esac
+		done
+		return 1
+	}
+	wan_zone="$(uci -q show firewall 2>/dev/null | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p' | while read -r section; do
+		[ "$(uci -q get "firewall.$section.name" 2>/dev/null || true)" = wan ] && {
+			echo "$section"
+			break
+		}
+	done)"
+	[ -n "$wan_zone" ] || return 0
+	for interface in 4_1 2_1; do
+		zone_owns_interface "$interface" || uci -q add_list "firewall.$wan_zone.network=$interface"
+	done
+}
+
+configure_policy() {
+	down_count="$1"
+	up_count="$2"
+
+	network_exists wan_sfp && configure_tracking wan_sfp 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
+	network_exists wan && configure_tracking wan 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
+	configure_tracking 4_1 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
+	configure_tracking 2_1 1.0.0.1 9.9.9.9 "$down_count" "$up_count"
+
+	if network_exists wan_sfp; then
+		configure_member failover_wan_sfp wan_sfp 1 1
+		configure_member balanced_wan_sfp wan_sfp 1 3
+	fi
+	if network_exists wan; then
+		configure_member failover_wan wan 2 1
+		configure_member balanced_wan wan 1 3
+	fi
+	configure_member failover_4_1 4_1 3 1
+	configure_member failover_2_1 2_1 4 1
+	configure_member balanced_4_1 4_1 1 1
+	configure_member balanced_2_1 2_1 1 1
+
+	uci -q set mwan3.failover=policy
+	uci -q delete mwan3.failover.use_member 2>/dev/null || true
+	network_exists wan_sfp && uci -q add_list mwan3.failover.use_member=failover_wan_sfp
+	network_exists wan && uci -q add_list mwan3.failover.use_member=failover_wan
+	uci -q add_list mwan3.failover.use_member=failover_4_1
+	uci -q add_list mwan3.failover.use_member=failover_2_1
+	uci -q set mwan3.failover.last_resort=unreachable
+
+	uci -q set mwan3.balanced=policy
+	uci -q delete mwan3.balanced.use_member 2>/dev/null || true
+	network_exists wan_sfp && uci -q add_list mwan3.balanced.use_member=balanced_wan_sfp
+	network_exists wan && uci -q add_list mwan3.balanced.use_member=balanced_wan
+	uci -q add_list mwan3.balanced.use_member=balanced_4_1
+	uci -q add_list mwan3.balanced.use_member=balanced_2_1
+	uci -q set mwan3.balanced.last_resort=unreachable
+
+	uci -q set mwan3.default_rule=rule
+	uci -q set mwan3.default_rule.dest_ip=0.0.0.0/0
+	uci -q set mwan3.default_rule.use_policy=failover
+	uci -q set mwan3.default_rule.family=ipv4
+	uci -q set mwan3.default_rule.proto=all
+	uci -q set mwan3.globals=globals
+	uci -q set mwan3.globals.enabled=1
+	uci -q set mwan3.globals.mmx_mask=0x3F00
+}
+
+configure_watchdog() {
+	preset="$1"
+	uci -q set modem_watchdog.global.routing_preset="$preset"
+	uci -q set modem_watchdog.global.actions_enabled=0
+	case "$preset" in
+		fastest)
+			uci -q set modem_watchdog.global.enabled=1
+			uci -q set modem_watchdog.global.failover=1
+			uci -q set modem_watchdog.global.prefer_fastest=1
+			uci -q set modem_watchdog.global.speed_test=1
+			;;
+		*)
+			uci -q set modem_watchdog.global.enabled=0
+			uci -q set modem_watchdog.global.failover=0
+			uci -q set modem_watchdog.global.prefer_fastest=0
+			uci -q set modem_watchdog.global.speed_test=0
+			;;
+	esac
+}
+
+commit_all() {
+	uci -q commit network
+	uci -q commit qmodem
+	uci -q commit firewall
+	uci -q commit mwan3
+	uci -q commit modem_watchdog
+}
+
+case "$mode" in
+	status)
+		printf 'preset=%s\n' "$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || echo priority)"
+		for interface in wan_sfp wan 4_1 2_1; do
+			printf 'network.%s.metric=%s\n' "$interface" "$(uci -q get "network.$interface.metric" 2>/dev/null || echo missing)"
+		done
+		for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
+			printf 'mwan3.%s=%s:%s\n' "$member" \
+				"$(uci -q get "mwan3.$member.interface" 2>/dev/null || echo missing)" \
+				"$(uci -q get "mwan3.$member.metric" 2>/dev/null || echo missing)"
+		done
+		exit 0
+		;;
+	repair)
+		exact=0
+		;;
+	priority|failover|fastest)
+		exact=1
+		;;
+	*)
+		echo 'Usage: zbt-mwan-preset {status|repair|priority|failover|fastest}' >&2
+		exit 2
+		;;
+esac
+
+ensure_route_metric wan_sfp 9 "$exact"
+ensure_route_metric wan_sfp6 9 "$exact"
+ensure_route_metric wan 10 "$exact"
+ensure_route_metric wan6 10 "$exact"
+ensure_route_metric 4_1 200 "$exact"
+ensure_route_metric 2_1 210 "$exact"
+ensure_firewall_membership
+remove_sample_config
+
+if [ "$mode" = repair ]; then
+	if [ -z "$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || true)" ]; then
+		if [ "$(uci -q get modem_watchdog.global.enabled 2>/dev/null || true)" = 1 ]; then
+			uci -q set modem_watchdog.global.routing_preset=custom
+		else
+			uci -q set modem_watchdog.global.routing_preset=priority
+		fi
+	fi
+	commit_all
+	exit 0
+fi
+
+case "$mode" in
+	priority) configure_policy 3 2 ;;
+	failover) configure_policy 2 1 ;;
+	fastest) configure_policy 3 2 ;;
+esac
+configure_watchdog "$mode"
+commit_all
+
+# Reload only policy services. Cellular interfaces and modem processes stay up.
+/etc/init.d/mwan3 reload >/dev/null 2>&1 || true
+/etc/init.d/modem_watchdog restart >/dev/null 2>&1 || true
+logger -t zbt-mwan-preset "applied $mode routing preset"
+printf 'Applied %s routing preset.\n' "$mode"

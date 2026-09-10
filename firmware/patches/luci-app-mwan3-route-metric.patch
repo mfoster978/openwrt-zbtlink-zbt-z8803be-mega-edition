@@ -1,0 +1,63 @@
+Subject: [PATCH] luci-app-mwan3: manage network route metrics in interface tab
+
+MWAN3 requires every tracked netifd interface to have a unique route metric,
+but its interface page only displayed the value.  Make that value editable in
+the MWAN3 UI and write it to /etc/config/network, where netifd and QModem can
+share one persistent source of truth.
+
+--- a/applications/luci-app-mwan3/htdocs/luci-static/resources/view/mwan3/network/interface.js
++++ b/applications/luci-app-mwan3/htdocs/luci-static/resources/view/mwan3/network/interface.js
+@@ -289,16 +289,37 @@
+ 		o.value('disconnected', _('disconnected (mwan3)'));
+ 		o.modalonly = true;
+ 
+-		o = s.option(form.DummyValue, 'metric', _('Metric'),
+-			_('This displays the metric assigned to this interface in /etc/config/network'));
+-		o.rawhtml = true;
+-		o.cfgvalue = function(s) {
+-			var metric = uci.get('network', s, 'metric')
+-			if (metric)
+-				return metric;
+-			else
+-				return _('No interface metric set!');
+-		}
++		o = s.option(form.Value, '_route_metric', _('Route metric'),
++			_('Persistent metric in /etc/config/network. It must be unique. Lower values are preferred by ordinary Linux routing; MWAN policy order is configured in the Members tab.'));
++		o.datatype = 'range(1, 4294967295)';
++		o.rmempty = false;
++		o.placeholder = '200';
++		o.cfgvalue = function(section_id) {
++			return uci.get('network', section_id, 'metric') || '';
++		};
++		o.validate = function(section_id, value) {
++			if (!uci.get('network', section_id))
++				return _('No matching interface exists in /etc/config/network.');
++			if (!value)
++				return _('A unique route metric is required.');
++
++			var duplicate = null;
++			uci.sections('mwan3', 'interface').some(function(other) {
++				if (other['.name'] === section_id)
++					return false;
++				if (String(uci.get('network', other['.name'], 'metric') || '') !== String(value))
++					return false;
++				duplicate = other['.name'];
++				return true;
++			});
++			return duplicate ? _('Route metric is already used by interface %s.').format(duplicate) : true;
++		};
++		o.write = function(section_id, value) {
++			uci.set('network', section_id, 'metric', value);
++		};
++		o.remove = function(section_id) {
++			uci.unset('network', section_id, 'metric');
++		};
+ 
+ 		return m.render();
+ 	}
+--- a/applications/luci-app-mwan3/root/usr/share/rpcd/acl.d/luci-app-mwan3.json
++++ b/applications/luci-app-mwan3/root/usr/share/rpcd/acl.d/luci-app-mwan3.json
+@@ -90 +90,2 @@
+-				"mwan3"
++				"mwan3",
++				"network"

@@ -32,15 +32,26 @@ for section in 4_1 2_1; do
 			/usr/sbin/zbt-qmodem-profile "$section"
 		fi
 	fi
-	# Drop only the old firmware-owned competing identities on this migration.
-	[ "$migrate_network" = 1 ] || continue
-	for network_id in "$section" "${section}v6"; do
-		if [ "$(uci -q get "network.$network_id.modem_config" || true)" = "$section" ] ||
-		   [ "$(uci -q get "network.$network_id.proto" || true)" = none ] ||
-		   { [ "$section" = 4_1 ] && [ "$(uci -q get "network.$network_id.device" || true)" = wwan0 ]; }; then
-			uci -q delete "network.$network_id" || true
-		fi
-	done
+	# Keep a stable netifd identity for MWAN3 even while the modem is down.
+	# The QMI dialer fills in the physical wwan device after discovery and
+	# takes its route metric from this interface instead of owning priority.
+	metric=200; [ "$section" = 2_1 ] && metric=210
+	if ! uci -q get "network.$section" >/dev/null 2>&1; then
+		uci set "network.$section=interface"
+		uci set "network.$section.proto=none"
+		uci set "network.$section.modem_config=$section"
+	fi
+	if [ "$migrate_network" = 1 ]; then
+		uci set "network.$section=interface"
+		uci set "network.$section.proto=none"
+		uci set "network.$section.modem_config=$section"
+		uci -q delete "network.$section.ifname" || true
+		uci -q delete "network.$section.device" || true
+		uci -q delete "network.${section}v6" || true
+	fi
+	[ -n "$(uci -q get "network.$section.metric" || true)" ] || uci set "network.$section.metric=$metric"
+	[ -n "$(uci -q get "network.$section.defaultroute" || true)" ] || uci set "network.$section.defaultroute=1"
+	[ -n "$(uci -q get "network.$section.peerdns" || true)" ] || uci set "network.$section.peerdns=0"
 done
 # Old modem1/modem2 aliases refer to the same devices as 4_1/2_1.
 if [ "$migrate_network" = 1 ]; then

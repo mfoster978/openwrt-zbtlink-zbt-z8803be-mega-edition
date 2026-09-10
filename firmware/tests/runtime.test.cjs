@@ -435,6 +435,43 @@ test('patched scanner repairs existing profiles and qmodem_init passes slot, not
   assert.match(patchedFile('application/qmodem/files/usr/share/qmodem/modem_dial.sh'), /qmi\|mbim\|mhi\) proto="none"; protov6="none"/);
 });
 
+test('QModem consumes and preserves MWAN-owned network metrics across redial', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  const dialer = patchedFile('application/qmodem/files/usr/share/qmodem/modem_dial.sh');
+  const ui = patchedFile('luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js');
+  assert.match(dialer, /network_metric=\$\(uci -q get network\.\$\{interface_name\}\.metric\)/);
+  assert.match(dialer, /\*\) metric="\$network_metric"/);
+  assert.match(dialer, /if \[ "\$network_cfg" = "\$interface_name" \]; then/);
+  assert.match(dialer, /uci -q set network\.\$\{network_cfg\}\.metric="\$\{metric:-200\}"/);
+  assert.doesNotMatch(dialer, /if \[ "\$network_cfg" = "\$interface_name" \]; then\s*uci delete network\.\$network_cfg/);
+  assert.match(ui, /form\.DummyValue, '_route_metric'/);
+  assert.match(ui, /uci\.load\('network'\)/);
+});
+
+test('MWAN3 interface UI edits the persistent network metric', { skip: !process.env.MWAN3_LUCI_TEST_TREE }, () => {
+  const tree = process.env.MWAN3_LUCI_TEST_TREE;
+  const uiSource = fs.readFileSync(path.join(tree,
+    'applications/luci-app-mwan3/htdocs/luci-static/resources/view/mwan3/network/interface.js'), 'utf8');
+  const acl = JSON.parse(fs.readFileSync(path.join(tree,
+    'applications/luci-app-mwan3/root/usr/share/rpcd/acl.d/luci-app-mwan3.json'), 'utf8'))['luci-app-mwan3'];
+  assert.match(uiSource, /form\.Value, '_route_metric'/);
+  assert.match(uiSource, /uci\.set\('network', section_id, 'metric', value\)/);
+  assert.match(uiSource, /Route metric is already used by interface/);
+  assert.ok(acl.write.uci.includes('network'));
+});
+
+test('routing presets keep one explicit whole-router priority order', () => {
+  const preset = file('firmware/files/usr/sbin/zbt-mwan-preset');
+  assert.match(preset, /ensure_route_metric wan_sfp 9 "\$exact"/);
+  assert.match(preset, /ensure_route_metric wan 10 "\$exact"/);
+  assert.match(preset, /ensure_route_metric 4_1 200 "\$exact"/);
+  assert.match(preset, /ensure_route_metric 2_1 210 "\$exact"/);
+  assert.match(preset, /configure_member failover_wan_sfp wan_sfp 1 1/);
+  assert.match(preset, /configure_member failover_wan wan 2 1/);
+  assert.match(preset, /configure_member failover_4_1 4_1 3 1/);
+  assert.match(preset, /configure_member failover_2_1 2_1 4 1/);
+  assert.match(preset, /# Reload only policy services/);
+});
+
 test('pinned mwan3 policy builder consumes RAM metric override', { skip: !process.env.MWAN3_TEST_TREE }, () => {
   const code = fs.readFileSync(path.join(process.env.MWAN3_TEST_TREE, 'net/mwan3/files/lib/mwan3/mwan3.sh'), 'utf8');
   assert.match(code, /metric=\$\(zbt_speed_metric "\$1" "\$iface" "\$metric"\)/);

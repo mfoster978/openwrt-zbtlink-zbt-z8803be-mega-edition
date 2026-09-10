@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 PKG_NAME:=luci-app-modem-watchdog
 PKG_VERSION:=1
-PKG_RELEASE:=2
-LUCI_TITLE:=LuCI support for modem watchdog and failover controls
+PKG_RELEASE:=3
+LUCI_TITLE:=LuCI support for MWAN3 presets, modem speed selection and recovery
 LUCI_DEPENDS:=+luci-base +rpcd +jq +curl
 include $(TOPDIR)/feeds/luci/luci.mk
 define Package/$(PKG_NAME)/conffiles

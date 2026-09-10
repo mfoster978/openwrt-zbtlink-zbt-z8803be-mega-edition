@@ -15,7 +15,9 @@ for section in 4_1 2_1; do
 		printf '%s=%s\n' "$key" "$(uci -q get "qmodem.$section.$key")"
 	done
 	printf 'apn_mode=%s secondary_apn_mode=%s\n' "$(zbt_apn_mode "$(uci -q get "qmodem.$section.apn")")" "$(zbt_apn_mode "$(uci -q get "qmodem.$section.apn2")")"
-	printf 'proto=%s\n' "$(uci -q get "network.$section.proto")"
+	printf 'proto=%s network_metric=%s\n' \
+		"$(uci -q get "network.$section.proto")" \
+		"$(uci -q get "network.$section.metric")"
 	/etc/init.d/qmodem_network modem_status "$section" 2>/dev/null
 	if [ -n "$device" ]; then
 		ip addr show dev "$device" scope global 2>/dev/null
@@ -53,6 +55,14 @@ for lamp in mt7530-0:00:green:lan mt7530-0:02:green:lan mt7530-0:03:green:lan md
 	printf '\n'
 done
 printf '\n%s\n' 'Routing and measurement configuration'
+for interface in wan_sfp wan_sfp6 wan wan6 4_1 2_1; do
+	uci -q get "network.$interface" >/dev/null 2>&1 || continue
+	printf 'network.%s metric=%s proto=%s device=%s\n' "$interface" \
+		"$(uci -q get "network.$interface.metric")" \
+		"$(uci -q get "network.$interface.proto")" \
+		"$(uci -q get "network.$interface.device")"
+done
+/usr/sbin/zbt-mwan-preset status 2>/dev/null || true
 for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
 	printf '%s=%s:%s\n' "$member" "$(uci -q get "mwan3.$member.interface")" "$(uci -q get "mwan3.$member.metric")"
 done
@@ -68,6 +78,8 @@ for service in uwsgi nginx zbt-luci-backend sfy-ws-auth speedify speedify-instal
 done
 nginx -t 2>&1
 printf 'luci_backend_socket=%s\n' "$([ -S /var/run/luci-webui.socket ] && echo present || echo missing)"
+printf 'luci_http_status='
+curl -sS --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1/cgi-bin/luci/
 printf 'luci_https_status='
 curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/cgi-bin/luci/
 printf 'speedify_installer_done=%s\n' "$([ -f /etc/speedify.installed ] && echo yes || echo no)"
@@ -76,4 +88,16 @@ printf 'speedify_unauthenticated_http_status='
 curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/luci-app-speedify/view/index.html
 printf 'tailscale_state='
 tailscale status --json 2>/dev/null | jq -r '.BackendState // "Unavailable"'
+printf '\n%s\n' 'MLO representation and LAN bridge state (SSID/MAC output may need redaction)'
+for section in $(uci -q show wireless | sed -nE 's/^wireless\.([^.]+)=wifi-iface$/\1/p'); do
+	[ "$(uci -q get "wireless.${section}.mlo")" = 1 ] || continue
+	set -- $(uci -q get "wireless.${section}.device")
+	printf 'section=%s radios=%s device_count=%s network=%s security=%s disabled=%s\n' \
+		"$section" "$*" "$#" "$(uci -q get "wireless.${section}.network")" \
+		"$(uci -q get "wireless.${section}.encryption")" "$(uci -q get "wireless.${section}.disabled")"
+done
+iw dev 2>/dev/null || true
+bridge link show 2>/dev/null || true
+ubus list 'hostapd.*' 2>/dev/null || true
+logread 2>/dev/null | grep -Ei 'mld|mlo|AP-ENABLED|too many open files|not supported' | tail -n 120
 printf '\n%s\n' 'Compare AT registration/band readbacks separately in the selected modem AT Debug tab; do not publish SIM identifiers.'

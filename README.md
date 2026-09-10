@@ -123,7 +123,8 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - Strict wired-first failover order, while automatically omitting a wired interface that is not present.
 - A separate balanced policy is available for deliberate load distribution.
 - Default traffic, including speed-test ports, follows wired-first failover; balancing is an explicit user choice.
-- **Network → MultiWAN Manager → Speed & Recovery** exposes minimum-speed thresholds and per-modem recovery controls.
+- **Network → MultiWAN Manager → Presets & Recovery** offers one-click priority, fast-failover, and fastest-cellular presets, plus minimum-speed thresholds and per-modem recovery controls.
+- The MultiWAN Interfaces tab owns the persistent route metric for every tracked link. QModem displays the cellular value read-only and cannot erase or override it during redial.
 - The additional watchdog, recovery actions, speed-based preference changes, and “prefer fastest” mode are disabled by default. Normal `mwan3` connectivity failover remains enabled.
 - Recovery choices include log-only, disconnect, redial, or GPIO power-cycle followed by redial.
 - Cooldowns and failure thresholds prevent rapid recovery loops.
@@ -181,27 +182,28 @@ The firmware does not infer a live modem merely because a UCI section exists. Ru
 
 ## Default routing behavior
 
-The default IPv4 policy is failover, not bonding:
+The default IPv4 policy is failover, not bonding. The first number is the persistent, unique Linux/netifd route metric shown in the MultiWAN Interfaces tab; the second is the MWAN policy tier shown in Members:
 
 ```text
-SFP WAN        metric 1
+SFP WAN        route 9   / MWAN tier 1
   ↓
-Copper WAN     metric 2
+Copper WAN     route 10  / MWAN tier 2
   ↓
-Modem 1 (4_1)  metric 3
+Modem 1 (4_1)  route 200 / MWAN tier 3
   ↓
-Modem 2 (2_1)  metric 4
+Modem 2 (2_1)  route 210 / MWAN tier 4
 ```
 
-Each available interface is monitored with two public ping targets and `reliability=1`. The default catch-all rule uses the `failover` policy. The `balanced` policy exists for explicit selection, but normal traffic remains wired-first by default.
+Each available interface is monitored with two public ping targets and `reliability=1`. The default catch-all rule uses the `failover` policy. The `balanced` policy exists for explicit selection, but normal traffic remains wired-first by default. Route-metric changes are made inside MultiWAN Manager and persist in `/etc/config/network`; QModem is responsible only for establishing the cellular data sessions.
 
 > [!NOTE]
 > `mwan3` distributes connections and provides failover. It does not combine multiple links into a faster single TCP flow. That requires a bonding service with a remote endpoint, such as Speedify, or a separate OpenMPTCProuter deployment.
 
 ## Modem watchdog
 
-Open **Network → MultiWAN Manager → Speed & Recovery** in LuCI to configure:
+Open **Network → MultiWAN Manager → Presets & Recovery** in LuCI to configure:
 
+- recommended one-click wired-first priority, faster health failover, or fastest-cellular behavior;
 - service enablement and a separate permission switch for recovery actions;
 - check interval, ping target, consecutive-failure threshold, and recovery cooldown;
 - speed-test sampling interval and minimum acceptable throughput;
@@ -507,7 +509,7 @@ Without a login session, the protected Speedify index should return **401**, not
 
 ### HTTPS warning on the router's private IP address
 
-The stock LuCI/nginx certificate is self-signed, so a browser warning at `https://192.168.1.1` is expected. A large clock correction during first boot can also affect certificate validity. Keep HTTPS enabled, set the correct time, and use a trusted local CA or a certificate for a hostname you control if you need warning-free access. Follow [OpenWrt's certificate guidance](https://openwrt.org/docs/guide-user/luci/getting_rid_of_luci_https_certificate_warnings), adapting the certificate paths to nginx. Never disable certificate verification for firmware/package downloads.
+Use `http://192.168.1.1` for the default warning-free LAN login. HTTPS remains available at `https://192.168.1.1`, but its per-router self-signed certificate cannot be trusted automatically by a public browser and will show a warning until you install a trusted local CA or a certificate for a hostname you control. HTTP is restricted to the local router interface but is not encrypted, so use HTTPS with a trusted certificate on untrusted LANs. This setting never disables certificate verification for firmware or package downloads.
 
 ## Support and sponsorship
 

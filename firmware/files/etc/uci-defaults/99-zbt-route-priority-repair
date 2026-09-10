@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+[ "$(uci -q get system.zbt_route_priority.version 2>/dev/null || true)" = 1 ] && exit 0
+
+/usr/sbin/zbt-mwan-preset repair
+uci -q set system.zbt_route_priority=runtime_defaults
+uci -q set system.zbt_route_priority.version=1
+uci -q commit system
+
+exit 0
