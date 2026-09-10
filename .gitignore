@@ -1,8 +1,7 @@
 # Generated build trees, workflow outputs and Python test caches, not sources.
 /openwrt/
-/artifacts/build-logs/
-/artifacts/build-diagnostics/
-/artifacts/build-output/
-/artifacts/release-assets/
+# Router captures may contain private network/device identifiers. Diagnostic
+# tools and release workflows can generate files here, but never commit them.
+/artifacts/
 __pycache__/
 *.py[cod]

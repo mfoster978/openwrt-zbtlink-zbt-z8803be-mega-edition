@@ -542,6 +542,8 @@ When reporting a problem, include the exact build run, firmware SHA256, router r
 
 For code changes:
 
+Do not commit router captures, backup archives, SIM identifiers, credentials or other personal diagnostics. The generated `artifacts/` directory is ignored; redact logs before sharing an issue. If you have a clone from before the public-release history cleanup, re-clone instead of merging its old history back into this repository.
+
 1. keep the Far5eer source commit pinned and review any deliberate baseline upgrade separately;
 2. run `bash firmware/scripts/check-build-inputs.sh`;
 3. keep shell scripts compatible with BusyBox `ash` where they run on the router;
