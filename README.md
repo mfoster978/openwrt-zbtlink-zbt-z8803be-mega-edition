@@ -133,6 +133,8 @@ All exposed LEDs appear under **System → LED Configuration**. Adding a custom 
 
 QModem menus, dropdowns and dial-log titles show **Modem 1** / **Modem 2**. The editable Modem Alias is stored as a display name, separate from the stable internal `4_1` / `2_1` routing identities. Changing a display name does not restart either modem.
 
+**QModem → TTL** now provides an independent enable switch and automatic/custom TTL for each modem. Use different IPv4 TTL / IPv6 Hop Limit values, or enable modification on only one modem. Rules follow the physical slots, not changing `wwanN` names. Primary automatic behavior is retained; secondary rewriting is opt-in. Enabling either policy disables flow offloading globally. See [TTL controls, migration and tests](firmware/docs/per-modem-ttl.md).
+
 The September 10 follow-up repairs LED startup ordering and trigger restoration without touching modem power or SIM GPIOs. Run `zbt-modem-led-poller status` for read-only LED diagnostics. See the [follow-up notes](firmware/docs/runtime-repair-2026-09.md#september-10-led-and-label-follow-up) for the remaining modem 2 registration check.
 
 The firmware does not infer a live modem merely because a UCI section exists. Runtime recovery is tied to a physically enumerated USB path, which prevents activity on one slot from needlessly repowering or redialing the other.

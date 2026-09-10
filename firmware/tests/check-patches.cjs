@@ -49,7 +49,7 @@ function run(command, args, options = {}) {
     }
     console.log(`${name}: exact pinned patch, reverse/idempotence check and syntax passed (${commit})`);
   }
-  const result = run(process.execPath, ['--test', path.join(__dirname, 'runtime.test.cjs'), path.join(__dirname, 'led-labels.test.cjs')], {
+  const result = run(process.execPath, ['--test', path.join(__dirname, 'runtime.test.cjs'), path.join(__dirname, 'led-labels.test.cjs'), path.join(__dirname, 'ttl.test.cjs')], {
     env: { ...process.env, QMODEM_TEST_TREE: path.join(tmp, 'qmodem'), MWAN3_TEST_TREE: path.join(tmp, 'packages') }
   });
   process.stdout.write(result);

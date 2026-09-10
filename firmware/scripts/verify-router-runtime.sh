@@ -21,6 +21,14 @@ for section in 4_1 2_1; do
 		ip addr show dev "$device" scope global 2>/dev/null
 	fi
 done
+printf '\n%s\n' 'Independent modem TTL policy (read-only; auto uses a passive 64/65 heuristic)'
+for section in 4_1 2_1; do
+	printf 'modem=%s ttl_enabled=%s ttl_mode=%s custom_ttl=%s\n' "$section" \
+		"$(uci -q get "qmodem_ttl.$section.enable")" \
+		"$(uci -q get "qmodem_ttl.$section.mode")" \
+		"$(uci -q get "qmodem_ttl.$section.ttl")"
+done
+nft list chain inet fw4 zbt_qmodem_ttl_postrouting 2>/dev/null || true
 printf '\n%s\n' 'Physical modem LED status (read-only)'
 /usr/sbin/zbt-modem-led-poller status
 /etc/init.d/zbt-modem-leds status 2>/dev/null || true

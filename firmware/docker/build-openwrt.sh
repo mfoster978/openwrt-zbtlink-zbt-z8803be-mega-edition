@@ -260,6 +260,19 @@ for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
 done
+# Keep the upstream package from silently restoring the global-only TTL UI
+# or old init/hotplug/default writers over this firmware's independent policy.
+for overlay_file in \
+  usr/lib/zbt/ttl.sh usr/sbin/zbt-qmodem-ttl etc/init.d/qmodem_ttl \
+  etc/nftables.d/99-qmodem-ttl.nft \
+  etc/hotplug.d/net/95-zbt-qmodem-ttl etc/hotplug.d/iface/60-zbt-ttl-probe \
+  etc/uci-defaults/36-zbt-z8803be-wan-speed-mode etc/uci-defaults/54-zbt-qmodem-ttl-defaults \
+  www/luci-static/resources/view/qmodem/ttl.js \
+  usr/share/rpcd/acl.d/luci-app-qmodem-ttlfw4.json; do
+  cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
+    echo "Per-modem TTL repair missing or overwritten in rootfs: ${overlay_file}" >&2; exit 4;
+  }
+done
 for ui_file in qmodem/qmodem.js view/qmodem/network_config.js view/qmodem/settings.js; do
   grep -q display_name "${rootfs_dir}/www/luci-static/resources/${ui_file}" || {
     echo "Friendly modem labels missing from built LuCI: ${ui_file}" >&2; exit 4;
