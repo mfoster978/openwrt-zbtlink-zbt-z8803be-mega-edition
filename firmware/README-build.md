@@ -71,13 +71,15 @@ When Connectify publishes a new APK, update `SPEEDIFY_VERSION`, the two URLs if 
 
 ## Validation before a build
 
-Run from the repository root with Node.js 22+, BusyBox, jq, patch and ripgrep installed:
+Run from the repository root with Node.js 22+, BusyBox, jq, patch, ripgrep and a C compiler (`cc` / GCC) installed:
 
 ```bash
 bash firmware/scripts/check-build-inputs.sh
 node firmware/tests/check-patches.cjs
 ```
 
-The second command downloads the changed files from the exact pinned QModem/packages commits, verifies forward and reverse patch application with zero fuzz, checks patched script syntax and runs the regression suite. Sanity CI runs these checks on firmware changes. It does not compile firmware or test actual GPIO wiring, radio registration, a SIM/APN, the proprietary ARM64 Speedify daemon, or flash compatibility. Firmware compilation is a separate manually dispatched workflow.
+The second command downloads the changed files from the exact pinned QModem/packages and OpenWrt commits, verifies forward and reverse patch application with zero fuzz, checks patched script syntax and runs the regression suite. It also compiles the real Ethernet LED callbacks/helpers against simulated MDIO registers. Sanity CI runs these checks on firmware changes. It does not compile complete firmware or test actual GPIO wiring, radio registration, a SIM/APN, the proprietary ARM64 Speedify daemon, or flash compatibility. Firmware compilation is a separate manually dispatched workflow.
+
+The Ethernet LED repair is in `firmware/patches/zbt-wan-led.patch` and `firmware/kernel-patches/753-net-phy-mediatek-mt7988-led-control.patch`. The builder enables the existing WAN LED0 node and copies the driver backport into the pinned 6.12 patch series before kernel preparation. No modem/Wi-Fi driver or kernel version upgrade is included.
 
 Automatic APN mode preserves the modem/network-provided profile; an explicit operator APN remains supported. No single carrier APN is baked into both modems, and automatic connection cannot be guaranteed for every SIM plan or private APN. In particular, `SIM_READY` with persistent `PS: Detached` still requires registration diagnostics on that modem, even after these integration repairs.

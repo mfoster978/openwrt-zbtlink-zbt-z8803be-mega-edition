@@ -24,6 +24,19 @@ done
 printf '\n%s\n' 'Physical modem LED status (read-only)'
 /usr/sbin/zbt-modem-led-poller status
 /etc/init.d/zbt-modem-leds status 2>/dev/null || true
+printf '\n%s\n' 'Ethernet jack LED controls (read-only; amber/green metadata may mean orange)'
+for lamp in mt7530-0:00:green:lan mt7530-0:02:green:lan mt7530-0:03:green:lan mdio-bus:0f:amber:wan; do
+	printf 'led=%s' "$lamp"
+	if [ ! -d "/sys/class/leds/$lamp" ]; then
+		printf ' missing\n'
+		continue
+	fi
+	for attribute in trigger brightness device_name link rx tx offloaded; do
+		[ -r "/sys/class/leds/$lamp/$attribute" ] || continue
+		printf ' %s=%s' "$attribute" "$(cat "/sys/class/leds/$lamp/$attribute")"
+	done
+	printf '\n'
+done
 printf '\n%s\n' 'Routing and measurement configuration'
 for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
 	printf '%s=%s:%s\n' "$member" "$(uci -q get "mwan3.$member.interface")" "$(uci -q get "mwan3.$member.metric")"

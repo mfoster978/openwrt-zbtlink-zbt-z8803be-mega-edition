@@ -12,6 +12,12 @@ Status: build #18 compiled the initial repairs. The user reports working Speedif
 
 Host tests cover both LED-to-USB mappings, swapped network enumeration, delayed discovery, missing power reads, disabled secondary power, trigger clobber, missing attributes, read-only status and actual patched LuCI label methods. They do not prove that the secondary SIM can register with its carrier.
 
+## September 10 WAN and Ethernet activity follow-up
+
+The earlier LED inventory covered the three LAN ports but omitted the separate copper WAN jack. Its inherited MT7988 2.5GbE driver had link-only register defaults and no LED-class callbacks, and its device-tree LED0 node was disabled. The new board patch enables that existing LED0 pin as `mdio-bus:0f:amber:wan`; LED1 stays disabled. A narrow driver backport exposes brightness and netdev controls, enables link/RX/TX indication, and corrects the inherited TX masks. The PHY's firmware cache remains separate from the shared LED state.
+
+All three orange LAN lamps and the one orange WAN lamp now have stock LuCI rules: solid with link, blinking on RX/TX, off without link. Existing user rules are preserved. Modem 5G1/5G2 GPIOs and power controls are untouched by the Ethernet patch. Tests compile the real C LED callbacks/shared helpers against simulated MDIO registers, check RX-only/TX-only/2.5G behavior and brightness, and apply/reverse the patches against the pinned sources. This is not a full kernel build or a physical-light test; both require the new firmware.
+
 ## What the supplied evidence establishes
 
 | Observation | Finding and response |
@@ -32,7 +38,7 @@ The pasted log's March-to-September timestamp jump is consistent with correcting
 
 ## Hardware and SIM identity
 
-The kernel remains **6.12.74** from Far5eer tag **v25.12.021**, commit `edc738504fe8fae81eb15de967456204699b1830`. The base configuration, DTS, kernel patches and modem-driver sources are unchanged by this repair.
+The kernel version remains **6.12.74** from Far5eer tag **v25.12.021**, commit `edc738504fe8fae81eb15de967456204699b1830`. The release config remains the baseline. Modem-driver and Wi-Fi sources are unchanged; the WAN LED follow-up adds only the documented board LED0 enablement and Ethernet PHY LED backport. It is no longer accurate to describe the entire DTS/kernel patch set as unmodified.
 
 | Physical modem | QModem/netifd identity | USB path | Power enable | LED |
 |---|---|---|---|---|

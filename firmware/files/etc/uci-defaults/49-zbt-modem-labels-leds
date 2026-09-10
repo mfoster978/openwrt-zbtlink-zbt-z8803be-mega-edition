@@ -4,11 +4,11 @@ for section in 4_1 2_1; do
 	/usr/sbin/zbt-qmodem-profile "$section"
 done
 
-# Populate LuCI's stock System -> LED Configuration with the three physical
-# LAN jack indicators. MediaTek phylib exposes these names from the board DTS;
+# Populate LuCI's stock System -> LED Configuration with the four physical
+# Ethernet jack indicators. MediaTek phylib exposes these names from the DTS;
 # the netdev trigger is hardware-offloaded by the PHY, keeping link solid and
 # blinking for receive/transmit traffic without a polling process.
-ensure_lan_led() {
+ensure_ethernet_led() {
 	local name="$1" sysfs="$2" device="$3" section
 	for section in $(uci -q show system 2>/dev/null | sed -n 's/^system\.\([^.=]*\)=led$/\1/p'); do
 		[ "$(uci -q get "system.$section.sysfs" 2>/dev/null)" = "$sysfs" ] && return 0
@@ -35,9 +35,10 @@ ensure_automatic_led() {
 
 case "$(cat /tmp/sysinfo/board_name 2>/dev/null)" in
 	zbtlink,zbt-z8803be|zbtlink,zbt-z8803be,mt7988a-nand)
-		ensure_lan_led 'LAN 1 orange: link and activity' 'mt7530-0:00:green:lan' lan0
-		ensure_lan_led 'LAN 2 orange: link and activity' 'mt7530-0:02:green:lan' lan1
-		ensure_lan_led 'LAN 3 orange: link and activity' 'mt7530-0:03:green:lan' lan2
+		ensure_ethernet_led 'LAN 1 orange: link and activity' 'mt7530-0:00:green:lan' lan0
+		ensure_ethernet_led 'LAN 2 orange: link and activity' 'mt7530-0:02:green:lan' lan1
+		ensure_ethernet_led 'LAN 3 orange: link and activity' 'mt7530-0:03:green:lan' lan2
+		ensure_ethernet_led 'WAN orange: link and activity' 'mdio-bus:0f:amber:wan' eth1
 		ensure_automatic_led '5G1 green (automatic)' 'blue:mobile-1'
 		ensure_automatic_led '5G2 green (automatic)' 'blue:mobile-2'
 		ensure_automatic_led 'SYS red (automatic)' 'red:status'

@@ -19,6 +19,7 @@ function run(command, args, options = {}) {
   return r.stdout;
 }
 (async () => {
+  await require('./check-ethernet-leds.cjs')(root, tmp, run);
   const dtsURL = 'https://raw.githubusercontent.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE/edc738504fe8fae81eb15de967456204699b1830/target/linux/mediatek/dts/mt7988a-zbtlink-zbt-z8803be.dts';
   const response = await fetch(dtsURL, { signal: AbortSignal.timeout(20000) });
   assert.equal(response.status, 200);

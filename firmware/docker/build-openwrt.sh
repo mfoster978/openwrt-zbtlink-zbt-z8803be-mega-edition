@@ -48,7 +48,7 @@ fi
   echo 'Unexpected packages revision; review mwan3 patch before building' >&2; exit 3;
 }
 # Strict userspace-only patch against the pinned QModem feed. No kernel,
-# modem driver, device tree, or wireless firmware revision changes.
+# modem driver or wireless firmware revision changes.
 runtime_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-dual-runtime.patch"
 if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$runtime_patch" >/dev/null; then
   patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$runtime_patch"
@@ -56,6 +56,17 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$runtim
   echo 'Pinned QModem runtime patch no longer matches; refusing an unpatched build' >&2
   exit 3
 fi
+led_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/zbt-wan-led.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 < "$led_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 < "$led_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 < "$led_patch" >/dev/null; then
+  echo 'WAN LED device-tree patch does not match the pinned board' >&2
+  exit 3
+fi
+# Add LED callbacks to the pinned MT7988 Ethernet PHY driver before the kernel
+# is prepared. The kernel version, modem drivers and power/SIM pins stay pinned.
+cp "$(dirname "${FILES_OVERLAY_DIR}")/kernel-patches/753-net-phy-mediatek-mt7988-led-control.patch" \
+  target/linux/mediatek/patches-6.12/753-net-phy-mediatek-mt7988-led-control.patch
 policy_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/mwan3-speed-policy.patch"
 if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch" >/dev/null; then
   patch --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch"
@@ -244,7 +255,7 @@ echo "Validated files overlay in root filesystem: ${rootfs_dir}"
 [ "$(readlink "${rootfs_dir}/etc/rc.d/S97zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
   echo 'Modem LED boot service is not enabled at S97 in the image' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile etc/uci-defaults/49-zbt-modem-labels-leds; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }

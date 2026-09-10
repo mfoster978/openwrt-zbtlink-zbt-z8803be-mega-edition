@@ -90,6 +90,18 @@ test('missing GPIO read or a not-yet-created netdev does not black out a present
   assert.equal(f.read('class/leds/blue:mobile-2/trigger'), 'timer');
 });
 
+test('both addressed modems recover from dark startup with independent activity bindings', () => {
+  const f = fixture();
+  run(led + mocks + '\nip() { echo "    inet 192.0.0.2/27 scope global"; }\n' +
+    'zbt_led_detect 4_1; zbt_led_apply; zbt_led_detect 2_1; zbt_led_apply', f.env);
+  for (const [lamp, device] of [['blue:mobile-1', 'wwan8'], ['blue:mobile-2', 'wwan3']]) {
+    assert.equal(f.read(`class/leds/${lamp}/trigger`), 'netdev');
+    assert.equal(f.read(`class/leds/${lamp}/device_name`), device);
+    assert.equal(f.read(`class/leds/${lamp}/brightness`), '255');
+    for (const attr of ['link', 'rx', 'tx']) assert.equal(f.read(`class/leds/${lamp}/${attr}`), '1');
+  }
+});
+
 test('powered-off absent modem stays dark without changing the working peer LED', () => {
   const f = fixture();
   fs.unlinkSync(path.join(f.sys, 'bus/usb/devices/2-1'));
@@ -195,11 +207,64 @@ test('poller status is read-only and boot service starts after generic LED initi
   for (const [phy, dev] of [['00', 'lan0'], ['02', 'lan1'], ['03', 'lan2']]) {
     assert.match(defaults, new RegExp(`mt7530-0:${phy}:green:lan' ${dev}`));
   }
+  assert.match(defaults, /mdio-bus:0f:amber:wan' eth1/);
   assert.match(defaults, /system\.\$section\.mode=link tx rx/);
   for (const sysfs of ['blue:mobile-1', 'blue:mobile-2', 'red:status', 'green:wan', 'blue:power']) {
     assert.match(defaults, new RegExp(`ensure_automatic_led '[^']+' '${sysfs}'`));
   }
   assert.match(defaults, /system\.\$section\.zbt_automatic=1/);
+});
+
+test('LED migration seeds all four jacks once and preserves administrator settings', () => {
+  const f = fixture(), db = path.join(f.dir, 'uci');
+  fs.mkdirSync(db);
+  const board = path.join(f.dir, 'board_name');
+  fs.writeFileSync(board, 'zbtlink,zbt-z8803be\n');
+  const uci = `
+uci() {
+  local u_path u_index
+  [ "$1" != -q ] || shift
+  case "$1" in
+    show)
+      for u_path in "$DB"/system.*; do
+        [ -f "$u_path" ] || continue
+        printf '%s=%s\\n' "\${u_path##*/}" "$(cat "$u_path")"
+      done ;;
+    get) [ -f "$DB/$2" ] && cat "$DB/$2" ;;
+    set) printf '%s\\n' "\${2#*=}" > "$DB/\${2%%=*}" ;;
+    add)
+      u_index=0
+      while [ -f "$DB/system.led$u_index" ]; do u_index=$((u_index+1)); done
+      echo led > "$DB/system.led$u_index"
+      echo "led$u_index" ;;
+    commit) : ;;
+    *) return 1 ;;
+  esac
+}
+`;
+  const defaults = file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds')
+    .replaceAll('/tmp/sysinfo/board_name', board)
+    .replaceAll('/usr/sbin/zbt-qmodem-profile', ':')
+    .replaceAll('/etc/init.d/zbt-modem-leds', ':');
+  const env = { ...f.env, DB: db };
+  run(uci + defaults, env);
+  const read = name => fs.readFileSync(path.join(db, name), 'utf8').trim();
+  for (const [index, lamp, device] of [
+    [0, 'mt7530-0:00:green:lan', 'lan0'], [1, 'mt7530-0:02:green:lan', 'lan1'],
+    [2, 'mt7530-0:03:green:lan', 'lan2'], [3, 'mdio-bus:0f:amber:wan', 'eth1']
+  ]) {
+    assert.equal(read(`system.led${index}.sysfs`), lamp);
+    assert.equal(read(`system.led${index}.dev`), device);
+    assert.equal(read(`system.led${index}.trigger`), 'netdev');
+    assert.equal(read(`system.led${index}.mode`), 'link tx rx');
+  }
+  assert.equal(fs.readdirSync(db).filter(n => /^system\.led\d+$/.test(n)).length, 9);
+  fs.writeFileSync(path.join(db, 'system.led3.mode'), 'rx');
+  fs.writeFileSync(path.join(db, 'system.led3.name'), 'Custom WAN');
+  const snapshot = () => Object.fromEntries(fs.readdirSync(db).sort().map(n => [n, read(n)]));
+  const before = snapshot();
+  run(uci + defaults, env);
+  assert.deepEqual(snapshot(), before, 'rerun must not duplicate rows or overwrite user rules');
 });
 
 test('display labels migrate independently of internal interface IDs and dial fingerprints', () => {
