@@ -1,8 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $id = [Guid]::NewGuid().ToString('N')
-$stagePath = Join-Path $root "artifacts\sim2-commit-preflight-stage-$id.json"
-$bundlePath = Join-Path $root "artifacts\sim2-commit-preflight-bundle-$id.sh"
+$artifacts = Join-Path $root 'artifacts'
+New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
+$stagePath = Join-Path $artifacts "sim2-commit-preflight-stage-$id.json"
+$bundlePath = Join-Path $artifacts "sim2-commit-preflight-bundle-$id.sh"
 $encoding = [Text.UTF8Encoding]::new($false)
 $temporary = $false
 $state = [ordered]@{ stage = 'local_started' }

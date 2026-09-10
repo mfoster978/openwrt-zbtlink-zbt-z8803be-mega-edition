@@ -158,6 +158,7 @@ phase=complete
 printf 'deployment=complete_persistent_offline_only\n'
 ''')
 path = stage.ROOT / "artifacts" / ("sim2-direct-" + uuid.uuid4().hex + ".sh")
+path.parent.mkdir(parents=True, exist_ok=True)
 bundle = "\n".join(parts)
 assert bundle.isascii(), "Transport must remain ASCII-only"
 path.write_text(bundle, encoding="ascii", newline="\n")

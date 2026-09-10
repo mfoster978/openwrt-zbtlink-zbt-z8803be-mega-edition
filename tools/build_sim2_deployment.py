@@ -139,6 +139,7 @@ body = header + "\n" + "".join(checks) + transaction.replace(
     "__PATHS__", paths).replace("__PAYLOAD__", "".join(payload)).replace(
         "__OFFLINE_HELPERS__", stage.metric_helper() + stage.device_helper() + stage.offline_helper())
 path = stage.ROOT / "artifacts" / f"sim2-deployment-review-{run_id}.sh"
+path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(body, encoding="utf-8", newline="\n")
 print(f"ReviewOnlyBundle={path}")
 print("NOT EXECUTED: needs coordinator review, rollback/confirmation review and secure launch")

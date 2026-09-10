@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $id = [Guid]::NewGuid().ToString('N')
 $artifacts = Join-Path $root 'artifacts'
+New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 $stagePath = Join-Path $artifacts "sim2-fixture-stage-$id.json"
 $bundlePath = Join-Path $artifacts "sim2-fixture-bundle-$id.sh"
 $state = [ordered]@{ stage = 'local_started'; credential_present = $false }

@@ -2,7 +2,9 @@ param([Parameter(Mandatory = $true)][string]$ScriptPath)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $id = [Guid]::NewGuid().ToString('N')
-$stagePath = Join-Path $root "artifacts\sim2-direct-stage-$id.json"
+$artifacts = Join-Path $root 'artifacts'
+New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
+$stagePath = Join-Path $artifacts "sim2-direct-stage-$id.json"
 $encoding = [Text.UTF8Encoding]::new($false)
 $temporary = $false
 $state = [ordered]@{ stage = 'local_started'; backup_requested = $false; rollback_requested = $false }
