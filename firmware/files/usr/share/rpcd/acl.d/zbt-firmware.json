@@ -1,0 +1,7 @@
+{
+  "zbt-firmware": {
+    "description": "View Mega releases and explicitly prepare or flash a verified update",
+    "read": { "ubus": { "zbt.firmware": [ "info", "check", "status" ] } },
+    "write": { "ubus": { "zbt.firmware": [ "prepare", "flash", "discard" ] } }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "admin/system/mega-update": {
+    "title": "Firmware Update",
+    "order": 71,
+    "action": {
+      "type": "view",
+      "path": "system/mega-update"
+    },
+    "depends": {
+      "acl": ["zbt-firmware"]
+    }
+  }
+}

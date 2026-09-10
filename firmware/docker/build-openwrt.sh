@@ -18,6 +18,8 @@ TARGET="${TARGET:-mediatek/filogic}"
 SUBTARGET="${SUBTARGET:-}"
 DEVICE="${DEVICE:-zbtlink_zbt-z8803be}"
 FINAL_MAKE_JOBS="${FINAL_MAKE_JOBS:-$(nproc)}"
+RECIPE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MEGA_RELEASE_VERSION="${MEGA_RELEASE_VERSION:-}"
 if [[ ! -d "${OPENWRT_ROOT}" ]]; then
   if [[ "${ALLOW_CLONE_OPENWRT}" = "1" ]]; then
     git clone --depth 1 --branch "${OPENWRT_GIT_REF}" "${OPENWRT_GIT_URL}" "${OPENWRT_ROOT}"
@@ -78,6 +80,13 @@ mkdir -p files
 if [[ -d "${FILES_OVERLAY_DIR}" ]]; then
   rsync -a "${FILES_OVERLAY_DIR}/" files/
 fi
+# Read this identity from /rom at runtime: a settings-preserving upgrade must
+# not misidentify its new image because an old /etc file was restored.
+identity_args=(identity --repository-root "${RECIPE_ROOT}" --output files/etc/zbt-mega-build.json)
+if [[ -n "${MEGA_RELEASE_VERSION}" ]]; then
+  identity_args+=(--version "${MEGA_RELEASE_VERSION}")
+fi
+python3 "${RECIPE_ROOT}/firmware/scripts/mega-release.py" "${identity_args[@]}"
 if [[ -d "files/etc/uci-defaults" ]]; then
   chmod +x files/etc/uci-defaults/* 2>/dev/null || true
 fi
@@ -164,6 +173,8 @@ required_config_flags=(
   "CONFIG_PACKAGE_luci-app-modem-watchdog=y"
   "CONFIG_PACKAGE_luci-app-speedtest-lite=y"
   "CONFIG_PACKAGE_zbt-speedtest=y"
+  "CONFIG_PACKAGE_zbt-firmware-updater=y"
+  "CONFIG_PACKAGE_luci-app-zbt-about=y"
   "CONFIG_PACKAGE_ca-bundle=y"
   "CONFIG_PACKAGE_curl=y"
   "CONFIG_PACKAGE_kmod-tun=y"
@@ -203,7 +214,7 @@ required_image_packages=(
   kmod-mhi-bus kmod-mhi-net kmod-mhi-pci-generic
   kmod-mhi-wwan-ctrl kmod-mhi-wwan-mbim mwan3 kmod-tun
   luci-app-modem-watchdog luci-app-speedtest-lite tailscale luci-app-tailscale
-  zbt-speedtest
+  zbt-speedtest zbt-firmware-updater luci-app-zbt-about
   ca-bundle curl libstdcpp6 libkeyutils1 libatomic1
   iptables-nft kmod-nft-tproxy
   iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra
@@ -225,6 +236,25 @@ fi
 test -x "${rootfs_dir}/usr/bin/zbt-speedtest" || {
   echo 'Live speed test engine missing from firmware' >&2; exit 4;
 }
+test -x "${rootfs_dir}/usr/bin/zbt-firmware-updater" || {
+  echo 'Mega release updater missing from firmware' >&2; exit 4;
+}
+cmp files/etc/zbt-mega-build.json "${rootfs_dir}/etc/zbt-mega-build.json"
+cp "${rootfs_dir}/etc/zbt-mega-build.json" "bin/targets/${target_main}/${SUBTARGET}/zbt-mega-build.json"
+# Fail the build if an upstream package overwrites the Mega experience.
+for overlay_file in \
+  www/luci-static/resources/view/zbt8803be/about.js \
+  www/luci-static/resources/view/zbt8803be/mega-about.css \
+  www/luci-static/resources/view/system/mega-update.js \
+  www/luci-static/resources/view/system/mega-update.css \
+  usr/libexec/rpcd/zbt.firmware \
+  usr/share/rpcd/acl.d/zbt-firmware.json \
+  usr/share/rpcd/acl.d/luci-app-zbt-about.json \
+  usr/share/luci/menu.d/zbt-firmware.json; do
+  cmp "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
+    echo "Mega About/update component missing or overwritten: ${overlay_file}" >&2; exit 4;
+  }
+done
 cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/config.js" \
   "${rootfs_dir}/www/luci-static/resources/view/speedtest-lite/config.js"
 cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/style.css" \

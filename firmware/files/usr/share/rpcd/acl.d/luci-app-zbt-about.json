@@ -1,0 +1,16 @@
+{
+  "luci-app-zbt-about": {
+    "description": "Read Mega firmware identity and upstream About system information",
+    "read": {
+      "ubus": {
+        "system": ["board", "info"],
+        "zbt.firmware": ["info"]
+      },
+      "file": {
+        "/etc/openwrt_release": ["read"],
+        "/etc/openwrt_version": ["read"]
+      }
+    },
+    "write": {}
+  }
+}

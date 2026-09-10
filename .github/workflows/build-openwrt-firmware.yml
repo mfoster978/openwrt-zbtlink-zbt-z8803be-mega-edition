@@ -38,6 +38,7 @@ jobs:
       SUBTARGET: filogic
       DEVICE: zbtlink_zbt-z8803be
       FINAL_MAKE_JOBS: "2"
+      MEGA_RELEASE_VERSION: firmware-${{ github.run_number }}.${{ github.run_attempt }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -114,6 +115,7 @@ jobs:
             -e SUBTARGET \
             -e DEVICE \
             -e FINAL_MAKE_JOBS \
+            -e MEGA_RELEASE_VERSION \
             -v "${PWD}:/workspace" \
             owrt-remote-builder \
             bash /workspace/firmware/docker/build-openwrt.sh \
@@ -153,6 +155,11 @@ jobs:
             cp "$file" "$release_dir/"
           done
           cp firmware/scripts/verify-router-runtime.sh "$release_dir/"
+          python3 firmware/scripts/mega-release.py manifest \
+            --identity "$target_dir/zbt-mega-build.json" \
+            --image "$release_dir/openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin" \
+            --version "$MEGA_RELEASE_VERSION" --source-sha "$GITHUB_SHA" \
+            --output "$release_dir/mega-release.json"
           {
             echo "Recipe commit: $GITHUB_SHA"
             echo "OpenWrt source: $OPENWRT_GIT_URL"
@@ -160,8 +167,10 @@ jobs:
             echo "OpenWrt commit: $(git -C openwrt rev-parse HEAD)"
             echo "Target: $TARGET"
             echo "Device: $DEVICE"
+            echo "Edition: Mega"
+            echo "Version: $MEGA_RELEASE_VERSION"
           } > "$release_dir/BUILD-INFO.txt"
-          (cd "$release_dir" && sha256sum *.bin > SHA256SUMS)
+          (cd "$release_dir" && sha256sum -- *.bin > SHA256SUMS)
 
       - name: Collect bounded firmware changes for release notes
         if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
@@ -207,8 +216,11 @@ jobs:
             printf '<!-- source-sha: %s -->\n\n' "$GITHUB_SHA"
             cat "$ai_notes"
             printf '\n## Build details\n\n'
+            # Literal Markdown backticks, not command substitutions.
+            # shellcheck disable=SC2016
             printf -- '- Base firmware: Far5eer `%s` (Linux 6.12.74).\n' "$OPENWRT_GIT_REF"
             printf -- '- Device target: ZBT-Link ZBT-Z8803BE.\n'
+            # shellcheck disable=SC2016
             printf -- '- Verify downloads against the included `SHA256SUMS` file before flashing.\n'
           } > "$final_notes"
           cp "$final_notes" artifacts/release-assets/RELEASE_NOTES.md
@@ -220,7 +232,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
-          tag="firmware-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          tag="$MEGA_RELEASE_VERSION"
           gh release create "$tag" artifacts/release-assets/* \
             --target "$GITHUB_SHA" \
             --title "ZBT-Z8803BE Dual Modem Firmware ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \

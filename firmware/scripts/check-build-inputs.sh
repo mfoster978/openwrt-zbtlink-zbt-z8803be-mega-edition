@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${repo_root}"
 
 bash -n firmware/docker/build-openwrt.sh
+python3 firmware/tests/mega-release.test.py
 for script in \
   firmware/files/etc/init.d/speedify-installer \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
@@ -42,6 +43,26 @@ for package in "${required_packages[@]}"; do
     echo "Missing required baked Speedify dependency: ${package}" >&2
     exit 1
   }
+done
+grep -qx 'zbt-firmware-updater' firmware/profiles/packages-default.txt
+
+# Mega's menu must not appear without its view, permissions and backend.
+for component in \
+  firmware/feeds/zbt-firmware-updater/Makefile \
+  firmware/feeds/zbt-firmware-updater/LICENSE \
+  firmware/feeds/zbt-firmware-updater/src/go.mod \
+  firmware/files/www/luci-static/resources/view/zbt8803be/about.js \
+  firmware/files/www/luci-static/resources/view/zbt8803be/mega-about.css \
+  firmware/files/www/luci-static/resources/view/system/mega-update.js \
+  firmware/files/www/luci-static/resources/view/system/mega-update.css; do
+  test -s "$component" || { echo "Missing Mega component: $component" >&2; exit 1; }
+done
+test -x firmware/files/usr/libexec/rpcd/zbt.firmware
+for metadata in \
+  firmware/files/usr/share/luci/menu.d/zbt-firmware.json \
+  firmware/files/usr/share/rpcd/acl.d/zbt-firmware.json \
+  firmware/files/usr/share/rpcd/acl.d/luci-app-zbt-about.json; do
+  python3 -m json.tool "$metadata" >/dev/null
 done
 
 grep -q "OPENWRT_GIT_REF:-v25.12.021" firmware/docker/build-openwrt.sh

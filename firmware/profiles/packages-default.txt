@@ -39,6 +39,7 @@ ca-bundle
 speedtest-netperf
 speedtest-go
 zbt-speedtest
+zbt-firmware-updater
 ethtool
 jq
 curl

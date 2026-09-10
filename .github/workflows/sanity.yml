@@ -2,9 +2,9 @@ name: Sanity
 on:
   workflow_dispatch:
   push:
-    paths: ['firmware/**', '.github/workflows/sanity.yml']
+    paths: ['firmware/**', '.github/workflows/sanity.yml', '.github/workflows/build-openwrt-firmware.yml']
   pull_request:
-    paths: ['firmware/**', '.github/workflows/sanity.yml']
+    paths: ['firmware/**', '.github/workflows/sanity.yml', '.github/workflows/build-openwrt-firmware.yml']
 permissions:
   contents: read
 jobs:
@@ -47,3 +47,20 @@ jobs:
         run: npm install --prefix "$RUNNER_TEMP/zbt-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
       - name: Check desktop and mobile live speed-test view
         run: NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/speedtest-ui.cjs
+      - name: Check Mega About and guarded firmware update screens
+        run: |
+          NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/mega-about-ui.cjs
+          NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/firmware-updater-ui.cjs
+  firmware-updater:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.1'
+          cache: false
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq file
+      - name: Test guarded release updater and compile ARM64 binary (no real flash)
+        run: bash firmware/tests/check-firmware-updater.sh

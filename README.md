@@ -54,6 +54,13 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 
 ## Feature overview
 
+### Mega About and firmware updates
+
+- **About** is a redesigned dark, tabbed feature/package guide with illustrations, build information, project links, Michael Foster's email/Discord contacts, and special thanks to [0xFar5eer](https://github.com/0xFar5eer).
+- **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Older versions can be selected for downgrade; keeping settings is off by default for downgrades.
+- HTTPS, SHA256, local device identity and OpenWrt image checks are required. There is no forced/unattended flash or automatic rollback. Back up settings first. Old firmware without this tool requires the usual LuCI flash page for subsequent updates.
+- These are **Mega-only source additions pending on-router acceptance testing**. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md).
+
 ### Hardware and Wi-Fi
 
 - Device-specific ZBT-Z8803BE support from the pinned Far5eer release.
@@ -237,7 +244,7 @@ The generic Linux MPTCP capability inherited from the OpenWrt/Far5eer kernel rem
 
 ## Download and flash
 
-Every successful firmware workflow creates a GitHub Release containing only the two device-specific `.bin` images, package manifest, checksums, build information, runtime verifier and release notes. It does not upload the OpenWrt source/build tree or package archive. GitHub itself always displays automatic “Source code” links for a release tag; those links cannot be disabled and are not firmware images. Gemini generates a detailed, evidence-bound changelog for each release using the repository secret.
+Every successful firmware workflow creates a GitHub Release containing only the two device-specific `.bin` images, package manifest, checksums, build information, runtime verifier, release notes and the small `mega-release.json` verification manifest. The Mega updater selects only the SquashFS sysupgrade image. The workflow does not upload the OpenWrt source/build tree or package archive. GitHub itself always displays automatic “Source code” links for a release tag; those links cannot be disabled and are not firmware images. Gemini generates a detailed, evidence-bound changelog for each release using the repository secret.
 
 ### Validated reference build
 

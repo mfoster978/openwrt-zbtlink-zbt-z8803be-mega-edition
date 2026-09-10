@@ -1,0 +1,3 @@
+#!/bin/sh
+# rpcd authorizes every method using zbt-firmware.json. No HTTP CGI endpoint.
+exec /usr/bin/zbt-firmware-updater "$@"

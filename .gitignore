@@ -1,0 +1,8 @@
+# Generated build trees, workflow outputs and Python test caches, not sources.
+/openwrt/
+/artifacts/build-logs/
+/artifacts/build-diagnostics/
+/artifacts/build-output/
+/artifacts/release-assets/
+__pycache__/
+*.py[cod]
