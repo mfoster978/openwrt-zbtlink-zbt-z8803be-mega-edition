@@ -1,0 +1,10 @@
+#!/bin/sh
+# Idempotent upgrade migration; no modem/network reload or power toggles.
+for section in 4_1 2_1; do
+	/usr/sbin/zbt-qmodem-profile "$section"
+done
+# Remove obsolete boot links, then enable S97. "disable" only edits rc.d
+# symlinks; it does not stop the running LED service or touch either modem.
+/etc/init.d/zbt-modem-leds disable
+/etc/init.d/zbt-modem-leds enable
+exit 0

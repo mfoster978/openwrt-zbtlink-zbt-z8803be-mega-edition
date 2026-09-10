@@ -43,7 +43,7 @@ docker run --rm -it \
 
 - The watchdog is safe-defaulted to off: `modem_watchdog.global.enabled=0` and `actions_enabled=0`.
 - Prefer-fastest/failover options are exposed in LuCI but disabled by default.
-- Both modem slots are default-on at first boot. QModem aliases and data interfaces use the stable names `4_1` and `2_1`, matching mwan3. Physical USB paths, not enumeration-dependent `wwan` or `ttyUSB` numbers, determine modem identity. The Far5eer `5g2` power setting is enabled once; later operator changes and SIM selections are preserved.
+- Both modem slots are default-on at first boot. QModem and mwan3 use stable internal names `4_1` and `2_1`; the UI displays editable **Modem 1** / **Modem 2** labels independently. Physical USB paths, not enumeration-dependent `wwan` or `ttyUSB` numbers, determine modem identity. The Far5eer `5g2` power setting is enabled once; later operator changes and SIM selections are preserved.
 - `proto=none` is used for QMI/MBIM/MHI paths managed by `quectel-CM-M -d`, which owns their addresses and routes. Other protocol paths retain their appropriate setup. There is no competing DHCP client for the direct-address QMI path.
 - Per-modem procd instances replace the global restart/auto-enable repair loops. The optional watchdog can act only on the selected modem and only when its actions are explicitly enabled. Automatic post-flash modem factory resets are retired.
 - The default `mwan3` failover order is SFP WAN, copper WAN, modem 1, then modem 2. Missing wired interfaces are omitted without changing the remaining order. A separate balanced policy is available for explicit use.

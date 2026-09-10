@@ -127,7 +127,11 @@ QModem's **SIM Slot 1** refers to the SIM input inside the selected modem. Both 
 | Status LED (active-low) | GPIO 61 / `blue:mobile-1` | GPIO 53 / `blue:mobile-2` |
 | Network identity used by QModem and mwan3 | `4_1` | `2_1` |
 
-These GPIO numbers follow the pinned device tree. The `blue:` name is a kernel label, not a guarantee of the visible LED color on every revision. LEDs are off when absent/unpowered, blink slowly while awaiting an address, and use link/traffic indication once a global address exists. An LED alone does not prove Internet access or 5G registration.
+These GPIO numbers follow the pinned device tree. The `blue:` name is a kernel label, not a guarantee of the visible LED color on every revision. An absent, unpowered slot is dark; a powered or enumerated modem blinks slowly while awaiting an address; an addressed modem uses link/traffic indication. If a trigger or reliable carrier indication is unavailable, the LED falls back to steady illumination. An LED alone does not prove Internet access or 5G registration.
+
+QModem menus, dropdowns and dial-log titles show **Modem 1** / **Modem 2**. The editable Modem Alias is stored as a display name, separate from the stable internal `4_1` / `2_1` routing identities. Changing a display name does not restart either modem.
+
+The September 10 follow-up repairs LED startup ordering and trigger restoration without touching modem power or SIM GPIOs. Run `zbt-modem-led-poller status` for read-only LED diagnostics. See the [follow-up notes](firmware/docs/runtime-repair-2026-09.md#september-10-led-and-label-follow-up) for the remaining modem 2 registration check.
 
 The firmware does not infer a live modem merely because a UCI section exists. Runtime recovery is tied to a physically enumerated USB path, which prevents activity on one slot from needlessly repowering or redialing the other.
 

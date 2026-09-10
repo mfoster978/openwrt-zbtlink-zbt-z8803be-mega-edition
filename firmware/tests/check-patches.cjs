@@ -19,6 +19,15 @@ function run(command, args, options = {}) {
   return r.stdout;
 }
 (async () => {
+  const dtsURL = 'https://raw.githubusercontent.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE/edc738504fe8fae81eb15de967456204699b1830/target/linux/mediatek/dts/mt7988a-zbtlink-zbt-z8803be.dts';
+  const response = await fetch(dtsURL, { signal: AbortSignal.timeout(20000) });
+  assert.equal(response.status, 200);
+  const dts = await response.text();
+  assert.match(dts, /gpio-export,name = "5g1";\s*gpio-export,output = <1>;\s*gpios = <&pio 17 GPIO_ACTIVE_HIGH>/);
+  assert.match(dts, /gpio-export,name = "5g2";\s*gpio-export,output = <0>;\s*gpios = <&pio 52 GPIO_ACTIVE_HIGH>/);
+  assert.match(dts, /function-enumerator = <1>;\s*gpios = <&pio 61 GPIO_ACTIVE_LOW>/);
+  assert.match(dts, /function-enumerator = <2>;\s*gpios = <&pio 53 GPIO_ACTIVE_LOW>/);
+  console.log('Pinned board modem power and LED GPIO definitions verified (unchanged)');
   for (const [name, repo, commit, patchName] of specs) {
     const patch = fs.readFileSync(path.join(root, 'firmware/patches', patchName), 'utf8');
     const tree = path.join(tmp, name);
@@ -39,7 +48,7 @@ function run(command, args, options = {}) {
     }
     console.log(`${name}: exact pinned patch, reverse/idempotence check and syntax passed (${commit})`);
   }
-  const result = run(process.execPath, ['--test', path.join(__dirname, 'runtime.test.cjs')], {
+  const result = run(process.execPath, ['--test', path.join(__dirname, 'runtime.test.cjs'), path.join(__dirname, 'led-labels.test.cjs')], {
     env: { ...process.env, QMODEM_TEST_TREE: path.join(tmp, 'qmodem'), MWAN3_TEST_TREE: path.join(tmp, 'packages') }
   });
   process.stdout.write(result);

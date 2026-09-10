@@ -1,39 +1,30 @@
 #!/bin/sh
-. /usr/lib/zbt/dual-modem.sh
-while :; do
+. /usr/lib/zbt/modem-leds.sh
+
+cycle() {
+	local section key previous result
 	for section in 4_1 2_1; do
-		zbt_slot "$section"
-		led="/sys/class/leds/$ZBT_LED"
-		[ -d "$led" ] || continue
-		device=$(zbt_netdev "$section") || device=''
-		state=off
-		if [ -n "$device" ] && [ "$(cat "/sys/class/gpio/$ZBT_POWER/value" 2>/dev/null)" = 1 ]; then
-			state=waiting
-			if ip addr show dev "$device" scope global 2>/dev/null | grep -qE 'inet6? '; then state="data:$device"; fi
+		zbt_led_detect "$section" || continue
+		result=ok
+		if [ "$1" != status ]; then
+			zbt_led_apply || result=write_failed
 		fi
-		# Restore our trigger if a later LED service reload changed it. Do not
-		# continually reset a healthy netdev/timer trigger or its blink phase.
-		eval "previous=\${last_$section:-}"
-		if [ "$previous" = "$state" ]; then
-			trigger=$(sed -n 's/.*\[\([^]]*\)\].*/\1/p' "$led/trigger")
-			case "$state:$trigger" in
-				off:none) [ "$(cat "$led/brightness")" = 0 ] && continue ;;
-				waiting:timer) continue ;;
-				data:*:netdev) [ "$(cat "$led/device_name")" = "$device" ] && continue ;;
-			esac
+		key="$ZBT_LED_STATE:${ZBT_LED_DEVICE:-absent}:$(zbt_led_trigger):$result"
+		if [ "$1" = status ]; then
+			printf 'modem=%s usb=%s power=%s device=%s state=%s led=%s trigger=%s brightness=%s\n' \
+				"$section" "$ZBT_USB" "$ZBT_LED_POWER" "${ZBT_LED_DEVICE:-absent}" "$ZBT_LED_STATE" \
+				"$ZBT_LED" "$(zbt_led_trigger)" "$(zbt_led_read brightness)"
+		else
+			eval "previous=\${last_$section:-}"
+			[ "$key" = "$previous" ] || logger -t zbt-modem-leds "$section: $key (power=$ZBT_LED_POWER led=$ZBT_LED)"
+			eval "last_$section=\$key"
 		fi
-		printf none > "$led/trigger"
-		case "$state" in
-			off) printf 0 > "$led/brightness" ;;
-			waiting)
-				printf timer > "$led/trigger"
-				printf 1000 > "$led/delay_on"; printf 1000 > "$led/delay_off" ;;
-			data:*)
-				printf netdev > "$led/trigger"
-				printf '%s' "$device" > "$led/device_name"
-				printf 1 > "$led/link"; printf 1 > "$led/rx"; printf 1 > "$led/tx" ;;
-		esac
-		eval "last_$section=\$state"
 	done
-	sleep 5
-done
+}
+
+case "${1:-daemon}" in
+	status) cycle status ;; # Read-only: safe to include in support diagnostics.
+	once) cycle once ;;
+	daemon) while :; do cycle daemon; sleep 5; done ;;
+	*) echo 'Usage: zbt-modem-led-poller [daemon|once|status]' >&2; exit 2 ;;
+esac

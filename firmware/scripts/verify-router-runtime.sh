@@ -11,7 +11,7 @@ for section in 4_1 2_1; do
 	port=$(uci -q get "qmodem.$section.at_port")
 	printf '\nmodem=%s usb=%s device=%s power=%s led=%s\n' "$section" "$ZBT_USB" "${device:-absent}" "$ZBT_POWER" "$ZBT_LED"
 	printf 'power_value=%s at_port=%s port_matches=%s\n' "$(cat "/sys/class/gpio/$ZBT_POWER/value" 2>/dev/null)" "$port" "$(zbt_port_matches "$section" "$port" && echo yes || echo no)"
-	for key in alias state enable_dial pdp_type metric monitor_enabled; do
+	for key in display_name alias state enable_dial pdp_type metric monitor_enabled; do
 		printf '%s=%s\n' "$key" "$(uci -q get "qmodem.$section.$key")"
 	done
 	printf 'apn_mode=%s secondary_apn_mode=%s\n' "$(zbt_apn_mode "$(uci -q get "qmodem.$section.apn")")" "$(zbt_apn_mode "$(uci -q get "qmodem.$section.apn2")")"
@@ -21,6 +21,9 @@ for section in 4_1 2_1; do
 		ip addr show dev "$device" scope global 2>/dev/null
 	fi
 done
+printf '\n%s\n' 'Physical modem LED status (read-only)'
+/usr/sbin/zbt-modem-led-poller status
+/etc/init.d/zbt-modem-leds status 2>/dev/null || true
 printf '\n%s\n' 'Routing and measurement configuration'
 for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
 	printf '%s=%s:%s\n' "$member" "$(uci -q get "mwan3.$member.interface")" "$(uci -q get "mwan3.$member.metric")"

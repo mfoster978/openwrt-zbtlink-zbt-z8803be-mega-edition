@@ -330,3 +330,151 @@
 @@ -1347,1 +1354,1 @@
 -			displayElement.textContent = _('None (All bands unlocked)');
 +			displayElement.textContent = _('No band selection reported (not proof that SA is disabled)');
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/qmodem/qmodem.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/qmodem/qmodem.js
+@@ -255,7 +255,25 @@
+ 	expect: { }
+ });
+ 
++// Human labels must never double as netifd interface names.
++function modemDisplayName(section, includeModel) {
++	var s = typeof section === 'string' ? (uci.get('qmodem', section) || { '.name': section }) : (section || {});
++	var id = s['.name'] || '', slot = s.slot || id;
++	var label = (s.display_name || '').trim();
++	if (!label) {
++		label = s.alias || '';
++		if (!label || label === id || /^(4_1|2_1|modem1|modem2)$/.test(label)) {
++			if (slot === '4_1' || slot === '4-1' || slot === 'slot_4_1') label = _('Modem 1');
++			else if (slot === '2_1' || slot === '2-1' || slot === 'slot_2_1') label = _('Modem 2');
++			else label = s.alias || s.name || id;
++		}
++	}
++	return label + (includeModel && s.name ? ' (' + s.name.toUpperCase() + ')' : '');
++}
++
+ return L.Class.extend({
++	getModemLabel: modemDisplayName,
++
+ 	// Get modem base information
+ 	getBaseInfo: function(section) {
+ 		return callBaseInfo(section);
+@@ -447,7 +465,7 @@
+ 			uci.sections('qmodem', 'modem-device', function(s) {
+ 				sections.push({
+ 					id: s['.name'],
+-					name: s.name || s['.name'],
++					name: modemDisplayName(s, true),
+ 					enabled: s.enabled !== '0'
+ 				});
+ 			});
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/overview.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/overview.js
+@@ -219,8 +219,7 @@
+ 		
+ 		sections.forEach(function(section) {
+ 			if (section.state !== 'disabled' && section.at_port) {
+-				var name = section.name ? section.name.toUpperCase() : 'Unknown';
+-				var displayName = section.alias ? section.alias + ' (' + name + ')' : name;
++				var displayName = qmodem.getModemLabel(section, true);
+ 				
+ 				modems.push({
+ 					id: section['.name'],
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js
+@@ -196,9 +196,10 @@
+ 	s = m.section(form.GridSection, 'modem-device', _('Dial Configuration'));
+ 	s.anonymous = false;
+ 	s.addremove = false;
++	s.sectiontitle = function(section_id) { return qmodem.getModemLabel(section_id); };
+ 	s.modaltitle = L.bind(function(section_id) {
+ 		var name = uci.get('qmodem', section_id, 'name');
+-		var alias = uci.get('qmodem', section_id, 'alias');
++		var alias = qmodem.getModemLabel(section_id);
+ 		return _('Dial Configuration') + ': ' + (alias || name || section_id);
+ 	}, this);
+ 
+@@ -251,9 +252,9 @@
+ 			return name.toUpperCase();
+ 		};
+ 
+-		o = s.option(form.DummyValue, 'alias', _('Modem Alias'));
++		o = s.option(form.DummyValue, '_display_name', _('Modem Alias'));
+ 		o.cfgvalue = function(section_id) {
+-			return uci.get('qmodem', section_id, 'alias') || '-';
++			return qmodem.getModemLabel(section_id) || '-';
+ 		};
+ 
+ 	o = s.option(form.DummyValue, 'state', _('Status'));
+@@ -304,7 +305,7 @@
+ 	// ============ Modal Configuration Options ============
+ 	
+ 	// General Settings
+-	o = s.option(form.Value, 'alias', _('Modem Alias'));
++	o = s.option(form.Value, 'display_name', _('Modem Alias'), _('Display name only; changing it does not rename the network interface.'));
+ 	o.rmempty = true;
+ 	o.modalonly = true;
+ 
+@@ -874,7 +875,7 @@
+ 
+ 	showDialLogDialog: function(section_id) {
+ 		var name = uci.get('qmodem', section_id, 'name');
+-		var alias = uci.get('qmodem', section_id, 'alias');
++		var alias = qmodem.getModemLabel(section_id);
+ 		var title = (alias || name || section_id) + ' - ' + _('Dial Log');
+ 		
+ 		var logContent = E('div', { 'style': 'min-height: 300px;' }, [
+@@ -962,7 +963,7 @@
+ 		return qmodem.getDialLog(section_id).then(function(result) {
+ 			if (result && result.log) {
+ 				var name = uci.get('qmodem', section_id, 'name') || section_id;
+-				var alias = uci.get('qmodem', section_id, 'alias') || '';
++				var alias = qmodem.getModemLabel(section_id) || '';
+ 				var filename = 'dial_log_' + (alias || name) + '_' + 
+ 					new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + '.txt';
+ 				
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/settings.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/settings.js
+@@ -6,6 +6,7 @@
+ 'require ui';
+ 'require poll';
+ 'require qmodem.modem_cfg as modemCfg';
++'require qmodem.qmodem as qmodem';
+ 
+ var callSystemBoard = rpc.declare({
+ 	object: 'system',
+@@ -203,6 +204,7 @@
+ 
+ 		// Modem Configuration (Device Settings Only)
+ 		s = m.section(form.GridSection, 'modem-device', _('Modem Devices'));
++		s.sectiontitle = function(section_id) { return qmodem.getModemLabel(section_id); };
+ 		s.anonymous = true;
+ 		s.sortable = true;
+ 		s.modaltitle = L.bind(function(section_id) {
+@@ -298,7 +300,7 @@
+ 
+ 		o = s.option(form.Value, 'name', _('Model Name'));
+ 		o.placeholder = _('e.g.') + ' RG500Q';
+-		o.rmempty = false;	o = s.option(form.Value, 'alias', _('Alias'));
++		o.rmempty = false;	o = s.option(form.Value, 'display_name', _('Modem Alias'));
+ 	o.placeholder = _('e.g.') + ' Modem1';
+ 	o.editable = true;
+ 
+@@ -390,7 +392,7 @@
+ 	s.sortable = true;
+ 	s.modaltitle = L.bind(function(section_id) {
+ 		var slotId = uci.get('qmodem', section_id, 'slot');
+-		var alias = uci.get('qmodem', section_id, 'alias');
++		var alias = qmodem.getModemLabel(section_id);
+ 		return _('Modem Slot') + ': ' + (alias || slotId || section_id);
+ 	}, this);
+ 
+@@ -417,8 +419,8 @@
+ 		});
+ 	}
+ 
+-	o = s.option(form.Value, 'alias', _('Default Alias'));
+-	o.description = _('After setting this option, the first module loaded into this slot will automatically be assigned this default alias.');
++	o = s.option(form.Value, 'display_name', _('Default Modem Alias'));
++	o.description = _('Display name for a newly discovered modem in this slot. The stable network interface name is unchanged.');
+ 	o.placeholder = _('e.g.') + ' Modem';
+ 	o.editable = true;

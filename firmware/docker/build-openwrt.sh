@@ -219,6 +219,9 @@ required_overlay_files=(
   usr/libexec/rpcd/zbt.speedtest
   usr/libexec/rpcd/zbt.tailscale
   usr/lib/zbt/dual-modem.sh
+  usr/lib/zbt/modem-leds.sh
+  etc/init.d/zbt-modem-leds
+  etc/uci-defaults/49-zbt-modem-labels-leds
   usr/lib/zbt/quectel-bands.sh
   usr/lib/zbt/speed-lock.sh
   usr/lib/zbt/speed-policy.sh
@@ -237,6 +240,20 @@ for overlay_file in "${required_overlay_files[@]}"; do
   fi
 done
 echo "Validated files overlay in root filesystem: ${rootfs_dir}"
+# A package/base-files install must not silently restore the older LED code.
+[ "$(readlink "${rootfs_dir}/etc/rc.d/S97zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
+  echo 'Modem LED boot service is not enabled at S97 in the image' >&2; exit 4;
+}
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile; do
+  cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
+    echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
+  }
+done
+for ui_file in qmodem/qmodem.js view/qmodem/network_config.js view/qmodem/settings.js; do
+  grep -q display_name "${rootfs_dir}/www/luci-static/resources/${ui_file}" || {
+    echo "Friendly modem labels missing from built LuCI: ${ui_file}" >&2; exit 4;
+  }
+done
 
 for image_pattern in '*zbt-z8803be-initramfs-kernel.bin' '*zbt-z8803be-squashfs-sysupgrade.bin'; do
   image="$(find "bin/targets/${target_main}/${SUBTARGET}" -maxdepth 1 -type f -size +0c -name "${image_pattern}" -print -quit)"

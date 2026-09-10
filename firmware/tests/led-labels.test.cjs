@@ -1,0 +1,206 @@
+'use strict';
+// Regression fixtures only: no router, AT port, GPIO or host /sys is changed.
+const { test, after } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(__dirname, '../..');
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zbt-led-labels-'));
+after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+const file = p => fs.readFileSync(path.join(root, p), 'utf8');
+const source = p => file(p).replaceAll('/usr/lib/zbt/', root + '/firmware/files/usr/lib/zbt/');
+function run(script, env, args = []) {
+  const r = spawnSync('busybox', ['sh', '-c', script, 'test', ...args], {
+    encoding: 'utf8', timeout: 10000, env: { ...process.env, ...env }
+  });
+  assert.ifError(r.error);
+  assert.equal(r.status, 0, r.stderr + '\n' + r.stdout);
+  return r.stdout.trim();
+}
+function fixture() {
+  const dir = fs.mkdtempSync(path.join(temporary, 'case-'));
+  const sys = path.join(dir, 'sys');
+  const write = (p, data) => {
+    fs.mkdirSync(path.dirname(path.join(sys, p)), { recursive: true });
+    fs.writeFileSync(path.join(sys, p), data + '\n');
+  };
+  const read = p => fs.readFileSync(path.join(sys, p), 'utf8').trim();
+  for (const [usb, net, power, led] of [['4-1', 'wwan8', '5g1', 'blue:mobile-1'], ['2-1', 'wwan3', '5g2', 'blue:mobile-2']]) {
+    const device = path.join(sys, 'devices', usb);
+    fs.mkdirSync(path.join(device, usb + ':1.4/net', net), { recursive: true });
+    fs.mkdirSync(path.join(sys, 'bus/usb/devices'), { recursive: true });
+    fs.symlinkSync(device, path.join(sys, 'bus/usb/devices', usb));
+    write(`class/gpio/${power}/value`, '1');
+    write(`class/net/${net}/carrier`, '1');
+    write(`class/leds/${led}/available`, 'none timer netdev');
+    write(`class/leds/${led}/trigger`, 'none');
+    for (const attr of ['brightness', 'device_name', 'delay_on', 'delay_off', 'link', 'rx', 'tx']) write(`class/leds/${led}/${attr}`, '0');
+    write(`class/leds/${led}/max_brightness`, '255');
+  }
+  return { dir, sys, write, read, env: { ZBT_SYSFS: sys, CALLS: path.join(dir, 'writes'), ONLINE: 'wwan8' } };
+}
+const led = source('firmware/files/usr/lib/zbt/modem-leds.sh').replace('zbt_led_write() {', '_led_write() {');
+// Model the kernel's trigger-list readback. All writes still go through the
+// production writer to real fixture files; log every attempted attribute.
+const mocks = `
+zbt_led_write() { echo "$ZBT_LED:$1=$2" >> "$CALLS"; _led_write "$@"; }
+zbt_led_read() {
+  if [ "$1" = trigger ]; then
+    selected=$(cat "$ZBT_LED_PATH/trigger")
+    for choice in $(cat "$ZBT_LED_PATH/available"); do
+      [ "$choice" != "$selected" ] && printf '%s ' "$choice" || printf '[%s] ' "$choice"
+    done
+  else cat "$ZBT_LED_PATH/$1"; fi
+}
+ip() { [ "$4" = "$ONLINE" ] && echo '    inet 192.0.0.2/27 scope global'; }
+logger() { :; }
+`;
+
+test('LEDs use physical slots: online primary gets activity, waiting secondary blinks', () => {
+  const f = fixture();
+  run(led + mocks + '\nzbt_led_detect 4_1; zbt_led_apply; zbt_led_detect 2_1; zbt_led_apply', f.env);
+  assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'netdev');
+  assert.equal(f.read('class/leds/blue:mobile-1/device_name'), 'wwan8');
+  for (const attr of ['rx', 'tx', 'link']) assert.equal(f.read(`class/leds/blue:mobile-1/${attr}`), '1');
+  assert.equal(f.read('class/leds/blue:mobile-2/trigger'), 'timer');
+  assert.equal(f.read('class/leds/blue:mobile-2/delay_on'), '1000');
+  assert.equal(f.read('class/leds/blue:mobile-2/brightness'), '255');
+  assert.doesNotMatch(fs.readFileSync(f.env.CALLS, 'utf8'), /gpio|5g1|5g2|wwan3/);
+  run(led + mocks + '\nzbt_led_detect 4_1; zbt_led_apply; zbt_led_detect 2_1; zbt_led_apply', { ...f.env, ONLINE: 'wwan3' });
+  assert.equal(f.read('class/leds/blue:mobile-2/device_name'), 'wwan3');
+  assert.equal(f.read('class/leds/blue:mobile-2/trigger'), 'netdev');
+  assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'timer');
+});
+
+test('missing GPIO read or a not-yet-created netdev does not black out a present modem', () => {
+  const f = fixture();
+  fs.unlinkSync(path.join(f.sys, 'class/gpio/5g1/value'));
+  fs.rmSync(path.join(f.sys, 'devices/2-1/2-1:1.4/net'), { recursive: true });
+  assert.equal(run(led + mocks + '\nzbt_led_detect 4_1; echo "$ZBT_LED_POWER:$ZBT_LED_STATE"; zbt_led_apply; zbt_led_detect 2_1; echo "$ZBT_LED_STATE"; zbt_led_apply', f.env), 'unknown:data\nwaiting');
+  assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'netdev');
+  assert.equal(f.read('class/leds/blue:mobile-2/trigger'), 'timer');
+});
+
+test('powered-off absent modem stays dark without changing the working peer LED', () => {
+  const f = fixture();
+  fs.unlinkSync(path.join(f.sys, 'bus/usb/devices/2-1'));
+  f.write('class/gpio/5g2/value', '0');
+  f.write('class/leds/blue:mobile-1/brightness', '93');
+  run(led + mocks + '\nzbt_led_detect 2_1; zbt_led_apply', f.env);
+  assert.equal(f.read('class/leds/blue:mobile-2/brightness'), '0');
+  assert.equal(f.read('class/leds/blue:mobile-1/brightness'), '93');
+});
+
+test('LED trigger clobber and disabled RX/TX are repaired; healthy triggers are left alone', () => {
+  const f = fixture();
+  const cycle = led + mocks + '\nzbt_led_detect 4_1; zbt_led_apply';
+  run(cycle, f.env);
+  fs.writeFileSync(f.env.CALLS, '');
+  run(cycle, f.env);
+  assert.equal(fs.readFileSync(f.env.CALLS, 'utf8'), '');
+  f.write('class/leds/blue:mobile-1/rx', '0');
+  run(cycle, f.env);
+  assert.equal(f.read('class/leds/blue:mobile-1/rx'), '1');
+  f.write('class/leds/blue:mobile-1/trigger', 'none');
+  f.write('class/leds/blue:mobile-1/brightness', '0');
+  run(cycle, f.env);
+  assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'netdev');
+  assert.equal(f.read('class/leds/blue:mobile-1/brightness'), '255');
+});
+
+test('missing trigger attributes or unreliable carrier use a visible fallback', () => {
+  for (const failure of ['unsupported', 'attribute', 'carrier']) {
+    const f = fixture();
+    if (failure === 'unsupported') f.write('class/leds/blue:mobile-1/available', 'none');
+    if (failure === 'attribute') fs.unlinkSync(path.join(f.sys, 'class/leds/blue:mobile-1/rx'));
+    if (failure === 'carrier') f.write('class/net/wwan8/carrier', '0');
+    run(led + mocks + '\nzbt_led_detect 4_1; zbt_led_apply', f.env);
+    assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'none', failure);
+    assert.equal(f.read('class/leds/blue:mobile-1/brightness'), '255', failure);
+    if (failure === 'attribute') assert.equal(fs.existsSync(path.join(f.sys, 'class/leds/blue:mobile-1/rx')), false);
+  }
+});
+
+test('poller status is read-only and boot service starts after generic LED initialization', () => {
+  const f = fixture();
+  const poller = file('firmware/files/usr/sbin/zbt-modem-led-poller').replace('. /usr/lib/zbt/modem-leds.sh', '');
+  const output = run(led + mocks + poller, f.env, ['status']);
+  assert.match(output, /modem=4_1 usb=4-1.*device=wwan8 state=data/);
+  assert.match(output, /modem=2_1 usb=2-1.*device=wwan3 state=waiting/);
+  assert.equal(fs.existsSync(f.env.CALLS), false);
+  assert.match(file('firmware/files/etc/init.d/zbt-modem-leds'), /^START=97$/m);
+  assert.match(file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds'), /zbt-modem-leds enable/);
+});
+
+test('display labels migrate independently of internal interface IDs and dial fingerprints', () => {
+  const f = fixture(), db = path.join(f.dir, 'uci');
+  fs.mkdirSync(db);
+  const uci = `
+uci() {
+  [ "$1" != -q ] || shift
+  case "$1" in
+    get) [ -f "$DB/$2" ] && cat "$DB/$2" ;;
+    set) printf '%s\\n' "\${2#*=}" > "$DB/\${2%%=*}" ;;
+    commit) : ;;
+    *) return 1 ;;
+  esac
+}
+`;
+  const profile = source('firmware/files/usr/sbin/zbt-qmodem-profile');
+  const env = { ...f.env, DB: db };
+  for (const id of ['4_1', '2_1']) {
+    fs.writeFileSync(path.join(db, `qmodem.${id}`), 'modem-device');
+    fs.writeFileSync(path.join(db, `qmodem.${id}.alias`), id);
+    run(uci + profile, env, [id]);
+  }
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.4_1.display_name'), 'utf8').trim(), 'Modem 1');
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.2_1.display_name'), 'utf8').trim(), 'Modem 2');
+  const fingerprints = () => run(uci + source('firmware/files/usr/lib/zbt/dual-modem.sh') + '\nzbt_dial_fingerprint 4_1; zbt_dial_fingerprint 2_1', env);
+  const before = fingerprints();
+  fs.writeFileSync(path.join(db, 'qmodem.2_1.display_name'), 'Travel SIM');
+  run(uci + profile, env, ['2_1']);
+  assert.equal(fingerprints(), before, 'renaming either modem must not redial it or its peer');
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.2_1.display_name'), 'utf8'), 'Travel SIM');
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.2_1.alias'), 'utf8').trim(), '2_1');
+  fs.unlinkSync(path.join(db, 'qmodem.2_1.display_name'));
+  fs.writeFileSync(path.join(db, 'qmodem.2_1.alias'), 'My carrier');
+  fs.writeFileSync(path.join(db, 'qmodem.slot_2_1.display_name'), 'Default name');
+  run(uci + profile, env, ['2_1']);
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.2_1.display_name'), 'utf8').trim(), 'My carrier');
+  fs.unlinkSync(path.join(db, 'qmodem.2_1.display_name'));
+  run(uci + profile, env, ['2_1']);
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.2_1.display_name'), 'utf8').trim(), 'Default name');
+});
+
+test('patched LuCI dropdowns and overview show labels while RPC values remain stable', { skip: !process.env.QMODEM_TEST_TREE }, async () => {
+  const base = path.join(process.env.QMODEM_TEST_TREE, 'luci/luci-app-qmodem-next/htdocs/luci-static/resources');
+  const read = p => fs.readFileSync(path.join(base, p), 'utf8');
+  const sections = [
+    { '.name': '4_1', alias: '4_1', name: 'rm551e-gl', at_port: '/dev/ttyUSB6' },
+    { '.name': '2_1', alias: '2_1', name: 'rm551e-gl', at_port: '/dev/ttyUSB2' }
+  ];
+  const uci = { load: async () => {}, get: (p, id) => sections.find(s => s['.name'] === id),
+    sections: (p, type, cb) => { if (cb) sections.forEach(cb); return sections; } };
+  const L = { Class: { extend: o => o }, resource: x => x };
+  const rpc = { declare: () => () => {} };
+  const qmodem = new Function('L', 'rpc', 'uci', '_', read('qmodem/qmodem.js'))(L, rpc, uci, x => x);
+  assert.deepEqual((await qmodem.getModemSections()).map(s => [s.id, s.name]), [
+    ['4_1', 'Modem 1 (RM551E-GL)'], ['2_1', 'Modem 2 (RM551E-GL)']
+  ]);
+  const overview = new Function('view', 'document', 'E', 'L', 'uci', 'qmodem', '_', read('view/qmodem/overview.js'))(
+    { extend: o => o }, { head: { appendChild() {} }, styleSheets: [] }, () => ({}), L, uci, qmodem, x => x);
+  assert.deepEqual(overview.getModemList().map(s => [s.id, s.name]), [
+    ['4_1', 'Modem 1 (RM551E-GL)'], ['2_1', 'Modem 2 (RM551E-GL)']
+  ]);
+  sections[1].display_name = 'Travel SIM';
+  assert.equal(qmodem.getModemLabel('2_1'), 'Travel SIM');
+  assert.equal(overview.getModemList()[1].id, '2_1');
+  assert.equal(overview.getModemList()[1].name, 'Travel SIM (RM551E-GL)');
+  for (const p of ['view/qmodem/network_config.js', 'view/qmodem/settings.js']) {
+    assert.doesNotMatch(read(p), /form\.Value, 'alias'/, 'GUI edits must not rename netifd devices');
+    assert.match(read(p), /form\.Value, 'display_name'/);
+    assert.match(read(p), /sectiontitle = function\(section_id\) \{ return qmodem\.getModemLabel/);
+  }
+});

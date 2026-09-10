@@ -1,6 +1,16 @@
 # September 2026 dual-modem runtime repair
 
-Status: source-level repairs and host/container regression checks. A new firmware compilation and physical-router acceptance test are still required. Do not label the older build #17 as containing these repairs.
+Status: build #18 compiled the initial repairs. The user reports working Speedify, speed testing, and primary-modem Internet with both SIMs inserted, but unlit modem LEDs and an unconnected secondary modem. The September 10 follow-up below requires a new build and physical-router acceptance checks. Do not label the older build #17 as containing these repairs.
+
+## September 10 LED and label follow-up
+
+- The profile helper had replaced friendly aliases with routing IDs. QModem's `display_name` now restores Modem 1 / Modem 2 in dropdowns, overview, settings, dial configuration and log titles, while internal interface IDs remain stable. Existing custom display names are preserved. Label-only changes do not change either dialer's fingerprint.
+- The LED service now starts at S97, after generic LED initialization (S96). An upgrade migration enables that service without starting/stopping modems. Trigger, RX/TX and device bindings are checked and restored if overwritten; brightness is explicitly initialized. A missing named-GPIO read no longer extinguishes an enumerated modem, and a powered modem without a data interface is shown as waiting.
+- The LED GPIOs remain 61 / 53 and the modem power GPIOs remain 17 / 52, with their pinned polarities. No SIM mux changes, new AT polling, modem reset, power cycle, Speedify changes or speed-test changes are included. Unsupported trigger/carrier reporting has a steady-lit fallback. LED state represents presence/address/link activity, not a successful Internet probe or a radio-generation color code.
+- `zbt-modem-led-poller status` and the runtime verifier report physical mappings, power-read state, trigger and brightness without writing them. The precise on-device reason for the previous dark LEDs has not been independently measured; these are tested startup/state-handling repairs, not an electrical validation.
+- Modem 2's supplied log still shows SIM_READY but PS Detached. No evidence yet establishes the registration cause. Collect its own `AT+CEREG?`, `AT+C5GREG?`, `AT+CGATT?`, `AT+CFUN?` and current dial log; do not reset the working primary or force an APN/band/SIM change blindly.
+
+Host tests cover both LED-to-USB mappings, swapped network enumeration, delayed discovery, missing power reads, disabled secondary power, trigger clobber, missing attributes, read-only status and actual patched LuCI label methods. They do not prove that the secondary SIM can register with its carrier.
 
 ## What the supplied evidence establishes
 
