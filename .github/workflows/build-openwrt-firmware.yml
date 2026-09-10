@@ -38,12 +38,14 @@ jobs:
       SUBTARGET: filogic
       DEVICE: zbtlink_zbt-z8803be
       FINAL_MAKE_JOBS: "2"
-      MEGA_RELEASE_VERSION: firmware-${{ github.run_number }}.${{ github.run_attempt }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Allocate chronological firmware version
+        run: echo "MEGA_RELEASE_VERSION=firmware-$(date -u +%Y%m%d%H%M).${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
       - name: Create output directories
         run: |
@@ -235,7 +237,7 @@ jobs:
           tag="$MEGA_RELEASE_VERSION"
           gh release create "$tag" artifacts/release-assets/* \
             --target "$GITHUB_SHA" \
-            --title "ZBT-Z8803BE Dual Modem Firmware ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --title "ZBT-Z8803BE Mega ${MEGA_RELEASE_VERSION}" \
             --notes-file "$NOTES_FILE" --latest
 
       - name: Upload validated firmware

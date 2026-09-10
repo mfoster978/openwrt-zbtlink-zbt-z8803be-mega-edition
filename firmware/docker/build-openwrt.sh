@@ -18,6 +18,10 @@ TARGET="${TARGET:-mediatek/filogic}"
 SUBTARGET="${SUBTARGET:-}"
 DEVICE="${DEVICE:-zbtlink_zbt-z8803be}"
 FINAL_MAKE_JOBS="${FINAL_MAKE_JOBS:-$(nproc)}"
+HOST_MAKE_JOBS="${HOST_MAKE_JOBS:-1}"
+[[ "$HOST_MAKE_JOBS" =~ ^[1-9][0-9]*$ && "$FINAL_MAKE_JOBS" =~ ^[1-9][0-9]*$ ]] || {
+  echo 'Build job counts must be positive integers' >&2; exit 2;
+}
 RECIPE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MEGA_RELEASE_VERSION="${MEGA_RELEASE_VERSION:-}"
 if [[ ! -d "${OPENWRT_ROOT}" ]]; then
@@ -196,8 +200,8 @@ for cfg in "${required_config_flags[@]}"; do
     exit 3
   fi
 done
-make tools/install -j1 V=s
-make toolchain/install -j1 V=s
+make tools/install -j"${HOST_MAKE_JOBS}" V=s
+make toolchain/install -j"${HOST_MAKE_JOBS}" V=s
 make package/feeds/packages/golang-bootstrap/host/compile -j1 V=s
 make -j"${FINAL_MAKE_JOBS}" V=s
 

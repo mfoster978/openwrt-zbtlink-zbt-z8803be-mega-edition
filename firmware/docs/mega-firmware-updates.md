@@ -85,9 +85,11 @@ boot or a cryptographically signed firmware distribution system.
 
 `zbt-firmware-updater` is a standard-library-only Go executable, with no new
 runtime account keys or periodic daemon. Rootfs checks verify the executable,
-views, styles, ACLs and embedded identity. Actions supplies
-`firmware-RUN.ATTEMPT`; local builds are labeled `local-COMMIT` and record whether
-the worktree is dirty.
+views, styles, ACLs and embedded identity. Published builds use
+`firmware-YYYYMMDDHHMM.ATTEMPT` (UTC build-start time), so server-built releases
+and future Actions builds sort consistently without sharing a run counter.
+Old `firmware-RUN.ATTEMPT` tags remain readable. Unversioned development builds
+are labeled `local-COMMIT` and record whether the worktree is dirty.
 
 Automated tests cover metadata, mock HTTP/fake platform operations, static
 ARM64 compilation and desktop/mobile browser flows. **They do not flash real

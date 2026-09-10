@@ -36,7 +36,7 @@ def identity(root, version=None):
     # Never give modified or untracked recipe inputs a published version tag.
     dirty = bool(git(root, "status", "--porcelain", "--untracked-files=normal"))
     if version and not VERSION.fullmatch(version):
-        raise ValueError("Published version must be firmware-RUN.ATTEMPT")
+        raise ValueError("Published version must be firmware-NUMBER.ATTEMPT (new builds use UTC YYYYMMDDHHMM)")
     if version and dirty:
         raise ValueError("Cannot label a modified recipe as a published firmware release")
     return {

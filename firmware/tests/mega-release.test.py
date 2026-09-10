@@ -50,6 +50,12 @@ class MetadataTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release.identity(Path("/fixture"), "firmware-42.1")
 
+    def test_timestamp_release_supports_local_and_actions_builds(self):
+        version = "firmware-202609100700.1"
+        with patch.object(release, "git", side_effect=[self.sha, ""]):
+            build = release.identity(Path("/fixture"), version)
+        self.assertEqual(self.create(build=build, version=version)["version"], version)
+
     def test_wrong_variant_board_repo_or_identity_rejected(self):
         for field, value in (("variant", "minimal"), ("repository", "other/repo"),
                              ("board", "openwrt,one"), ("schema", 2),
