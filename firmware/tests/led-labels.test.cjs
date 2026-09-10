@@ -180,14 +180,18 @@ test('missing trigger attributes or unreliable carrier use a visible fallback', 
   }
 });
 
-test('poller status is read-only and has one Far5eer-compatible S95 owner', () => {
+test('poller status is read-only and has one post-generic-LED S97 owner', () => {
   const f = fixture();
   const poller = file('firmware/files/usr/sbin/zbt-modem-led-poller').replace('. /usr/lib/zbt/modem-leds.sh', '');
   const output = run(led + mocks + poller, f.env, ['status']);
   assert.match(output, /modem=4_1 usb=4-1.*device=wwan8 state=data/);
   assert.match(output, /modem=2_1 usb=2-1.*device=wwan3 state=waiting/);
   assert.equal(fs.existsSync(f.env.CALLS), false);
-  assert.match(file('firmware/files/etc/init.d/zbt-modem-leds'), /^START=95$/m);
+  assert.match(file('firmware/files/etc/init.d/zbt-modem-leds'), /^START=97$/m);
+  const builder = file('firmware/docker/build-openwrt.sh');
+  assert.match(builder, /legacy_modem_led_link=target\/linux\/mediatek\/filogic\/base-files\/etc\/rc\.d\/S95zbt-modem-leds/);
+  assert.match(builder, /readlink \"\$legacy_modem_led_link\"\)\" = \.\.\/init\.d\/zbt-modem-leds/);
+  assert.match(builder, /rm -f -- \"\$legacy_modem_led_link\"/);
   const defaults = file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds');
   assert.match(defaults, /zbt-modem-leds enable/);
   assert.match(defaults, /S\?\?zbt-modem-leds/);
@@ -200,6 +204,46 @@ test('poller status is read-only and has one Far5eer-compatible S95 owner', () =
   assert.doesNotMatch(defaults, /ensure_automatic_led/);
   assert.match(defaults, /blue:mobile-1\|blue:mobile-2\|red:status\|green:wan\|blue:power/);
   assert.doesNotMatch(file('firmware/files/usr/sbin/zbt-modem-led-poller'), /zbt_status_apply|red:status|green:wan|blue:power/);
+});
+
+test('one-shot dark-LED repair removes only stale none rules for the two modem lamps', () => {
+  const f = fixture(), db = path.join(f.dir, 'uci');
+  fs.mkdirSync(db);
+  const board = path.join(f.dir, 'board_name');
+  fs.writeFileSync(board, 'zbtlink,zbt-z8803be\n');
+  const uci = `
+uci() {
+  [ "$1" != -q ] || shift
+  case "$1" in
+    show)
+      for u_path in "$DB"/system.*; do
+        [ -f "$u_path" ] || continue
+        printf '%s=%s\\n' "\${u_path##*/}" "$(cat "$u_path")"
+      done ;;
+    get) [ -f "$DB/$2" ] && cat "$DB/$2" ;;
+    delete) rm -f "$DB/$2" "$DB/$2".* ;;
+    commit) echo committed >> "$DB/commits" ;;
+    *) return 1 ;;
+  esac
+}
+`;
+  const add = (name, lamp, trigger) => {
+    fs.writeFileSync(path.join(db, `system.${name}`), 'led');
+    fs.writeFileSync(path.join(db, `system.${name}.sysfs`), lamp);
+    fs.writeFileSync(path.join(db, `system.${name}.trigger`), trigger);
+  };
+  add('dark1', 'blue:mobile-1', 'none');
+  add('dark2', 'blue:mobile-2', 'none');
+  add('custom', 'blue:mobile-1', 'timer');
+  add('status', 'red:status', 'none');
+  const repair = file('firmware/files/etc/uci-defaults/48-zbt-modem-led-dark-repair')
+    .replaceAll('/tmp/sysinfo/board_name', board);
+  run(uci + repair, { ...f.env, DB: db });
+  assert.equal(fs.existsSync(path.join(db, 'system.dark1')), false);
+  assert.equal(fs.existsSync(path.join(db, 'system.dark2')), false);
+  assert.equal(fs.readFileSync(path.join(db, 'system.custom.trigger'), 'utf8').trim(), 'timer');
+  assert.equal(fs.readFileSync(path.join(db, 'system.status.trigger'), 'utf8').trim(), 'none');
+  assert.equal(fs.readFileSync(path.join(db, 'commits'), 'utf8').trim(), 'committed');
 });
 
 test('LED migration removes broken automatic rows, seeds four jacks, and preserves administrator settings', () => {

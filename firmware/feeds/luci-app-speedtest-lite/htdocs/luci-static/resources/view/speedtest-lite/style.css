@@ -32,7 +32,7 @@
 .zst-arc { stroke: var(--zst-accent); filter: drop-shadow(0 0 6px #38d5e633); }
 .zst-ticks path { stroke: #69748f; stroke-width: 1; }
 .zst-ticks text { fill: var(--zst-muted); font-size: 11px; }
-.zst-needle { fill: var(--zst-accent); transform-origin: 200px 190px; transition: transform .45s ease-out, opacity .3s; }
+.zst-needle { fill: var(--zst-accent); transform-origin: 200px 190px; transition: transform .23s linear, opacity .2s; }
 .zst-value { position: absolute; top: 62%; left: 0; width: 100%; line-height: 1.15; color: var(--zst-muted); font-size: 13px; }
 .zst-caption { font-size: 10px; letter-spacing: .16em; }
 .zst-reading { color: var(--zst-fg); font-size: clamp(38px, 8vw, 58px); font-weight: 350; letter-spacing: -.04em; padding: 4px 0; }

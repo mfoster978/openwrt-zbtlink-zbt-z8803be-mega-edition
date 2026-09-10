@@ -1,8 +1,9 @@
 #!/bin/sh /etc/rc.common
-# LED-only service. Keep Far5eer's original S95 ordering; the migration removes
-# the accidental S97 link shipped by the previous Mega/Minimal release.
+# LED-only service. Run after OpenWrt's generic S96 LED service so preserved
+# System -> LED Configuration rows cannot clear an automatic modem indicator
+# after the poller has restored it.
 # No AT polling, modem resets or power writes.
-START=95
+START=97
 STOP=05
 USE_PROCD=1
 

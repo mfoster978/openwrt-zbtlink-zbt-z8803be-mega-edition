@@ -19,7 +19,7 @@
 +    if [ -x /usr/bin/quectel-CM-M ]; then
 +        case "$driver" in qmi|mbim|mhi) proto="none"; protov6="none" ;; esac
 +    fi
-@@ -988,60 +993,40 @@
+@@ -988,60 +993,44 @@
 -    cmd_line="quectel-CM"
 -    [ -e "/usr/bin/quectel-CM-M" ] && cmd_line="quectel-CM-M" && tom_modified=1
 -    case $pdp_type in
@@ -93,10 +93,14 @@
 +        *) set -- "$@" -4 -6 ;;
 +    esac
 +    [ "$userset_pdp_index" != 1 ] || set -- "$@" -n "$pdp_index"
-+    # Preserve upstream carrier/modem APN negotiation for QMI auto mode.
-+    # Do not erase a working operator profile or send literal "auto" as APN.
-+    if [ "$driver" != qmi ] || [ "$(zbt_apn_mode "$apn")" = manual ]; then
-+        set -- "$@" -s "$apn" "${username:-}" "${password:-}" "${auth:-none}"
++    # Preserve normal carrier/modem negotiation in QMI auto mode. The helper
++    # supplies a narrow AT&T US fallback without persisting or logging IMSI.
++    effective_apn="$apn"
++    if [ "$driver" = qmi ]; then
++        effective_apn=$(zbt_effective_apn "$apn" "$at_port")
++    fi
++    if [ "$driver" != qmi ] || [ -n "$effective_apn" ]; then
++        set -- "$@" -s "$effective_apn" "${username:-}" "${password:-}" "${auth:-none}"
 +    fi
 +    set -- "$@" -i "$modem_netcard"
 +    [ -z "$pincode" ] || set -- "$@" -p "$pincode"
@@ -530,33 +534,37 @@
  		};
  
  	o = s.option(form.DummyValue, 'state', _('Status'));
-@@ -304,7 +305,7 @@
- 	// ============ Modal Configuration Options ============
- 	
- 	// General Settings
+@@ -307 +308 @@
 -	o = s.option(form.Value, 'alias', _('Modem Alias'));
 +	o = s.option(form.Value, 'display_name', _('Modem Alias'), _('Display name only; changing it does not rename the network interface.'));
- 	o.rmempty = true;
- 	o.modalonly = true;
- 
-@@ -874,7 +875,7 @@
- 
- 	showDialLogDialog: function(section_id) {
- 		var name = uci.get('qmodem', section_id, 'name');
+@@ -384,0 +386,10 @@
++	// United States (US); Value remains editable for carrier and MVNO APNs.
++	o.value('broadband', _('AT&T data device (US)'));
++	o.value('NXTGENPHONE', _('AT&T LTE phone SIM (US)'));
++	o.value('ENHANCEDPHONE', _('AT&T 5G phone SIM (US)'));
++	o.value('firstnet-broadband', _('FirstNet (US)'));
++	o.value('fast.t-mobile.com', _('T-Mobile (US)'));
++	o.value('vzwinternet', _('Verizon (US)'));
++	o.value('h2g2', _('Google Fi data-only SIM (US)'));
++	o.value('h2g2-t', _('Google Fi phone SIM (US)'));
++	o.value('usccinternet', _('U.S. Cellular (US)'));
+@@ -461,0 +473,10 @@
++	// Keep the second SIM selector equivalent to the primary SIM selector.
++	o.value('broadband', _('AT&T data device (US)'));
++	o.value('NXTGENPHONE', _('AT&T LTE phone SIM (US)'));
++	o.value('ENHANCEDPHONE', _('AT&T 5G phone SIM (US)'));
++	o.value('firstnet-broadband', _('FirstNet (US)'));
++	o.value('fast.t-mobile.com', _('T-Mobile (US)'));
++	o.value('vzwinternet', _('Verizon (US)'));
++	o.value('h2g2', _('Google Fi data-only SIM (US)'));
++	o.value('h2g2-t', _('Google Fi phone SIM (US)'));
++	o.value('usccinternet', _('U.S. Cellular (US)'));
+@@ -877 +898 @@
 -		var alias = uci.get('qmodem', section_id, 'alias');
 +		var alias = qmodem.getModemLabel(section_id);
- 		var title = (alias || name || section_id) + ' - ' + _('Dial Log');
- 		
- 		var logContent = E('div', { 'style': 'min-height: 300px;' }, [
-@@ -962,7 +963,7 @@
- 		return qmodem.getDialLog(section_id).then(function(result) {
- 			if (result && result.log) {
- 				var name = uci.get('qmodem', section_id, 'name') || section_id;
+@@ -965 +986 @@
 -				var alias = uci.get('qmodem', section_id, 'alias') || '';
 +				var alias = qmodem.getModemLabel(section_id) || '';
- 				var filename = 'dial_log_' + (alias || name) + '_' + 
- 					new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + '.txt';
- 				
 --- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/settings.js
 +++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/settings.js
 @@ -6,6 +6,7 @@

@@ -29,5 +29,6 @@ for setting in "metric=$metric" pdp_type=ipv4v6 auth=none do_not_add_dns=1 donot
 		changed=1
 	fi
 done
-# Blank/auto APN is intentionally not replaced with a T-Mobile/AT&T value.
+# Blank/auto APN is not persisted here; the dialer computes the narrow AT&T
+# 310/410 fallback at connection time and otherwise preserves auto mode.
 [ "$changed" = 0 ] || uci commit qmodem

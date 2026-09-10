@@ -92,7 +92,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - **About** is a desktop-ready, dark five-tab feature/package guide with illustrations, build information, developer/maintainer Michael Foster's email and Discord contacts, and special thanks to upstream developer [0xFar5eer](https://github.com/0xFar5eer).
 - **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Older versions can be selected for downgrade; keeping settings is off by default for downgrades.
 - HTTPS, SHA256, local device identity and OpenWrt image checks are required. There is no forced/unattended flash or automatic rollback. Back up settings first. Old firmware without this tool requires the usual LuCI flash page for subsequent updates.
-- These features are **Mega-only**; Speedify Minimal retains its original About screen and does not include this updater. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md) for the remaining on-router acceptance checks.
+- These features are **Mega-only**; Minimal retains its original About screen and does not include this updater. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md) for the remaining on-router acceptance checks.
 
 ### Hardware and Wi-Fi
 
@@ -113,7 +113,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - Both modem power rails are seeded on during initial setup; later operator power choices are preserved.
 - QMI/MBIM paths using `quectel-CM-M -d` use `proto=none`: the connection manager owns addresses and routes, with no competing DHCP client. ECM/RNDIS retain their protocol-specific behavior.
 - Both USB modems use the same startup, APN, protocol, and recovery logic. The connection manager applies the MTU reported for each data connection, rather than copying one carrier's value to everyone.
-- Blank/auto QMI APNs retain modem/network profile negotiation. Manual APNs, credentials, PINs, and SIM selections are not erased; some carriers/plans still require manual configuration.
+- Blank/auto QMI APNs retain modem/network profile negotiation. A directly identified AT&T US `310/410` SIM gets the data-device fallback `broadband`; every manual APN still wins. Both SIM selectors also offer editable presets for AT&T, FirstNet, T-Mobile, Verizon, Google Fi, and U.S. Cellular.
 - Band changes require a successful AT response and matching readback. Unknown masks have read-only diagnostics and Retry; reported bands stay separate from pending edits. See [per-modem band readback](firmware/docs/band-readback.md).
 - Existing Far5eer carrier TTL/hop-limit handling and modem NAT detection remain available.
 
@@ -131,7 +131,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 
 ### Connectivity tools and VPNs
 
-- **Services → Speed Test Utility** is a live speed-test dashboard: a responsive speedometer, measured download/upload graph, ping/jitter, server selection, and a Stop button. It performs real multi-connection transfers against **Speedtest.net servers**, using the pinned open-source [speedtest-go client](https://github.com/showwin/speedtest-go/tree/v1.7.10), not the official Ookla app. There are no Save/Apply buttons or simulated speed values. See [how the live test works](firmware/docs/live-speedtest.md).
+- **Services → Speed Test Utility** is a live speed-test dashboard: a responsive speedometer updated from measured 250 ms samples, download/upload graph, ping/jitter, server selection, and a Stop button. It performs real multi-connection transfers against **Speedtest.net servers**, using the pinned open-source [speedtest-go v1.8.3 client](https://github.com/showwin/speedtest-go/tree/v1.8.3), not the official Ookla app. The cellular-tuned test uses up to 16 connections and 20-second transfer windows. There are no Save/Apply buttons or simulated speed values. See [how the live test works](firmware/docs/live-speedtest.md).
 - Choose the current default route, wired WAN, SFP WAN, modem 1, or modem 2. Physical-interface binding prevents substituting the other modem when their private IP addresses overlap.
 - `speedtest-netperf` and `speedtest-go` remain available separately at the command line.
 - **Services → Tailscale** provides a locally packaged status/sign-in page; each user authenticates their own account. Advanced Tailscale route/exit-node options remain CLI-managed.

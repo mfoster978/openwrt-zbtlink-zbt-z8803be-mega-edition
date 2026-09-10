@@ -364,6 +364,9 @@ func TestDownloadAndHTTPFailures(t *testing.T) {
 			if code == 429 && !strings.Contains(st.Error, "rate limit") {
 				t.Fatal(st.Error)
 			}
+			if code == 404 && !strings.Contains(st.Error, "repository to be public") {
+				t.Fatal(st.Error)
+			}
 		})
 	}
 	for _, which := range []string{"api html", "manifest html", "image html", "truncated image", "legacy duplicate"} {

@@ -131,6 +131,9 @@ func (c Catalog) get(ctx context.Context, raw string) (*http.Response, error) {
 		if resp.StatusCode == 403 || resp.StatusCode == 429 {
 			return nil, errors.New("GitHub rate limit or access restriction; try again later")
 		}
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, errors.New("GitHub could not find the Mega release repository or release. Token-free updates require the Mega repository to be public")
+		}
 		return nil, fmt.Errorf("GitHub returned HTTP %d", resp.StatusCode)
 	}
 	return resp, nil

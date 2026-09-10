@@ -4,8 +4,8 @@ speedtest_root="$(cd "$(dirname "$0")/../.." && pwd)"
 speedtest_tmp="$(mktemp -d /tmp/zbt-speedtest-check.XXXXXX)"
 trap '[[ "$speedtest_tmp" == /tmp/zbt-speedtest-check.* ]] && rm -rf -- "$speedtest_tmp"' EXIT
 curl --fail --silent --show-error --location --max-time 60 \
-  'https://codeload.github.com/showwin/speedtest-go/tar.gz/v1.7.10' -o "$speedtest_tmp/source.tar.gz"
-printf '%s  %s\n' 70a2937d0759820fe7ee8f61b960d60c07b34c0d783ed11c0065b68fe2964aea "$speedtest_tmp/source.tar.gz" | sha256sum -c -
+  'https://codeload.github.com/showwin/speedtest-go/tar.gz/v1.8.3' -o "$speedtest_tmp/source.tar.gz"
+printf '%s  %s\n' 48d01137468da9d419a3940a652803dafd8a6820abcd985b85c9d0c86b417ba3 "$speedtest_tmp/source.tar.gz" | sha256sum -c -
 mkdir "$speedtest_tmp/source"
 tar -xzf "$speedtest_tmp/source.tar.gz" -C "$speedtest_tmp/source" --strip-components=1
 mkdir -p "$speedtest_tmp/source/cmd/zbt-speedtest"

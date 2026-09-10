@@ -30,7 +30,12 @@ import (
 	"github.com/showwin/speedtest-go/speedtest"
 )
 
-const engine = "speedtest-go 1.7.10 · Speedtest.net servers"
+const (
+	engine             = "speedtest-go 1.8.3 · Speedtest.net servers"
+	maxConnections     = 16
+	transferTime       = 20 * time.Second
+	liveSampleInterval = 250 * time.Millisecond
+)
 
 var runID = regexp.MustCompile(`^[a-f0-9]{24}$`)
 var serverID = regexp.MustCompile(`^[0-9]{1,8}$`)
@@ -369,7 +374,7 @@ type checkedTransport struct {
 }
 
 func (t *checkedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("User-Agent", "zbt-speedtest/1 speedtest-go/1.7.10")
+	req.Header.Set("User-Agent", "zbt-speedtest/1 speedtest-go/1.8.3")
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		return resp, err
@@ -443,14 +448,18 @@ func info(s *speedtest.Server) serverInfo {
 
 func runTest(ctx context.Context, p *reporter) error {
 	q := p.r
-	uc := &speedtest.UserConfig{Source: q.Source, DialerControl: bindDevice(q.Device), MaxConnections: 8, PingMode: speedtest.HTTP}
+	// High-latency cellular paths often need more parallel transfers and a
+	// longer warm-up than a wired connection before they reach their available
+	// throughput. v1.8.3 also adapts upload concurrency using bytes confirmed by
+	// successful server responses instead of counting queued request data.
+	uc := &speedtest.UserConfig{Source: q.Source, DialerControl: bindDevice(q.Device), MaxConnections: maxConnections, PingMode: speedtest.HTTP}
 	client := speedtest.New(speedtest.WithUserConfig(uc))
 	// Do not inherit server/container HTTP_PROXY variables or silently redirect
 	// an explicitly selected modem test through an application proxy.
 	uc.T.Proxy = nil
 	checked := &checkedTransport{base: uc.T}
 	speedtest.WithDoer(&http.Client{Transport: checked, Timeout: 25 * time.Second})(client)
-	client.SetRateCaptureFrequency(250 * time.Millisecond).SetCaptureTime(15 * time.Second)
+	client.SetRateCaptureFrequency(liveSampleInterval).SetCaptureTime(transferTime)
 	var candidates speedtest.Servers
 	var err error
 	if q.Server != "" && q.Mode == "test" {

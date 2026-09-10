@@ -2,7 +2,7 @@
 
 These additions are exclusive to **ZBT-Z8803BE Mega Edition**, developed and
 maintained by **Michael Foster / @mfoster978**. They
-do not add an updater to Speedify Minimal or change modem configuration.
+do not add an updater to Minimal or change modem configuration.
 
 ## About
 

@@ -1,0 +1,61 @@
+#!/bin/sh
+# Convert only the legacy MLO layout written by the old custom LuCI page.
+# Ordinary same-SSID APs without option mlo=1 are intentionally untouched.
+
+. /lib/functions.sh
+
+case "$(board_name)" in
+	zbtlink,zbt-z8803be|zbtlink,zbt-z8803be,mt7988a-nand) ;;
+	*) exit 0 ;;
+esac
+
+sections="$(uci -q show wireless | sed -nE 's/^wireless\.([^.]+)=wifi-iface$/\1/p')"
+changed=0
+
+for first in $sections; do
+	[ "$(uci -q get "wireless.${first}.mlo")" = "1" ] || continue
+	mode="$(uci -q get "wireless.${first}.mode")"
+	[ -z "$mode" ] || [ "$mode" = "ap" ] || continue
+	ssid="$(uci -q get "wireless.${first}.ssid")"
+	[ -n "$ssid" ] || continue
+
+	members="$first"
+	count=1
+	for candidate in $sections; do
+		[ "$candidate" != "$first" ] || continue
+		[ "$(uci -q get "wireless.${candidate}.mlo")" = "1" ] || continue
+		candidate_mode="$(uci -q get "wireless.${candidate}.mode")"
+		[ -z "$candidate_mode" ] || [ "$candidate_mode" = "ap" ] || continue
+		[ "$(uci -q get "wireless.${candidate}.ssid")" = "$ssid" ] || continue
+		members="$members $candidate"
+		count=$((count + 1))
+	done
+	[ "$count" -gt 1 ] || continue
+
+	devices=""
+	for member in $members; do
+		for device in $(uci -q get "wireless.${member}.device"); do
+			case " $devices " in
+				*" $device "*) ;;
+				*) devices="${devices}${devices:+ }${device}" ;;
+			esac
+		done
+	done
+
+	set -- $devices
+	[ "$#" -ge 2 ] || continue
+	uci -q delete "wireless.${first}.device"
+	for device in "$@"; do
+		uci -q add_list "wireless.${first}.device=${device}"
+	done
+	uci -q set "wireless.${first}.mlo=1"
+	uci -q set "wireless.${first}.ieee80211w=2"
+	for member in $members; do
+		[ "$member" = "$first" ] || uci -q delete "wireless.${member}"
+	done
+	changed=1
+	logger -t zbt-mlo "combined legacy MLO SSID '$ssid' into one ${#}-radio wifi-iface"
+done
+
+[ "$changed" -eq 0 ] || uci -q commit wireless
+exit 0

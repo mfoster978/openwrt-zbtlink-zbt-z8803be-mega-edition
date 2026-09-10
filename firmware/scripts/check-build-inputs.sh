@@ -30,6 +30,11 @@ while IFS= read -r script; do
   esac
 done < <(rg --files firmware/files firmware/feeds)
 
+test -s firmware/patches/luci-app-mlo-shared-iface.patch
+grep -Fq 'writeCommon(mldIface, selectedDevices);' firmware/patches/luci-app-mlo-shared-iface.patch
+grep -Fq "uci -q add_list \"wireless.\${first}.device=\${device}\"" \
+  firmware/files/etc/uci-defaults/73-zbt-mlo-shared-iface-repair
+
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config
 printf '%s  %s\n' \
@@ -54,6 +59,7 @@ for component in \
   firmware/feeds/zbt-firmware-updater/Makefile \
   firmware/feeds/zbt-firmware-updater/LICENSE \
   firmware/feeds/zbt-firmware-updater/src/go.mod \
+  firmware/files/www/luci-static/resources/view/speedify/speedify.js \
   firmware/files/www/luci-static/resources/view/zbt8803be/about.js \
   firmware/files/www/luci-static/resources/view/zbt8803be/mega-about.css \
   firmware/files/www/luci-static/resources/view/system/mega-update.js \
@@ -63,6 +69,8 @@ done
 test -x firmware/files/usr/libexec/rpcd/zbt.firmware
 for metadata in \
   firmware/files/usr/share/luci/menu.d/zbt-firmware.json \
+  firmware/files/usr/share/luci/menu.d/luci-app-speedify.json \
+  firmware/files/usr/share/rpcd/acl.d/luci-app-speedify.json \
   firmware/files/usr/share/rpcd/acl.d/zbt-firmware.json \
   firmware/files/usr/share/rpcd/acl.d/luci-app-zbt-about.json; do
   python3 -m json.tool "$metadata" >/dev/null

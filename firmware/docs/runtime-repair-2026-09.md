@@ -51,9 +51,9 @@ The modules are the same RM551E-GL model but have different **internal modem fir
 
 ## APN and carrier independence
 
-Both modems use the same configuration helper and dialer. For QMI, blank/`auto` APN means retaining the connection manager's modem/network profile negotiation, not sending a literal APN named `auto` or clearing an existing profile. Manual APNs, authentication, PINs and SIM selections are preserved. No T-Mobile or AT&T APN is hardcoded.
+Both modems use the same configuration helper and dialer. For QMI, blank/`auto` APN normally means retaining the connection manager's modem/network profile negotiation, not sending a literal APN named `auto` or clearing an existing profile. The one narrow fallback is a directly identified AT&T US MCC/MNC `310/410` SIM, which receives the data-device APN `broadband`. Manual APNs, authentication, PINs and SIM selections are always preserved and override that fallback. The two editable APN selectors contain matching U.S. carrier presets; no APN is inferred for carriers whose network code may also identify MVNOs.
 
-This is not a promise of universal zero-configuration access: carrier activation, plan-specific APNs, coverage, device approval, modem firmware and carrier profiles can matter. The modem 2 log already shows a saved `nxtgenphone` profile; it does **not** prove there was no APN. Public firmware should not overwrite every user's profile with that value either.
+This is not a promise of universal zero-configuration access: carrier activation, plan-specific APNs, coverage, device approval, modem firmware and carrier profiles can matter. The modem 2 log already shows a saved `nxtgenphone` profile; it does **not** prove there was no APN. The firmware therefore does not overwrite every user's profile with that value.
 
 ## Speed-based failover
 

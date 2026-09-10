@@ -46,8 +46,8 @@ case "$(cat /tmp/sysinfo/board_name 2>/dev/null)" in
 		uci commit system
 		;;
 esac
-# The affected image can contain S95 and S97 links for the same service.
-# Remove only those exact links, then restore Far5eer's single S95 owner.
+# Older images can contain more than one link for the same service. Remove only
+# those exact links, then create one S97 owner after OpenWrt's S96 LED service.
 for link in /etc/rc.d/S??zbt-modem-leds /etc/rc.d/K??zbt-modem-leds; do
 	[ -L "$link" ] && rm -f "$link"
 done

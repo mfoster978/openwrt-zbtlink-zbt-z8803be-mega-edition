@@ -1,5 +1,5 @@
 'use strict';
-// Real browser coverage of the read-only About view. No router or Internet calls.
+// Real browser coverage of the read-only About view. No router or live Internet calls.
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -61,6 +61,9 @@ renderAbout();
     const requests = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => requests.push(request.url()));
+    await page.route('https://embed-ssl.wistia.com/**', route => route.fulfill({
+      status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540"/>'
+    }));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector('.zma-page');
     await page.waitForFunction(() => getComputedStyle(document.querySelector('.zma-hero')).display === 'grid');
@@ -86,6 +89,10 @@ renderAbout();
     assert.match(await page.locator('.zma-thanks').innerText(), /putting the pieces together[\s\S]*working OpenWrt/);
     assert.match(await page.locator('#zma-speedify').textContent(), /Installed after Internet is ready/);
     assert.match(await page.locator('#zma-speedify').textContent(), /does not assert it is installed/);
+    await page.getByRole('tab', { name: 'Speedify', exact: true }).click();
+    assert.equal(await page.locator('.zma-speedify-video img[loading="lazy"][referrerpolicy="no-referrer"]').count(), 1);
+    assert.equal(await page.getByRole('link', { name: 'Pair & Share | Peer-to-Peer Cellular Bonding | Speedify', exact: true }).getAttribute('href'), 'https://speedify.com/enterprise/pair-and-share-cellular-connection-pooling/?wvideo=lrxei2q3dw');
+    await page.getByRole('tab', { name: 'Overview', exact: true }).click();
     assert.match(await page.locator('#zma-features').textContent(), /Modem 1[\s\S]*Modem 2[\s\S]*IPv4 TTL \/ IPv6 Hop Limit/);
     assert.match(await page.locator('#zma-features').textContent(), /not the official Ookla application/);
     assert.match(await page.locator('#zma-features').textContent(), /watchdog actions and speed-based preferences are off by default/);
@@ -150,14 +157,18 @@ renderAbout();
       metadata.installed.source_sha = injection;
       await renderAbout();
     });
-    assert.equal(await page.locator('.zma-page img').count(), 0, 'metadata is not interpreted as markup');
+    assert.equal(await page.locator('.zma-page img').count(), 1, 'only the fixed Speedify poster is an image');
+    assert.equal(await page.locator('.zma-page img[src="x"]').count(), 0, 'metadata is not interpreted as markup');
     assert.equal(await page.evaluate(() => window.injected), undefined);
     assert.equal(await page.locator('.zma-installed-version').innerText(), '<img src=x onerror="window.injected=true">');
     await page.evaluate(async () => { rejectRpc = true; await renderAbout(); });
     assert.equal(await page.locator('.zma-installed-version').innerText(), 'Build metadata unavailable');
     assert.equal(await page.locator('#zbt-mega-about-style').count(), 1, 'stylesheet should not be injected repeatedly');
     assert.equal(await page.locator('a[href="mailto:mfoster978@gmail.com"]').count(), 1, 'RPC failure does not hide static content');
-    assert.equal(requests.every(url => new URL(url).hostname === '127.0.0.1'), true, 'no external images, fonts, trackers, or RPC calls');
+    assert.equal(requests.every(url => {
+      const parsed = new URL(url);
+      return parsed.hostname === '127.0.0.1' || (parsed.hostname === 'embed-ssl.wistia.com' && parsed.pathname === '/deliveries/d5c4ddf469f498a4e17ed4cb75d9abb8.jpg');
+    }), true, 'only the explicitly approved Speedify poster may load remotely');
     assert.deepEqual(errors, [], 'browser errors');
     console.log('Mega About Chromium checks passed: dark-default tabs, keyboard navigation, hidden panels, no updater controls, content, contacts, credits, mobile layout, expansion, read-only RPC, XSS and unavailable metadata.');
   } finally { await browser.close(); server.close(); }

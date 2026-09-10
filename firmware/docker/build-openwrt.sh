@@ -62,6 +62,11 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$runtim
   echo 'Pinned QModem runtime patch no longer matches; refusing an unpatched build' >&2
   exit 3
 fi
+for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
+  [ "$(grep -Fo "o.value('$apn'" feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js | wc -l)" -eq 2 ] || {
+    echo "US APN preset is not present for both QModem SIM selectors: $apn" >&2; exit 3;
+  }
+done
 led_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/zbt-wan-led.patch"
 if patch --dry-run --batch --fuzz=0 --forward -p1 < "$led_patch" >/dev/null; then
   patch --batch --fuzz=0 --forward -p1 < "$led_patch"
@@ -69,6 +74,32 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 < "$led_patch" >/dev/null;
   echo 'WAN LED device-tree patch does not match the pinned board' >&2
   exit 3
 fi
+# Far5eer's base files carry a pre-created S95 link. Replacing the init script
+# with START=97 causes OpenWrt to generate the correct S97 link as well, so the
+# legacy link must be removed before rootfs assembly or two owners race at boot.
+# Validate its exact target before deleting it; an upstream layout change must
+# fail closed instead of silently removing an unrelated service.
+legacy_modem_led_link=target/linux/mediatek/filogic/base-files/etc/rc.d/S95zbt-modem-leds
+if [[ -L "$legacy_modem_led_link" ]]; then
+  [[ "$(readlink "$legacy_modem_led_link")" = ../init.d/zbt-modem-leds ]] || {
+    echo 'Unexpected legacy modem LED startup link target' >&2; exit 3;
+  }
+  rm -f -- "$legacy_modem_led_link"
+elif [[ -e "$legacy_modem_led_link" ]]; then
+  echo 'Legacy modem LED startup path is not the expected symlink' >&2
+  exit 3
+fi
+mlo_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/luci-app-mlo-shared-iface.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d package/luci-app-mlo < "$mlo_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d package/luci-app-mlo < "$mlo_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d package/luci-app-mlo < "$mlo_patch" >/dev/null; then
+  echo 'MLO shared-interface patch does not match the pinned source' >&2
+  exit 3
+fi
+grep -Eq 'writeCommon\(mldIface,[[:space:]]*selectedDevices\);' \
+  package/luci-app-mlo/htdocs/luci-static/resources/view/mlo/main.js || {
+  echo 'MLO page did not retain the shared multi-radio writer' >&2; exit 3;
+}
 # Add LED callbacks to the pinned MT7988 Ethernet PHY driver before the kernel
 # is prepared. The kernel version, modem drivers and power/SIM pins stay pinned.
 kernel_led_patch="$(dirname "${FILES_OVERLAY_DIR}")/kernel-patches/753-net-phy-mediatek-mt7988-led-control.patch"
@@ -275,6 +306,9 @@ required_overlay_files=(
   etc/init.d/speedify-installer
   etc/init.d/zbt-luci-backend
   usr/sbin/speedify-installer-loop
+  www/luci-static/resources/view/speedify/speedify.js
+  usr/share/luci/menu.d/luci-app-speedify.json
+  usr/share/rpcd/acl.d/luci-app-speedify.json
   usr/sbin/zbt-luci-backend-check
   usr/sbin/zbt-speed-sample
   usr/libexec/rpcd/zbt.speedtest
@@ -282,7 +316,9 @@ required_overlay_files=(
   usr/lib/zbt/dual-modem.sh
   usr/lib/zbt/modem-leds.sh
   etc/init.d/zbt-modem-leds
+  etc/uci-defaults/48-zbt-modem-led-dark-repair
   etc/uci-defaults/49-zbt-modem-labels-leds
+  etc/uci-defaults/73-zbt-mlo-shared-iface-repair
   etc/uci-defaults/50-zbt-luci-web-recovery
   usr/lib/zbt/quectel-bands.sh
   usr/lib/zbt/speed-lock.sh
@@ -302,11 +338,10 @@ for overlay_file in "${required_overlay_files[@]}"; do
   fi
 done
 echo "Validated files overlay in root filesystem: ${rootfs_dir}"
-# A package/base-files install must expose exactly one modem LED owner. The
-# affected release contained both S95 and S97 links and raced Far5eer's status
-# state machine.
-[ "$(readlink "${rootfs_dir}/etc/rc.d/S95zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
-  echo 'Modem LED boot service is not enabled at S95 in the image' >&2; exit 4;
+# A package/base-files install must expose exactly one modem LED owner. S97
+# deliberately runs after OpenWrt's generic S96 LED configuration service.
+[ "$(readlink "${rootfs_dir}/etc/rc.d/S97zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
+  echo 'Modem LED boot service is not enabled at S97 in the image' >&2; exit 4;
 }
 mapfile -t modem_led_links < <(find "${rootfs_dir}/etc/rc.d" -maxdepth 1 -type l -name 'S??zbt-modem-leds' -print)
 [ "${#modem_led_links[@]}" -eq 1 ] || {
@@ -319,7 +354,7 @@ mapfile -t modem_led_links < <(find "${rootfs_dir}/etc/rc.d" -maxdepth 1 -type l
 test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/iface/40-zbt-status-led" || {
   echo 'Far5eer status LED runtime is missing from the image' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile etc/uci-defaults/49-zbt-modem-labels-leds etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-mlo-shared-iface-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
@@ -332,6 +367,10 @@ done
 }
 grep -q '/etc/init.d/uhttpd disable' "${rootfs_dir}/etc/uci-defaults/50-zbt-luci-web-recovery" || {
   echo 'LuCI web-stack migration does not disable the competing uhttpd listener' >&2; exit 4;
+}
+grep -Eq 'writeCommon\(mldIface,[[:space:]]*selectedDevices\);' \
+  "${rootfs_dir}/www/luci-static/resources/view/mlo/main.js" || {
+  echo 'Corrected shared-interface MLO page is missing from the image' >&2; exit 4;
 }
 # Keep the upstream package from silently restoring the global-only TTL UI
 # or old init/hotplug/default writers over this firmware's independent policy.
@@ -349,6 +388,11 @@ done
 for ui_file in qmodem/qmodem.js view/qmodem/network_config.js view/qmodem/settings.js; do
   grep -q display_name "${rootfs_dir}/www/luci-static/resources/${ui_file}" || {
     echo "Friendly modem labels missing from built LuCI: ${ui_file}" >&2; exit 4;
+  }
+done
+for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
+  [ "$(grep -Fo "o.value('$apn'" "${rootfs_dir}/www/luci-static/resources/view/qmodem/network_config.js" | wc -l)" -eq 2 ] || {
+    echo "US APN preset missing from one or both built SIM selectors: $apn" >&2; exit 4;
   }
 done
 

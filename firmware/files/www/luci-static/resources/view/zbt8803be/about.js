@@ -3,11 +3,14 @@
 'require rpc';
 
 /* Mega edition only. This replaces the pinned luci-app-zbt-about view, keeping
- * its route and read-only ACL. All artwork is local SVG; no remote trackers,
- * fonts, badges or images are loaded by this page. Runtime values are text. */
+ * its route and read-only ACL. The sole remote image is the user-requested
+ * Speedify video poster; it is lazy-loaded without a referrer. Runtime values
+ * are always inserted as text. */
 const MEGA_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition';
 const MINIMAL_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build';
 const BASE_REPO = 'https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE';
+const SPEEDIFY_VIDEO = 'https://speedify.com/enterprise/pair-and-share-cellular-connection-pooling/?wvideo=lrxei2q3dw';
+const SPEEDIFY_POSTER = 'https://embed-ssl.wistia.com/deliveries/d5c4ddf469f498a4e17ed4cb75d9abb8.jpg?image_play_button_size=2x&image_crop_resized=960x540&image_play_button_rounded=1&image_play_button_color=00A1DEe0';
 const callBoard = rpc.declare({ object: 'system', method: 'board', expect: {} });
 const callInfo = rpc.declare({ object: 'system', method: 'info', expect: {} });
 const callBuild = rpc.declare({ object: 'zbt.firmware', method: 'info', expect: {} });
@@ -88,6 +91,23 @@ function packageGroup(title, description, packages) {
 	return E('details', { 'class': 'zma-package-group' }, [
 		E('summary', {}, [E('span', {}, _(title)), E('span', { 'class': 'zma-package-count' }, packages.length + ' ' + _('highlights'))]),
 		E('p', {}, _(description)), E('div', { 'class': 'zma-package-list' }, packages.map(function(pkg) { return E('code', {}, pkg); }))
+	]);
+}
+
+function speedifyVideo() {
+	return E('figure', { 'class': 'zma-speedify-video' }, [
+		E('a', { href: SPEEDIFY_VIDEO, target: '_blank', rel: 'noopener noreferrer', 'aria-label': _('Play the Pair & Share cellular bonding video on Speedify.com') }, [
+			E('img', {
+				src: SPEEDIFY_POSTER,
+				width: '400',
+				height: '225',
+				loading: 'lazy',
+				decoding: 'async',
+				referrerpolicy: 'no-referrer',
+				alt: _('Pair & Share — peer-to-peer cellular bonding by Speedify')
+			})
+		]),
+		E('figcaption', {}, [external(SPEEDIFY_VIDEO, _('Pair & Share | Peer-to-Peer Cellular Bonding | Speedify'))])
 	]);
 }
 
@@ -233,7 +253,8 @@ return view.extend({
 					E('h2', {}, _('What does Speedify do?')),
 					E('p', { 'class': 'zma-lead' }, _('Speedify sends traffic through an encrypted tunnel to a remote Speedify server. That shared endpoint lets it use multiple Internet connections together, rather than simply assigning each connection to a different WAN.')),
 					E('p', {}, _('Depending on your links and selected mode, it can combine usable capacity, keep traffic moving when a link drops, or favor redundancy. It cannot create cellular coverage, activate a SIM, remove a carrier restriction or guarantee the sum of your advertised link speeds.')),
-					external('https://speedify.com/', _('About Speedify and its plans ↗'), 'zma-text-link')
+					external('https://speedify.com/', _('About Speedify and its plans ↗'), 'zma-text-link'),
+					speedifyVideo()
 				]),
 				E('div', { 'class': 'zma-speedify-steps' }, [
 					E('article', {}, [E('span', {}, '1'), E('div', {}, [E('h3', {}, _('Dependencies baked in')), E('p', {}, _('Matching TUN, crypto/network support, TLS certificates, C++/atomic/keyutils runtime libraries, nginx and the Python support needed by the LuCI integration are built with the firmware.'))])]),
@@ -269,7 +290,7 @@ return view.extend({
 							E('div', {}, [E('dt', {}, _('Email')), E('dd', {}, [E('a', { href: 'mailto:mfoster978@gmail.com' }, 'mfoster978@gmail.com')])]),
 							E('div', {}, [E('dt', {}, 'Discord'), E('dd', {}, [E('code', { 'class': 'zma-discord', tabindex: '0', 'aria-label': _('Discord username: mfoster978') }, 'mfoster978'), E('small', {}, _('Username · copy to find me on Discord'))])])
 						]),
-						E('div', { 'class': 'zma-project-links' }, [external(MEGA_REPO, _('Mega firmware repository ↗')), external(MINIMAL_REPO, _('Speedify Minimal repository ↗')), external(MEGA_REPO + '/issues', _('Report an issue / request a feature ↗'))]),
+						E('div', { 'class': 'zma-project-links' }, [external(MEGA_REPO, _('Mega firmware repository ↗')), external(MINIMAL_REPO, _('Minimal firmware repository ↗')), external(MEGA_REPO + '/issues', _('Report an issue / request a feature ↗'))]),
 						E('p', { 'class': 'zma-small' }, _('For useful bug reports, include your build, board, modem firmware and redacted logs. Remove passwords, API keys, IMEI, IMSI, ICCID and public addresses before posting.'))
 					]),
 					E('article', { 'class': 'zma-thanks' }, [

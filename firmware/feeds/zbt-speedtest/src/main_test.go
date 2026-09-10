@@ -54,6 +54,15 @@ func TestMbpsNeverFabricatesInvalidRates(t *testing.T) {
 	}
 }
 
+func TestCellularMeasurementTuning(t *testing.T) {
+	if maxConnections != 16 || transferTime != 20*time.Second || liveSampleInterval != 250*time.Millisecond {
+		t.Fatalf("unexpected production tuning: connections=%d transfer=%s sample=%s", maxConnections, transferTime, liveSampleInterval)
+	}
+	if 2*transferTime >= 90*time.Second {
+		t.Fatal("transfer phases leave no time for discovery and latency inside the worker deadline")
+	}
+}
+
 func TestPhysicalModemsDoNotFollowEnumerationOrder(t *testing.T) {
 	sys := t.TempDir()
 	for _, pair := range [][2]string{{"4-1", "wwan8"}, {"2-1", "wwan3"}} {

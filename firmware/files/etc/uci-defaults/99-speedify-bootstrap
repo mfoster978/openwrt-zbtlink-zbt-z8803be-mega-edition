@@ -9,6 +9,11 @@ if ! uci -q get speedify_bootstrap.main.install_luci >/dev/null 2>&1; then
 fi
 uci -q commit speedify_bootstrap
 
+# A sysupgrade removes the runtime-installed vendor UI. Clear any preserved
+# menu cache so the ROM-resident setup screen is immediately visible while the
+# official APK is downloaded again.
+rm -f /tmp/luci-indexcache /tmp/luci-indexcache.json
+
 # This filename sorts after the cellular defaults, avoiding concurrent network
 # and firewall writes during the first installation attempt.
 if [ -x /etc/init.d/speedify-installer ]; then

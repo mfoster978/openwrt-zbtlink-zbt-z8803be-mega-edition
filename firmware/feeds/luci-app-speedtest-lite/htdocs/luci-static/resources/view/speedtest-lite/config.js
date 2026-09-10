@@ -1,7 +1,6 @@
 'use strict';
 'require view';
 'require rpc';
-'require poll';
 
 var start = rpc.declare({ object: 'zbt.speedtest', method: 'start', params: ['interface', 'server', 'mode', 'consent'] });
 var status = rpc.declare({ object: 'zbt.speedtest', method: 'status' });
@@ -35,6 +34,7 @@ return view.extend({
 	handleSave: null, handleSaveApply: null, handleReset: null,
 	render: function() {
 		var latest = {}, pending = false, lastServers = '', lastID = '', maximum = 2500, generation = 0;
+		var refreshTimer = null;
 		var down = E('strong', {}, '—'), up = E('strong', {}, '—');
 		var ping = E('strong', {}, '—'), jitter = E('strong', {}, '—');
 		var reading = E('div', { 'class': 'zst-reading' }, '—');
@@ -236,18 +236,33 @@ return view.extend({
 			])
 		]);
 		meter(null, false);
-		poll.add(function() {
-			if (pending) return Promise.resolve();
+		// LuCI's shared poll helper has a one-second cadence. The measurement
+		// engine records a real sample every 250 ms, so use a serialized local
+		// loop at that same cadence. Only one authenticated RPC can be in flight;
+		// no speeds are interpolated or invented between engine samples.
+		function refresh() {
+			if (!panel.isConnected) {
+				refreshTimer = null;
+				return;
+			}
+			if (pending) {
+				refreshTimer = window.setTimeout(refresh, 250);
+				return;
+			}
 			var requestedGeneration = generation;
-			return status().then(function(r) {
+			status().then(function(r) {
 				if (requestedGeneration === generation) apply(r);
 			}).catch(function(e) {
 				if (requestedGeneration !== generation) return;
 				notice.textContent = _('Live status unavailable: %s. The router test stops automatically within 90 seconds.').format(e.message);
 				reading.textContent = '—';
+			}).finally(function() {
+				if (panel.isConnected)
+					refreshTimer = window.setTimeout(refresh, 250);
 			});
-		}, 1);
+		}
 		buttons();
+		refreshTimer = window.setTimeout(refresh, 0);
 		return panel;
 	}
 });

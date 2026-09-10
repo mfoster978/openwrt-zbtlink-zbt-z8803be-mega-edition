@@ -25,7 +25,7 @@ window.E = (tag, attrs, children) => {
   return e;
 };
 window.rpc = { declare: spec => (...args) => {
-  calls.push({ method: spec.method, args });
+  calls.push({ method: spec.method, args, at: performance.now() });
   if (spec.method === 'status') return Promise.resolve(snapshot);
   if (spec.method === 'cancel') {
     snapshot = { ...snapshot, phase: 'cancelled', running: false, ok: false }; return Promise.resolve({ ok: true });
@@ -35,8 +35,7 @@ window.rpc = { declare: spec => (...args) => {
   return Promise.resolve(snapshot);
 } };
 const view = { extend: v => v };
-const poll = { add: fn => { window.pollOnce = fn; } };
-const dashboard = new Function('view', 'rpc', 'poll', 'E', '_', 'L', ${JSON.stringify(js)})(view, rpc, poll, E, _, { resource: () => '/style.css' });
+const dashboard = new Function('view', 'rpc', 'E', '_', 'L', ${JSON.stringify(js)})(view, rpc, E, _, { resource: () => '/style.css' });
 document.body.appendChild(dashboard.render());
 `;
 
@@ -54,6 +53,9 @@ document.body.appendChild(dashboard.render());
     page.on('pageerror', e => { errors.push(e.message); console.error(e.message); });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector('.zst-panel');
+    await page.waitForFunction(() => calls.filter(c => c.method === 'status').length >= 3);
+    const statusTimes = await page.evaluate(() => calls.filter(c => c.method === 'status').slice(0, 3).map(c => c.at));
+    assert.ok(statusTimes[2] - statusTimes[0] < 850, 'status snapshots should update substantially faster than once per second');
     assert.equal(await page.locator('.zst-go').isDisabled(), true, 'consent is required');
     assert.equal(await page.getByText('Save & Apply', { exact: true }).count(), 0);
     await page.getByRole('combobox', { name: 'Connection to test' }).selectOption('2_1');
@@ -62,12 +64,12 @@ document.body.appendChild(dashboard.render());
     assert.deepEqual(await page.evaluate(() => calls.find(c => c.method === 'start').args), ['2_1', '', 'test', true]);
     assert.equal(await page.locator('.zst-go').isDisabled(), true);
     assert.equal(await page.locator('.zst-stop').isDisabled(), false);
-    await page.evaluate(async () => {
+    await page.evaluate(() => {
       snapshot = { ...snapshot, phase: 'download', live_mbps: 145.25, ping_ms: 12.4, jitter_ms: 1.2, elapsed: 12, bytes: 12500000,
         selected: { id: '123', sponsor: 'Fixture server', name: 'Test city', country: 'Test country' },
         samples: [{ seconds: 2, phase: 'download', mbps: 54 }, { seconds: 4, phase: 'download', mbps: 145.25 }] };
-      await pollOnce();
     });
+    await page.waitForFunction(() => document.querySelector('.zst-reading').textContent === '145.25');
     assert.equal(await page.locator('.zst-reading').innerText(), '145.25');
     assert.notEqual(await page.locator('.zst-arc').getAttribute('d'), '');
     assert.notEqual(await page.locator('.zst-down-line').getAttribute('d'), '');
@@ -78,22 +80,24 @@ document.body.appendChild(dashboard.render());
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile horizontal overflow');
     if (process.env.ZBT_UI_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.ZBT_UI_SCREENSHOTS, 'speedtest-mobile.png'), fullPage: true });
-    await page.evaluate(async () => { snapshot.phase = 'upload'; snapshot.live_mbps = 35.61; snapshot.download_mbps = 144.8; await pollOnce(); });
+    await page.evaluate(() => { snapshot.phase = 'upload'; snapshot.live_mbps = 35.61; snapshot.download_mbps = 144.8; });
+    await page.waitForFunction(() => document.querySelector('.zst-reading').textContent === '35.61');
     assert.equal(await page.locator('.zst-reading').innerText(), '35.61');
     assert.equal(await page.locator('.zst-download strong').innerText(), '144.80');
     assert.equal(await page.locator('.zst-panel').evaluate(n => n.classList.contains('zst-uploading')), true);
     await page.locator('.zst-stop').click();
-    await page.evaluate(() => pollOnce());
+    await page.waitForFunction(() => document.querySelector('.zst-badge').textContent === 'STOPPED');
     assert.equal(await page.locator('.zst-badge').innerText(), 'STOPPED');
     assert.equal(await page.locator('.zst-reading').innerText(), '—');
     assert.equal(await page.locator('.zst-stop').isDisabled(), true);
-    await page.evaluate(async () => { snapshot = { ...snapshot, phase: 'error', error: 'Transfer failed', live_mbps: null }; await pollOnce(); });
+    await page.evaluate(() => { snapshot = { ...snapshot, phase: 'error', error: 'Transfer failed', live_mbps: null }; });
+    await page.waitForFunction(() => document.querySelector('.zst-badge').textContent === 'ERROR');
     assert.equal(await page.locator('.zst-notice').innerText(), 'Transfer failed');
     assert.equal(await page.locator('.zst-badge').innerText(), 'ERROR');
-    await page.evaluate(async () => {
+    await page.evaluate(() => {
       snapshot = { ...snapshot, phase: 'complete', ok: true, error: '', download_mbps: 321.47, upload_mbps: 47.16 };
-      await pollOnce();
     });
+    await page.waitForFunction(() => document.querySelector('.zst-reading').textContent === '321.47');
     assert.equal(await page.locator('.zst-reading').innerText(), '321.47');
     assert.equal(await page.locator('.zst-upload strong').innerText(), '47.16');
     await page.getByRole('combobox', { name: 'Speedtest.net server', exact: true }).selectOption('custom');
@@ -105,6 +109,6 @@ document.body.appendChild(dashboard.render());
     await page.locator('.zst-go').click();
     assert.deepEqual(await page.evaluate(() => calls.filter(c => c.method === 'start')[1].args), ['2_1', '123', 'test', true]);
     assert.deepEqual(errors, [], 'browser JS errors');
-    console.log('Chromium desktop/mobile gauge, real-event-only readings, chart, consent, modem/server selection, stop and error UI: passed');
+    console.log('Chromium desktop/mobile 250 ms live gauge, real-event-only readings, chart, consent, modem/server selection, stop and error UI: passed');
   } finally { await browser.close(); server.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

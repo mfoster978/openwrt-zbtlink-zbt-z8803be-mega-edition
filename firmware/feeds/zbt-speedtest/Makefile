@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=zbt-speedtest
-PKG_VERSION:=1.7.10
+PKG_VERSION:=1.8.3
 PKG_RELEASE:=1
 PKG_SOURCE:=speedtest-go-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/showwin/speedtest-go/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=70a2937d0759820fe7ee8f61b960d60c07b34c0d783ed11c0065b68fe2964aea
+PKG_HASH:=48d01137468da9d419a3940a652803dafd8a6820abcd985b85c9d0c86b417ba3
 PKG_BUILD_DIR:=$(BUILD_DIR)/speedtest-go-$(PKG_VERSION)-zbt
 # The source tarball's top-level name is also used by the stock CLI package.
 # Unpack into our own directory so parallel package builds cannot overwrite it.

@@ -65,7 +65,7 @@ tablet plan as that diagnostic session, its retained settings were:
 | Force APN setting | Unset after the one-time profile write |
 | Interface address owner | Existing `quectel-CM-M -d`, with `proto=none` |
 
-This is a reproduction of one SIM/plan's test, **not a universal AT&T preset**.
+This is a reproduction of one SIM/plan's test, **not a universal carrier preset**.
 Keep IPv4v6 available for carriers/plans that support it. If the SIM moves,
 configure the modem containing that SIM; do not bind a carrier assumption to
 physical slot 2. Use the normal explicit APN setting and targeted redial to
@@ -73,7 +73,8 @@ update a mismatched saved profile. If a force-profile operation is specifically
 needed, it must be deliberate, per-modem, verified and cleared afterward—not
 an automatic startup loop.
 
-Public image defaults remain carrier-neutral. Existing manual APN/PDP/PIN/SIM
+Public image defaults remain carrier-neutral except for the documented AT&T US
+`310/410` auto-mode fallback to `broadband`. Existing manual APN/PDP/PIN/SIM
 settings are preserved. The full image retains its existing two-slot defaults;
 Minimal still leaves modem 2 powered/dialed off until the user enables it.
 There is no on-router deployment in this source change.
@@ -81,7 +82,7 @@ There is no on-router deployment in this source change.
 ## Deliberately excluded from the firmware
 
 No new global restarts, competing `proto=qmi`/DHCP manager, hardcoded AT port,
-carrier APN override, modem identity change, band/MBN rewrite, GPIO remapping,
+blanket carrier APN override, modem identity change, band/MBN rewrite, GPIO remapping,
 power-cycle loop, automatic factory reset, CGATT detach/reattach loop, temporary
 policy-routing rule, forced TTL, or arbitrary MTU was imported from Warp.
 

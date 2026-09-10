@@ -1,0 +1,17 @@
+{
+  "luci-app-speedify": {
+    "description": "Access the Speedify setup and management screen",
+    "read": {
+      "ubus": {
+        "luci.speedify": [ "read" ]
+      },
+      "uci": [ "luci_app_speedify", "network.lan.ipaddr" ]
+    },
+    "write": {
+      "ubus": {
+        "luci.speedify": [ "write" ]
+      },
+      "uci": []
+    }
+  }
+}

@@ -27,9 +27,35 @@ zbt_port_matches() {
 	case "$port_path" in "$device_path"/*) return 0 ;; *) return 1 ;; esac
 }
 # Preserve QModem/Quectel's modem/network-profile auto selection. Manual APNs
-# remain untouched. No carrier is hard-coded; some plans need a manual APN.
+# remain untouched. The only automatic exception is documented below.
 zbt_apn_mode() {
 	case "$1" in ''|auto) printf '%s\n' auto ;; *) printf '%s\n' manual ;; esac
+}
+
+# Return an IMSI only when the selected modem gives a clean numeric identity.
+# It is used in memory for carrier selection and is never written to logs/UCI.
+zbt_modem_imsi() {
+	local token
+	for token in $(at "$1" 'AT+CIMI' 2>/dev/null | tr -d '\r'); do
+		case "$token" in *[!0-9]*) continue ;; esac
+		[ "${#token}" -ge 14 ] && [ "${#token}" -le 16 ] || continue
+		printf '%s\n' "$token"
+		return 0
+	done
+	return 1
+}
+
+# Keep normal modem/profile negotiation for auto APNs, except for a direct
+# AT&T US SIM (MCC/MNC 310/410), whose generic modem profile can select an
+# unusable APN. A configured APN always wins, including an MVNO override.
+zbt_effective_apn() {
+	local configured="$1" imsi
+	if [ "$(zbt_apn_mode "$configured")" = manual ]; then
+		printf '%s\n' "$configured"
+		return 0
+	fi
+	imsi=$(zbt_modem_imsi "$2") || return 0
+	case "$imsi" in 310410*) printf '%s\n' broadband ;; esac
 }
 
 # Hash only this slot's dial settings. Changing modem2's APN must not

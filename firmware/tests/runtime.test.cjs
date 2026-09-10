@@ -69,6 +69,31 @@ test('blank and auto APNs preserve carrier negotiation, manual APNs stay manual'
   assert.notEqual(a[1], b[1]);
 });
 
+test('AT&T US gets broadband only in auto mode and manual APNs always win', () => {
+  const script = dual + `
+at() { printf '%s\\r\\nOK\\r\\n' "$TEST_IMSI"; }
+result=$(zbt_effective_apn "$TEST_APN" /dev/ttyUSB-test)
+printf '<%s>\\n' "$result"`;
+  assert.equal(shell(script, { TEST_IMSI: '310410000000001', TEST_APN: '' }), '<broadband>');
+  assert.equal(shell(script, { TEST_IMSI: '310410000000001', TEST_APN: 'auto' }), '<broadband>');
+  assert.equal(shell(script, { TEST_IMSI: '310410000000001', TEST_APN: 'mvno.custom' }), '<mvno.custom>');
+  assert.equal(shell(script, { TEST_IMSI: '310260123456789', TEST_APN: '' }), '<>');
+  assert.equal(shell(script, { TEST_IMSI: 'invalid', TEST_APN: '' }), '<>');
+});
+
+test('QModem offers matching editable US APN presets for both SIM selectors', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  const sourceText = fs.readFileSync(path.join(process.env.QMODEM_TEST_TREE,
+    'luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js'), 'utf8');
+  assert.match(sourceText, /form\.Value, 'apn'/, 'primary APN must remain an editable Value');
+  assert.match(sourceText, /form\.Value, 'apn2'/, 'secondary APN must remain an editable Value');
+  for (const apn of ['broadband', 'NXTGENPHONE', 'ENHANCEDPHONE', 'firstnet-broadband',
+    'fast.t-mobile.com', 'vzwinternet', 'h2g2', 'h2g2-t', 'usccinternet']) {
+    const escaped = apn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.equal((sourceText.match(new RegExp(`o\\.value\\('${escaped}'`, 'g')) || []).length, 2,
+      `${apn} must be offered for both physical SIM selectors`);
+  }
+});
+
 test('fresh slow samples demote after threshold and two good samples recover', () => {
   const policy = source('firmware/files/usr/lib/zbt/speed-policy.sh');
   assert.equal(shell(policy + `
@@ -242,6 +267,18 @@ luci_healthy && echo healthy || echo unhealthy
   assert.doesNotMatch(installedBranch, /install_bundle|download_bundle/);
 });
 
+test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
+  const menu = JSON.parse(file('firmware/files/usr/share/luci/menu.d/luci-app-speedify.json'))['admin/speedify'];
+  const acl = JSON.parse(file('firmware/files/usr/share/rpcd/acl.d/luci-app-speedify.json'))['luci-app-speedify'];
+  const view = file('firmware/files/www/luci-static/resources/view/speedify/speedify.js');
+  assert.deepEqual(menu.action, { type: 'view', path: 'speedify/speedify' });
+  assert.deepEqual(menu.depends.acl, ['luci-app-speedify']);
+  assert.ok(acl.read.ubus['luci.speedify'].includes('read'));
+  assert.match(view, /Finishing Speedify setup/);
+  assert.doesNotMatch(view, /handleSaveApply:\s*function|fetch\(/);
+  assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);
+});
+
 test('LuCI recovery makes nginx the only frontend and repairs a 502 backend once', () => {
   const checker = file('firmware/files/usr/sbin/zbt-luci-backend-check');
   const migration = file('firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery');
@@ -357,24 +394,26 @@ test('patched QMI dialer gives each modem its own device and APN arguments', { s
   let fn = dialer.slice(dialer.indexOf('\nqmi_dial()') + 1, dialer.indexOf('\necm_dial()'));
   assert.ok(fn.startsWith('qmi_dial()'));
   fn = fn.replaceAll('/usr/lib/zbt/', root + '/firmware/files/usr/lib/zbt/').replaceAll('/usr/bin/quectel-CM-M', cm);
-  for (const [section, port, net, apn, pdp, force] of [
-    ['4_1', 'ttyUSB6', 'wwan8', '', 'ipv4v6', ''],
-    ['2_1', 'ttyUSB2', 'wwan3', 'auto', 'ipv4v6', ''],
-    ['2_1', 'ttyUSB2', 'wwan3', 'private.apn', 'ipv4v6', ''],
-    ['2_1', 'ttyUSB2', 'wwan3', 'broadband', 'ip', '1'],
-    ['2_1', 'ttyUSB2', 'wwan3', 'broadband', 'ip', '']
+  for (const [section, port, net, apn, pdp, force, imsi, expectedApn] of [
+    ['4_1', 'ttyUSB6', 'wwan8', '', 'ipv4v6', '', '310260123456789', ''],
+    ['2_1', 'ttyUSB2', 'wwan3', 'auto', 'ipv4v6', '', '310260123456789', ''],
+    ['2_1', 'ttyUSB2', 'wwan3', 'auto', 'ipv4v6', '', '310410000000001', 'broadband'],
+    ['2_1', 'ttyUSB2', 'wwan3', 'private.apn', 'ipv4v6', '', '310410000000001', 'private.apn'],
+    ['2_1', 'ttyUSB2', 'wwan3', 'broadband', 'ip', '1', '310410000000001', 'broadband'],
+    ['2_1', 'ttyUSB2', 'wwan3', 'broadband', 'ip', '', '310410000000001', 'broadband']
   ]) {
     fs.mkdirSync(path.join(f.dir, section + '_dir'), { recursive: true });
     const argsfile = path.join(f.dir, 'args');
     const script = fn + `
 m_debug() { :; }
+at() { printf '%s\\nOK\\n' "$TEST_IMSI"; }
 sleep() { exit 0; }
 modem_config="$SECTION"; at_port="/dev/$PORT"; apn="$APN"
 driver=qmi; pdp_type="$PDP"; force_set_apn="$FORCE_PROFILE"; userset_pdp_index=0; do_not_add_dns=1
 username='test user'; password='test password'; auth=chap; metric=210
 MODEM_RUNDIR="$RUNDIR"; log_file="$RUNDIR/dial.log"
 qmi_dial`;
-    shell(script, { ...f.env, PATH: bin + ':' + process.env.PATH, SECTION: section, PORT: port, APN: apn, PDP: pdp, FORCE_PROFILE: force, DIAL_ARGS: argsfile, RUNDIR: f.dir });
+    shell(script, { ...f.env, PATH: bin + ':' + process.env.PATH, SECTION: section, PORT: port, APN: apn, PDP: pdp, FORCE_PROFILE: force, TEST_IMSI: imsi, DIAL_ARGS: argsfile, RUNDIR: f.dir });
     const args = fs.readFileSync(argsfile, 'utf8').split('\0').slice(0, -1);
     assert.equal(args[args.indexOf('-i') + 1], net);
     assert.ok(args.includes('-d'));
@@ -382,7 +421,7 @@ qmi_dial`;
     assert.ok(args.includes('-4'));
     assert.equal(args.includes('-6'), pdp !== 'ip', 'IPv4-only selection must not request a rejected IPv6 call');
     assert.equal(args.includes('-F'), force === '1', 'removed temporary force override must not persist');
-    if (apn === 'private.apn' || apn === 'broadband') assert.deepEqual(args.slice(args.indexOf('-s'), args.indexOf('-s') + 5), ['-s', apn, 'test user', 'test password', 'chap']);
+    if (expectedApn) assert.deepEqual(args.slice(args.indexOf('-s'), args.indexOf('-s') + 5), ['-s', expectedApn, 'test user', 'test password', 'chap']);
     else assert.equal(args.includes('-s'), false, 'auto mode must not erase the network/modem APN profile');
   }
 });

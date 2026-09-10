@@ -24,7 +24,7 @@ from generate_firmware_release_notes import valid as valid_notes
 
 REPOSITORIES = {
     "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition": ("master", "mega", "Mega"),
-    "mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build": ("main", "minimal", "Speedify Minimal"),
+    "mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build": ("main", "minimal", "Minimal"),
 }
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
