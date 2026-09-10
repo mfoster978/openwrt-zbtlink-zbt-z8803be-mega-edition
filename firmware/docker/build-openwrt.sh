@@ -71,8 +71,13 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 < "$led_patch" >/dev/null;
 fi
 # Add LED callbacks to the pinned MT7988 Ethernet PHY driver before the kernel
 # is prepared. The kernel version, modem drivers and power/SIM pins stay pinned.
-cp "$(dirname "${FILES_OVERLAY_DIR}")/kernel-patches/753-net-phy-mediatek-mt7988-led-control.patch" \
-  target/linux/mediatek/patches-6.12/753-net-phy-mediatek-mt7988-led-control.patch
+kernel_led_patch="$(dirname "${FILES_OVERLAY_DIR}")/kernel-patches/753-net-phy-mediatek-mt7988-led-control.patch"
+kernel_led_patch_target=target/linux/mediatek/patches-6.12/753-net-phy-mediatek-mt7988-led-control.patch
+# OpenWrt includes patch mtimes in its kernel preparation stamp. Preserve the
+# existing timestamp only when the bytes match; changed patches must rebuild.
+if ! cmp -s "$kernel_led_patch" "$kernel_led_patch_target"; then
+  cp "$kernel_led_patch" "$kernel_led_patch_target"
+fi
 policy_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/mwan3-speed-policy.patch"
 if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch" >/dev/null; then
   patch --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch"
