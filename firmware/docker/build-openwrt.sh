@@ -195,9 +195,11 @@ if [[ -f "${PROFILE_KCONFIG_FILE}" ]]; then
   cat "${PROFILE_KCONFIG_FILE}" >> .config
 fi
 make defconfig
-# A patch applied inside package/luci-app-mlo is not guaranteed to invalidate
-# an existing package stamp in a reused local tree. Always rebuild this small
-# LuCI package so the firmware cannot ship the stale per-band MLO writer.
+# Source patches are not guaranteed to invalidate package stamps in a reused
+# OpenWrt tree. Rebuild every directly patched package so an incremental build
+# cannot ship an older dialer, QModem UI, MLO writer, or MWAN metric editor.
+make package/feeds/qmodem/qmodem/clean
+make package/feeds/qmodem/luci-app-qmodem-next/clean
 make package/luci-app-mlo/clean
 make package/feeds/luci/luci-app-mwan3/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
