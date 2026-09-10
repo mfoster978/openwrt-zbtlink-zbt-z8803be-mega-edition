@@ -1,5 +1,14 @@
 --- a/application/qmodem/files/usr/share/qmodem/modem_dial.sh
 +++ b/application/qmodem/files/usr/share/qmodem/modem_dial.sh
+@@ -328 +328 @@
+-    if [ -f $sim_lock_file ] && [ "$pin" == "$(cat $sim_lock_file)"];then
++    if [ -f $sim_lock_file ] && [ "$pin" == "$(cat $sim_lock_file)" ];then
+@@ -394 +394 @@
+-    [ -z "$suggest_pdp_index"] && suggest_pdp_index=$(get_platform_suggest_pdp_index)
++    [ -z "$suggest_pdp_index" ] && suggest_pdp_index=$(get_platform_suggest_pdp_index)
+@@ -436 +436 @@
+-        [ -z "$pin" ] && config_get pincode $modem_config pincode
++        [ -z "$pincode" ] && config_get pincode $modem_config pincode
 @@ -603,2 +603,7 @@
 -    proto="dhcp"
 -    protov6="dhcpv6"

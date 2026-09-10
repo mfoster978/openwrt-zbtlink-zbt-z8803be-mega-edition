@@ -267,6 +267,67 @@ test('LuCI read-only utility pages have no Save/Apply, and use authenticated RPC
 });
 
 function patchedFile(p) { return fs.readFileSync(path.join(process.env.QMODEM_TEST_TREE, p), 'utf8'); }
+
+test('Warp dialer repair blocks repeated failed SIM PIN attempts without shell-test errors', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  const dir = sandbox();
+  fs.mkdirSync(path.join(dir, '2_1_dir'));
+  const dialer = patchedFile('application/qmodem/files/usr/share/qmodem/modem_dial.sh');
+  const fn = dialer.slice(dialer.indexOf('\nunlock_sim()') + 1, dialer.indexOf('\nget_platform_suggest_pdp_index()')).replaceAll('/var/run/qmodem/', dir + '/');
+  const result = shell(fn + `
+lock() { :; }
+m_debug() { :; }
+at() { echo tried >> "$ATTEMPTS"; return 1; }
+modem_config=2_1
+unlock_sim 1234
+unlock_sim 1234
+unlock_sim 5678
+wc -l < "$ATTEMPTS"
+`, { ATTEMPTS: path.join(dir, 'attempts') });
+  assert.equal(result, '2', 'same failed PIN must not consume another SIM retry');
+});
+
+function warpConfigFixture(options) {
+  const dialer = patchedFile('application/qmodem/files/usr/share/qmodem/modem_dial.sh');
+  const fn = dialer.slice(dialer.indexOf('\nget_platform_suggest_pdp_index()') + 1, dialer.indexOf('\ncheck_dial_prepare()'));
+  return shell(fn + `
+config_load() { :; }
+config_foreach() { :; }
+find() { echo /fixture/net; }
+ls() { echo wwan_fixture; }
+get_driver() { echo qmi; }
+update_sim_slot() { sim_slot="$SIM_SLOT"; }
+config_get() {
+  local v=''
+  case "$3" in
+    path) v=/fixture/2-1 ;;
+    manufacturer) v=quectel ;;
+    platform) v="$PLATFORM" ;;
+    pdp_index) v="$USER_INDEX" ;;
+    suggest_pdp_index) v="$SUGGESTED_INDEX" ;;
+    pincode) v=1111 ;;
+    pincode2) v="$SECOND_PIN" ;;
+  esac
+  export "$1=$v"
+}
+modem_config=2_1
+pin="$STALE_PIN"
+update_config
+printf '%s:%s:%s:%s' "$pdp_index" "$suggest_pdp_index" "$userset_pdp_index" "$pincode"
+`, { PLATFORM: 'qualcomm', USER_INDEX: '', SUGGESTED_INDEX: '', SIM_SLOT: '1', SECOND_PIN: '', STALE_PIN: '', ...options });
+}
+
+test('Warp PDP fallback uses platform index only when suggestion is absent; explicit index survives', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  assert.equal(warpConfigFixture({}), '1:1:0:1111');
+  assert.equal(warpConfigFixture({ PLATFORM: 'lte' }), '3:3:0:1111');
+  assert.equal(warpConfigFixture({ SUGGESTED_INDEX: '7' }), '7:7:0:1111');
+  assert.equal(warpConfigFixture({ USER_INDEX: '5', SUGGESTED_INDEX: '7' }), '5:7:1:1111');
+});
+
+test('Warp PIN fallback uses internal SIM2 PIN when present, otherwise this module SIM1 PIN', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  assert.equal(warpConfigFixture({ SIM_SLOT: '2', SECOND_PIN: '2222' }), '1:1:0:2222');
+  assert.equal(warpConfigFixture({ SIM_SLOT: '2', STALE_PIN: '9999' }), '1:1:0:1111');
+  assert.equal(warpConfigFixture({ SIM_SLOT: '1', SECOND_PIN: '2222' }), '1:1:0:1111');
+});
 test('patched QMI dialer gives each modem its own device and APN arguments', { skip: !process.env.QMODEM_TEST_TREE }, () => {
   const f = usbFixture(), bin = path.join(f.dir, 'bin');
   fs.mkdirSync(bin);
@@ -276,24 +337,32 @@ test('patched QMI dialer gives each modem its own device and APN arguments', { s
   let fn = dialer.slice(dialer.indexOf('\nqmi_dial()') + 1, dialer.indexOf('\necm_dial()'));
   assert.ok(fn.startsWith('qmi_dial()'));
   fn = fn.replaceAll('/usr/lib/zbt/', root + '/firmware/files/usr/lib/zbt/').replaceAll('/usr/bin/quectel-CM-M', cm);
-  for (const [section, port, net, apn] of [['4_1', 'ttyUSB6', 'wwan8', ''], ['2_1', 'ttyUSB2', 'wwan3', 'auto'], ['2_1', 'ttyUSB2', 'wwan3', 'private.apn']]) {
+  for (const [section, port, net, apn, pdp, force] of [
+    ['4_1', 'ttyUSB6', 'wwan8', '', 'ipv4v6', ''],
+    ['2_1', 'ttyUSB2', 'wwan3', 'auto', 'ipv4v6', ''],
+    ['2_1', 'ttyUSB2', 'wwan3', 'private.apn', 'ipv4v6', ''],
+    ['2_1', 'ttyUSB2', 'wwan3', 'broadband', 'ip', '1'],
+    ['2_1', 'ttyUSB2', 'wwan3', 'broadband', 'ip', '']
+  ]) {
     fs.mkdirSync(path.join(f.dir, section + '_dir'), { recursive: true });
     const argsfile = path.join(f.dir, 'args');
     const script = fn + `
 m_debug() { :; }
 sleep() { exit 0; }
 modem_config="$SECTION"; at_port="/dev/$PORT"; apn="$APN"
-driver=qmi; pdp_type=ipv4v6; userset_pdp_index=0; do_not_add_dns=1
+driver=qmi; pdp_type="$PDP"; force_set_apn="$FORCE_PROFILE"; userset_pdp_index=0; do_not_add_dns=1
 username='test user'; password='test password'; auth=chap; metric=210
 MODEM_RUNDIR="$RUNDIR"; log_file="$RUNDIR/dial.log"
 qmi_dial`;
-    shell(script, { ...f.env, PATH: bin + ':' + process.env.PATH, SECTION: section, PORT: port, APN: apn, DIAL_ARGS: argsfile, RUNDIR: f.dir });
+    shell(script, { ...f.env, PATH: bin + ':' + process.env.PATH, SECTION: section, PORT: port, APN: apn, PDP: pdp, FORCE_PROFILE: force, DIAL_ARGS: argsfile, RUNDIR: f.dir });
     const args = fs.readFileSync(argsfile, 'utf8').split('\0').slice(0, -1);
     assert.equal(args[args.indexOf('-i') + 1], net);
     assert.ok(args.includes('-d'));
     assert.ok(args.includes('-D'));
-    assert.ok(args.includes('-4') && args.includes('-6'));
-    if (apn === 'private.apn') assert.deepEqual(args.slice(args.indexOf('-s'), args.indexOf('-s') + 5), ['-s', apn, 'test user', 'test password', 'chap']);
+    assert.ok(args.includes('-4'));
+    assert.equal(args.includes('-6'), pdp !== 'ip', 'IPv4-only selection must not request a rejected IPv6 call');
+    assert.equal(args.includes('-F'), force === '1', 'removed temporary force override must not persist');
+    if (apn === 'private.apn' || apn === 'broadband') assert.deepEqual(args.slice(args.indexOf('-s'), args.indexOf('-s') + 5), ['-s', apn, 'test user', 'test password', 'chap']);
     else assert.equal(args.includes('-s'), false, 'auto mode must not erase the network/modem APN profile');
   }
 });
