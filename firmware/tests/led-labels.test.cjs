@@ -39,6 +39,13 @@ function fixture() {
     for (const attr of ['brightness', 'device_name', 'delay_on', 'delay_off', 'link', 'rx', 'tx']) write(`class/leds/${led}/${attr}`, '0');
     write(`class/leds/${led}/max_brightness`, '255');
   }
+  for (const led of ['red:status', 'green:wan', 'blue:power']) {
+    write(`class/leds/${led}/trigger`, 'default-on');
+    write(`class/leds/${led}/brightness`, '0');
+    write(`class/leds/${led}/max_brightness`, '255');
+    write(`class/leds/${led}/delay_on`, '0');
+    write(`class/leds/${led}/delay_off`, '0');
+  }
   return { dir, sys, write, read, env: { ZBT_SYSFS: sys, CALLS: path.join(dir, 'writes'), ONLINE: 'wwan8' } };
 }
 const led = source('firmware/files/usr/lib/zbt/modem-leds.sh').replace('zbt_led_write() {', '_led_write() {');
@@ -110,6 +117,58 @@ test('LED trigger clobber and disabled RX/TX are repaired; healthy triggers are 
   assert.equal(f.read('class/leds/blue:mobile-1/brightness'), '255');
 });
 
+test('a LuCI system LED rule takes ownership from the automatic modem poller', () => {
+  const f = fixture();
+  const userRule = `
+uci() {
+  [ "$1" != -q ] || shift
+  case "$1:$2" in
+    show:system) echo "system.custom=led" ;;
+    get:system.custom.sysfs) echo "blue:mobile-1" ;;
+    *) return 1 ;;
+  esac
+}
+`;
+  f.write('class/leds/blue:mobile-1/brightness', '73');
+  run(led + mocks + userRule + '\nzbt_led_detect 4_1; zbt_led_apply', f.env);
+  assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'none');
+  assert.equal(f.read('class/leds/blue:mobile-1/brightness'), '73');
+  assert.equal(fs.existsSync(f.env.CALLS), false, 'automatic service must not overwrite a user-managed LED');
+});
+
+test('seeded LED inventory remains under automatic control until its trigger is changed', () => {
+  const f = fixture();
+  const inventoryRule = `
+uci() {
+  [ "$1" != -q ] || shift
+  case "$1:$2" in
+    show:system) echo "system.inventory=led" ;;
+    get:system.inventory.sysfs) echo "blue:mobile-1" ;;
+    get:system.inventory.zbt_automatic) echo 1 ;;
+    get:system.inventory.trigger) echo none ;;
+    *) return 1 ;;
+  esac
+}
+`;
+  run(led + mocks + inventoryRule + '\nzbt_led_detect 4_1; zbt_led_apply', f.env);
+  assert.equal(f.read('class/leds/blue:mobile-1/trigger'), 'netdev');
+  assert.equal(f.read('class/leds/blue:mobile-1/device_name'), 'wwan8');
+});
+
+test('the multicolor SYS lens distinguishes modem fault, connection and traffic', () => {
+  const f = fixture();
+  const channel = name => f.read(`class/leds/${name}/brightness`);
+  run(led + mocks + '\nzbt_status_apply fault', f.env);
+  assert.deepEqual([channel('red:status'), channel('green:wan'), channel('blue:power')], ['255', '0', '0']);
+  run(led + mocks + '\nzbt_status_apply connected', f.env);
+  assert.deepEqual([channel('red:status'), channel('green:wan'), channel('blue:power')], ['0', '255', '0']);
+  run(led + mocks + '\nzbt_status_apply traffic', f.env);
+  assert.equal(f.read('class/leds/green:wan/trigger'), 'timer');
+  assert.deepEqual([channel('red:status'), channel('blue:power')], ['0', '0']);
+  run(led + mocks + '\nzbt_status_apply offline', f.env);
+  assert.deepEqual([channel('red:status'), channel('green:wan'), channel('blue:power')], ['0', '0', '255']);
+});
+
 test('missing trigger attributes or unreliable carrier use a visible fallback', () => {
   for (const failure of ['unsupported', 'attribute', 'carrier']) {
     const f = fixture();
@@ -131,7 +190,16 @@ test('poller status is read-only and boot service starts after generic LED initi
   assert.match(output, /modem=2_1 usb=2-1.*device=wwan3 state=waiting/);
   assert.equal(fs.existsSync(f.env.CALLS), false);
   assert.match(file('firmware/files/etc/init.d/zbt-modem-leds'), /^START=97$/m);
-  assert.match(file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds'), /zbt-modem-leds enable/);
+  const defaults = file('firmware/files/etc/uci-defaults/49-zbt-modem-labels-leds');
+  assert.match(defaults, /zbt-modem-leds enable/);
+  for (const [phy, dev] of [['00', 'lan0'], ['02', 'lan1'], ['03', 'lan2']]) {
+    assert.match(defaults, new RegExp(`mt7530-0:${phy}:green:lan' ${dev}`));
+  }
+  assert.match(defaults, /system\.\$section\.mode=link tx rx/);
+  for (const sysfs of ['blue:mobile-1', 'blue:mobile-2', 'red:status', 'green:wan', 'blue:power']) {
+    assert.match(defaults, new RegExp(`ensure_automatic_led '[^']+' '${sysfs}'`));
+  }
+  assert.match(defaults, /system\.\$section\.zbt_automatic=1/);
 });
 
 test('display labels migrate independently of internal interface IDs and dial fingerprints', () => {

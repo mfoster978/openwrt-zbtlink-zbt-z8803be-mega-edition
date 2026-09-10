@@ -127,7 +127,9 @@ QModem's **SIM Slot 1** refers to the SIM input inside the selected modem. Both 
 | Status LED (active-low) | GPIO 61 / `blue:mobile-1` | GPIO 53 / `blue:mobile-2` |
 | Network identity used by QModem and mwan3 | `4_1` | `2_1` |
 
-These GPIO numbers follow the pinned device tree. The `blue:` name is a kernel label, not a guarantee of the visible LED color on every revision. An absent, unpowered slot is dark; a powered or enumerated modem blinks slowly while awaiting an address; an addressed modem uses link/traffic indication. If a trigger or reliable carrier indication is unavailable, the LED falls back to steady illumination. An LED alone does not prove Internet access or 5G registration.
+These GPIO numbers follow the pinned device tree. Each 5G indicator is a single physical green LED even though its stable kernel name begins with `blue:`. An absent, unpowered slot is dark; a powered or enumerated modem blinks slowly while awaiting an address; an addressed modem uses link/traffic indication. If a trigger or reliable carrier indication is unavailable, it falls back to steady illumination. The multicolor SYS lens preserves blue for no Internet and green for Internet access. It shows red when Internet remains available but a powered/present modem lacks a data session, solid green while idle, and blinking green during cellular traffic. The LAN-jack indicators are physical orange LEDs even though the PHY metadata names them `green:lan`; they are solid with link and blink on RX/TX through MediaTek PHY hardware offload.
+
+All exposed LEDs appear under **System → LED Configuration**. Adding a custom rule for either 5G LED or any SYS color hands that LED to the user configuration and prevents the automatic modem controller from overwriting it.
 
 QModem menus, dropdowns and dial-log titles show **Modem 1** / **Modem 2**. The editable Modem Alias is stored as a display name, separate from the stable internal `4_1` / `2_1` routing identities. Changing a display name does not restart either modem.
 
@@ -232,6 +234,8 @@ OpenMPTCProuter is **not included** and is not offered as a package toggle. It i
 The generic Linux MPTCP capability inherited from the OpenWrt/Far5eer kernel remains enabled. It installs no OpenMPTCProuter service or interface and is inactive unless software explicitly configures it. Retaining that kernel capability preserves the upstream device configuration.
 
 ## Download and flash
+
+Every successful firmware workflow creates a GitHub Release containing only the two device-specific `.bin` images, package manifest, checksums, build information, runtime verifier and release notes. It does not upload the OpenWrt source/build tree or package archive. GitHub itself always displays automatic “Source code” links for a release tag; those links cannot be disabled and are not firmware images. Gemini generates a detailed, evidence-bound changelog for each release using the repository secret.
 
 ### Validated reference build
 

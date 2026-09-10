@@ -21,8 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
-      contents: read
+      contents: write
     env:
+      GEMINI_MODEL: gemini-flash-latest
       OPENWRT_ROOT: /workspace/openwrt
       OPENWRT_GIT_URL: https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git
       OPENWRT_GIT_REF: ${{ github.event.inputs.openwrt_git_ref }}
@@ -40,6 +41,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Create output directories
         run: |
@@ -141,21 +144,99 @@ jobs:
       - name: Collect validated firmware
         if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
         run: |
-          cp openwrt/.config artifacts/build-output/resolved.config
-          cp -a openwrt/bin/targets artifacts/build-output/targets
-          cp firmware/scripts/verify-router-runtime.sh artifacts/build-output/verify-router-runtime.sh
+          release_dir=artifacts/release-assets
+          target_dir=openwrt/bin/targets/mediatek/filogic
+          mkdir -p "$release_dir"
+          for pattern in '*zbt-z8803be-initramfs-kernel.bin' '*zbt-z8803be-squashfs-sysupgrade.bin' '*zbt-z8803be.manifest'; do
+            file="$(find "$target_dir" -maxdepth 1 -type f -name "$pattern" -print -quit)"
+            if [ -z "$file" ]; then echo "Missing release file: $pattern" >&2; exit 1; fi
+            cp "$file" "$release_dir/"
+          done
+          cp firmware/scripts/verify-router-runtime.sh "$release_dir/"
+          {
+            echo "Recipe commit: $GITHUB_SHA"
+            echo "OpenWrt source: $OPENWRT_GIT_URL"
+            echo "OpenWrt ref: $OPENWRT_GIT_REF"
+            echo "OpenWrt commit: $(git -C openwrt rev-parse HEAD)"
+            echo "Target: $TARGET"
+            echo "Device: $DEVICE"
+          } > "$release_dir/BUILD-INFO.txt"
+          (cd "$release_dir" && sha256sum *.bin > SHA256SUMS)
+
+      - name: Collect bounded firmware changes for release notes
+        if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          evidence="$RUNNER_TEMP/firmware-release-evidence.txt"
+          previous_sha="$(gh release view --json body --jq .body 2>/dev/null | sed -nE 's/^<!-- source-sha: ([0-9a-f]{40}) -->$/\1/p' | head -n1 || true)"
+          if [ -n "$previous_sha" ] && git cat-file -e "${previous_sha}^{commit}" 2>/dev/null; then
+            range="$previous_sha..$GITHUB_SHA"
+          else
+            base="$(git rev-list --max-count=1 --skip=25 "$GITHUB_SHA" || true)"
+            [ -n "$base" ] || base="$(git hash-object -t tree /dev/null)"
+            range="$base..$GITHUB_SHA"
+          fi
+          {
+            echo "Build: ZBT-Z8803BE Dual Modem Build"
+            echo "Pinned base: Far5eer $OPENWRT_GIT_REF / Linux 6.12.74"
+            echo "Changed files:"
+            git diff --find-renames --name-status "$range" -- firmware README.md
+            echo
+            echo "Change statistics:"
+            git diff --stat "$range" -- firmware README.md
+            echo
+            echo "Firmware diff excerpt:"
+            git diff --find-renames --unified=1 "$range" -- firmware README.md | head -c 24000
+          } > "$evidence"
+          echo "evidence=$evidence" >> "$GITHUB_OUTPUT"
+
+      - name: Generate detailed Gemini release notes
+        if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
+        id: notes
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EVIDENCE: ${{ steps.changes.outputs.evidence }}
+        run: |
+          ai_notes="$RUNNER_TEMP/ai-notes.md"
+          final_notes="$RUNNER_TEMP/release-notes.md"
+          python3 .github/scripts/generate_firmware_release_notes.py \
+            --name 'ZBT-Z8803BE Dual Modem Build' --evidence "$EVIDENCE" --output "$ai_notes"
+          {
+            printf '<!-- source-sha: %s -->\n\n' "$GITHUB_SHA"
+            cat "$ai_notes"
+            printf '\n## Build details\n\n'
+            printf -- '- Base firmware: Far5eer `%s` (Linux 6.12.74).\n' "$OPENWRT_GIT_REF"
+            printf -- '- Device target: ZBT-Link ZBT-Z8803BE.\n'
+            printf -- '- Verify downloads against the included `SHA256SUMS` file before flashing.\n'
+          } > "$final_notes"
+          cp "$final_notes" artifacts/release-assets/RELEASE_NOTES.md
+          echo "file=$final_notes" >> "$GITHUB_OUTPUT"
+
+      - name: Publish flashable firmware release
+        if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
+        run: |
+          tag="firmware-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" artifacts/release-assets/* \
+            --target "$GITHUB_SHA" \
+            --title "ZBT-Z8803BE Dual Modem Firmware ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" \
+            --notes-file "$NOTES_FILE" --latest
 
       - name: Upload validated firmware
         if: ${{ success() && steps.openwrt_build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-firmware-build-${{ github.run_number }}
-          path: artifacts/build-output
+          path: artifacts/release-assets
           if-no-files-found: error
           retention-days: 14
 
       - name: Collect build diagnostics
-        if: always()
+        if: failure()
         run: |
           if [ -f openwrt/.config ]; then cp openwrt/.config artifacts/build-diagnostics/resolved.config; fi
           if [ -f openwrt/.config.bak ]; then cp openwrt/.config.bak artifacts/build-diagnostics/resolved.config.bak; fi
@@ -163,7 +244,7 @@ jobs:
           if [ -d firmware/files ]; then cp -a firmware/files artifacts/build-diagnostics/files-overlay; fi
 
       - name: Upload build diagnostics
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-build-diagnostics-${{ github.run_number }}
