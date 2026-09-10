@@ -34,8 +34,10 @@ in the pinned QModem `modem_dial.sh`:
 
 1. Add the missing space before `]` in the failed SIM-PIN retry comparison.
    Without it, the test is malformed and an already-failed PIN can be retried.
-2. Add the missing space before `]` when checking `suggest_pdp_index`, allowing
-   the platform's suggested PDP context to be used when no value is supplied.
+2. Add the missing space before `]` when checking `suggest_pdp_index`. The
+   original emits a `missing ]` diagnostic for a nonempty suggestion. Tests
+   confirm the correction preserves explicit selections and the existing
+   platform default when no suggestion is supplied.
 3. Test `pincode`, not unrelated `pin`, before falling back from the selected
    internal SIM-input-2 PIN to that module's primary PIN.
 
