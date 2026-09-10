@@ -23,6 +23,15 @@ import (
 
 const imageName = "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
 
+func TestMegaEditionRepositoryIdentity(t *testing.T) {
+	if repository != "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition" {
+		t.Fatal("Updater must use the renamed Mega repository")
+	}
+	if apiRoot != "https://api.github.com/repos/"+repository || webRoot != "https://github.com/"+repository {
+		t.Fatal("GitHub origins must derive from the exact Mega repository identity")
+	}
+}
+
 func identityFixture(version string) Identity {
 	return Identity{Schema: 1, Variant: "mega", Repository: repository, Board: boardName, Version: version, SourceSHA: strings.Repeat("a", 40), BuiltAt: "2026-09-10T00:00:00Z", BaseVersion: "v25.12.021"}
 }

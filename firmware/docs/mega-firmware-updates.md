@@ -1,13 +1,14 @@
 # Mega About and firmware updates
 
-These additions are exclusive to the full **ZBT-Z8803BE Mega firmware**. They
+These additions are exclusive to **ZBT-Z8803BE Mega Edition**, developed and
+maintained by **Michael Foster / @mfoster978**. They
 do not add an updater to Speedify Minimal or change modem configuration.
 
 ## About
 
 The existing **About** menu opens a dark, tabbed feature guide with illustrated
 cards, a connection diagram, package descriptions, build identity, project
-links, maintainer contacts and upstream credits. Tabs keep the detailed guide
+links, developer/maintainer contacts and upstream credits. Tabs keep the detailed guide
 from becoming one long page. Both new screens use dark/charcoal surfaces even
 when the browser prefers light mode, matching this firmware's black LuCI theme.
 Special thanks go to
@@ -15,6 +16,13 @@ Special thanks go to
 
 Firmware update controls are **not part of About**; their separate side-menu
 entry is **System → Firmware Update**.
+
+Mega Edition combines add-on packages and custom-built tools into a configurable
+networking workhorse. Optional watchdog recovery, background speed sampling and
+speed-based switching are off by default; essential networking and ordinary
+failover remain active. Users choose which optional tools to enable. Speedify's
+first-online installer is enabled, but account setup and bonding are separate
+user choices. See the main README's default-behavior table for the distinction.
 
 The guide distinguishes included software from account setup and optional
 features. Speedify bonding is not the same as mwan3 failover/load balancing.
@@ -26,7 +34,7 @@ This is a **user-initiated** updater, not an unattended upgrade agent. Opening
 the page does not contact GitHub, download firmware, or flash it.
 
 1. Check for updates. The router reads published releases from the fixed
-   [Mega repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/releases).
+   [Mega Edition repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases).
    No GitHub account or API key is needed for public releases.
 2. Review the installed/selected versions and release notes, or select an older
    published version. Drafts, prereleases and unsupported assets are excluded.

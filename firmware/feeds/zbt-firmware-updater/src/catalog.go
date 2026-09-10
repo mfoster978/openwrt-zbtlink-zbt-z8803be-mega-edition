@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const repository = "mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build"
+const repository = "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition"
 const boardName = "zbtlink,zbt-z8803be"
 const apiRoot = "https://api.github.com/repos/" + repository
 const webRoot = "https://github.com/" + repository

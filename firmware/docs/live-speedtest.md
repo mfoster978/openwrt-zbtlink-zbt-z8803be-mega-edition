@@ -1,6 +1,6 @@
 # Live router speed tests
 
-The full Dual Modem Build now replaces the former small interactive Cloudflare sample with a live dashboard under **Services → Speed Test Utility**. The Speedify Minimal edition deliberately remains without speed testing.
+**Mega Edition**, developed and maintained by Michael Foster / @mfoster978, replaces the former small interactive Cloudflare sample with a live dashboard under **Services → Speed Test Utility**. The Speedify Minimal edition deliberately remains without speed testing.
 
 ## What is measured
 

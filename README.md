@@ -2,20 +2,31 @@
   <img src="https://raw.githubusercontent.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE/v25.12.021/include/logo.png" alt="OpenWrt" width="420">
 </p>
 
-<h1 align="center">ZBTLink ZBT-Z8803BE Dual Modem Build</h1>
+<h1 align="center">ZBTLink ZBT-Z8803BE Mega Edition</h1>
 
 <p align="center">
-  A reproducible, device-specific OpenWrt firmware build for the ZBTLink ZBT-Z8803BE,<br>
-  extending Far5eer's hardware support with dual-cellular defaults, resilient failover,
-  modem recovery tools, VPN support, and a guarded Speedify installer.
+  Developed and maintained by <a href="https://github.com/mfoster978">Michael Foster · @mfoster978</a>.<br>
+  A full-featured, device-specific OpenWrt firmware with independent dual-modem controls,
+  multi-WAN failover, live speed testing, VPN tools, Speedify integration, and guided firmware updates.
 </p>
 
 <p align="center">
-  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/workflows/build-openwrt-firmware.yml"><img alt="Firmware build" src="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/workflows/build-openwrt-firmware.yml/badge.svg"></a>
+  Practical add-ons. Custom-built features. Easy-to-set-up tools.<br>
+  Turn your router into a versatile networking workhorse—and use only the features you need.
+</p>
+
+<p align="center">
+  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/actions/workflows/build-openwrt-firmware.yml"><img alt="Firmware build" src="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/actions/workflows/build-openwrt-firmware.yml/badge.svg"></a>
   <img alt="OpenWrt 25.12.2" src="https://img.shields.io/badge/OpenWrt-25.12.2-00B5E2?logo=openwrt&logoColor=white">
   <img alt="Linux 6.12.74" src="https://img.shields.io/badge/Linux-6.12.74-FCC624?logo=linux&logoColor=black">
   <img alt="Target MediaTek Filogic" src="https://img.shields.io/badge/target-MediaTek%20Filogic-ED1C24">
   <img alt="Architecture AArch64 Cortex-A53" src="https://img.shields.io/badge/arch-AArch64%20Cortex--A53-5C4EE5">
+</p>
+
+<p align="center">
+  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases">Download releases</a> ·
+  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/issues">Issues &amp; feature requests</a> ·
+  <a href="mailto:mfoster978@gmail.com">mfoster978@gmail.com</a> · Discord: <strong>mfoster978</strong>
 </p>
 
 > [!CAUTION]
@@ -25,6 +36,7 @@
 
 | Component | Selection |
 |---|---|
+| Edition | **Mega Edition** — developed and maintained by [Michael Foster / @mfoster978](https://github.com/mfoster978) |
 | Hardware | ZBTLink ZBT-Z8803BE / compatible ZBT-Z8803BE-T variant |
 | SoC and Wi-Fi | MediaTek MT7988A / Filogic 880 with MT7996-family tri-band Wi-Fi 7 |
 | OpenWrt | 25.12.2, revision `r32858-16347e93b6` |
@@ -36,10 +48,12 @@
 | Package format | APK |
 | Primary image | SquashFS sysupgrade |
 
-The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi support, modem drivers, and release configuration. This repository layers carefully scoped dual-modem behavior and additional packages on top of that pinned baseline.
+**Mega Edition is Michael Foster's firmware project.** Its development, edition-specific fixes and features, build configuration, releases, and ongoing maintenance are managed here by **@mfoster978**. Far5eer's working ZBT-Z8803BE firmware is the linked upstream foundation, not the maintainer of this edition.
+
+The board target, Linux version, Wi-Fi and modem-driver sources remain pinned to that foundation. Mega adds its own dual-modem behavior, user interface, routing tools, update workflow, and reviewed Ethernet LED changes. The underlying OpenWrt, Linux, QModem, and other packages retain their original authorship and licenses; see [Credits](#credits).
 
 > [!IMPORTANT]
-> The September 9 runtime repairs described below are **source changes, not a newly hardware-validated firmware release**. Build #17 predates them and has reported runtime defects. See the [repair and verification notes](firmware/docs/runtime-repair-2026-09.md) for confirmed causes, tests, and remaining on-router checks.
+> Build success and automated checks are not hardware certification. Read the selected release's notes and the [repair and verification notes](firmware/docs/runtime-repair-2026-09.md) for confirmed causes, tests, and remaining on-router checks. Old build #17 predates the current repairs and is not a current recommended download.
 
 ## Choose your path
 
@@ -52,14 +66,33 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 | Looking for connection bonding | Read [Speedify](#speedify) and [OpenMPTCProuter](#openmptcprouter) before choosing an architecture. |
 | Developing or auditing the firmware | Use [Build it yourself](#build-it-yourself), then inspect the resolved config, package manifest, checksums, and runtime verifier. |
 
+## Your router, your features
+
+Mega Edition combines a wide selection of add-on packages with custom-developed controls that improve the everyday router experience. Configure cellular connections, choose failover policies, measure performance, set up remote access, or add Speedify bonding from one firmware build. The tools are included so you can build the setup you want without assembling the integration yourself.
+
+**Optional advanced automation is off by default.** Turn it on when you need it, configure it for your connection, or leave it off. Core networking is intentionally ready to use; “optional features off” does not mean the router boots with every service disabled.
+
+| Feature | Default behavior / your choice |
+|---|---|
+| Core networking and normal `mwan3` failover | Active; wired-first routing is the starting point. |
+| Modem 1 and Modem 2 | Enabled initially in Mega; later per-slot power, dialing and SIM choices are preserved. |
+| Extra watchdog and automated recovery actions | Off until explicitly enabled and configured. |
+| Background speed sampling, minimum-speed switching and prefer-fastest mode | Off until opted in; you control thresholds and intervals. |
+| Live Speed Test Utility | Runs only when you start a test; it does not automatically consume cellular data in the background. |
+| Speedify | Dependencies are baked in and its first-online installer is enabled. Bonding still requires your own account and setup; no credentials are preconfigured. |
+| Tailscale and OpenVPN | Available for your own account/tunnel configuration; no user VPN connection is preconfigured. |
+| Firmware updates and downgrades | Explicitly requested and confirmed by you; no unattended flashing. |
+
+Installed does not mean every feature is actively controlling traffic. Keep unused optional services off, enable only what suits your setup, and avoid putting multiple routing managers in charge of the same traffic without reviewing their policies.
+
 ## Feature overview
 
 ### Mega About and firmware updates
 
-- **About** is a redesigned dark, tabbed feature/package guide with illustrations, build information, project links, Michael Foster's email/Discord contacts, and special thanks to [0xFar5eer](https://github.com/0xFar5eer).
+- **About** is a desktop-ready, dark five-tab feature/package guide with illustrations, build information, developer/maintainer Michael Foster's email and Discord contacts, and special thanks to upstream developer [0xFar5eer](https://github.com/0xFar5eer).
 - **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Older versions can be selected for downgrade; keeping settings is off by default for downgrades.
 - HTTPS, SHA256, local device identity and OpenWrt image checks are required. There is no forced/unattended flash or automatic rollback. Back up settings first. Old firmware without this tool requires the usual LuCI flash page for subsequent updates.
-- These are **Mega-only source additions pending on-router acceptance testing**. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md).
+- These features are **Mega-only**; Speedify Minimal retains its original About screen and does not include this updater. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md) for the remaining on-router acceptance checks.
 
 ### Hardware and Wi-Fi
 
@@ -244,19 +277,21 @@ The generic Linux MPTCP capability inherited from the OpenWrt/Far5eer kernel rem
 
 ## Download and flash
 
-Every successful firmware workflow creates a GitHub Release containing only the two device-specific `.bin` images, package manifest, checksums, build information, runtime verifier, release notes and the small `mega-release.json` verification manifest. The Mega updater selects only the SquashFS sysupgrade image. The workflow does not upload the OpenWrt source/build tree or package archive. GitHub itself always displays automatic “Source code” links for a release tag; those links cannot be disabled and are not firmware images. Gemini generates a detailed, evidence-bound changelog for each release using the repository secret.
+Download from [Mega Edition releases](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases). A release may be compiled on the maintainer's local server or in GitHub Actions; its `BUILD-INFO.txt` identifies the exact recipe commit and build provenance. Publication requires validated device-specific images and checksums. Gemini generates evidence-bound release notes using a GitHub repository secret; no API key is included in the firmware.
 
-### Validated reference build
+### Which file do I need?
 
-The historical compilation reference is [firmware build #17](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/runs/34375843564), produced from repository commit `d6c84b2c36c60351031f53b3336baeb2ee7553ff`. **It does not contain the current runtime repairs and should not be treated as a fixed release.** Build a new image from the repair commit and complete the on-router checks before distributing it as stable.
+| Release asset | Purpose |
+|---|---|
+| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin` | Normal firmware upgrade for the supported router. This is the image selected by the Mega updater. |
+| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-initramfs-kernel.bin` | Temporary boot / advanced recovery, not a normal persistent upgrade. |
+| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be.manifest` | Exact package inventory for that image. |
+| `SHA256SUMS`, `BUILD-INFO.txt`, `mega-release.json` | Download integrity, build provenance, and machine-readable Mega identity. |
+| `RELEASE_NOTES.md`, `verify-router-runtime.sh` | Changes, upgrade caveats, and a read-only diagnostic helper. |
 
-| File | Size | SHA256 |
-|---|---:|---|
-| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin` | 42,332,473 bytes | `9096b98cd90e8e4ed629e7bfd1af39554973efe83698e74d80cf1cd904212c9d` |
-| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-initramfs-kernel.bin` | 32,768,000 bytes | `b695ae9bdfbba1bd8417aff36183e2baad545bb404af0c6dec9ccd4c879d89ed` |
-| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be.manifest` | 10,637 bytes | `0d5549156a7a55cb8e216331de1da93e238a52b83ed266a74b79c46150c1675f` |
+Use the checksums attached to the **same release** as your download; hashes from an older build are not interchangeable. The publication workflows do not upload a full OpenWrt source/build tree or package archive. GitHub still displays its automatically generated “Source code” links for release tags; those are not firmware images.
 
-[Historical build #17 artifact](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/actions/runs/34375843564/artifacts/10121345151). These hashes identify that old artifact only; use the new run's checksums for a repaired image. GitHub Actions artifacts have limited retention.
+After the repository's Mega Edition rename, development images whose updater still references the former repository name may require a one-time manual upgrade through **System → Backup / Flash Firmware**. The new image's updater and embedded identity use the new repository; their safety checks are not bypassed to follow an arbitrary redirect.
 
 The sysupgrade metadata identifies:
 
@@ -361,6 +396,8 @@ docker run --rm -it \
   -e PROFILE_PACKAGES_FILE=/workspace/firmware/profiles/packages-default.txt \
   -e PROFILE_KCONFIG_FILE=/workspace/firmware/profiles/kconfig-fragment.conf \
   -e INCLUDE_BACKUP_IMAGES=0 \
+  -e HOST_MAKE_JOBS=4 \
+  -e FINAL_MAKE_JOBS=6 \
   -e TARGET=mediatek/filogic \
   -e SUBTARGET=filogic \
   -e DEVICE=zbtlink_zbt-z8803be \
@@ -370,6 +407,8 @@ docker run --rm -it \
 ```
 
 The same host should have roughly 40–50 GiB available for a clean build. More space is recommended when retaining source trees, download caches, or multiple build outputs.
+
+`HOST_MAKE_JOBS` controls build-tool/toolchain parallelism; `FINAL_MAKE_JOBS` controls the final package/image build. Choose values that leave CPU and RAM for other services. Retain a separate persistent build tree for each edition to reuse compilation caches without mixing image contents. The **Publish locally built firmware** workflow verifies an uploaded draft, generates Gemini notes, and publishes it without compiling again. Its tag and `BUILD-INFO.txt` must identify the exact clean recipe commit used to build the images.
 
 ### Repository layout
 
@@ -472,32 +511,23 @@ The stock LuCI/nginx certificate is self-signed, so a browser warning at `https:
 
 ## Support and sponsorship
 
-This is a community integration build. Choose the project closest to the work you want to support:
+**Michael Foster / @mfoster978 develops and maintains Mega Edition.** Report Mega-specific issues and feature requests in [this repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/issues), email [mfoster978@gmail.com](mailto:mfoster978@gmail.com), or contact **mfoster978** on Discord. Pull requests, reproducible bug reports, documentation, and hardware-test results are welcome.
+
+Credits and support links below acknowledge independent upstream projects; they do not imply sponsorship, endorsement, or responsibility for Mega Edition. Choose the project closest to the work you want to support:
 
 | If you depend on… | Support or contribute to… |
 |---|---|
 | OpenWrt itself, package infrastructure, and security maintenance | [Donate to the OpenWrt Project](https://openwrt.org/donate) |
-| ZBT-Z8803BE board support, releases, and hardware testing | [Far5eer's ZBT-Z8803BE project](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE) and the donation addresses below |
+| Upstream ZBT-Z8803BE board support and hardware testing | [Far5eer's ZBT-Z8803BE project](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE) and its own support information |
 | QModem Next and modem-management UX | [FUjr/QModem](https://github.com/FUjr/QModem) through issues, testing, documentation, or code contributions |
-| This dual-modem integration | This repository's Issues and Pull Requests |
+| Mega Edition development, fixes, user interface, and ongoing releases | [@mfoster978's Mega repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition), Issues and Pull Requests |
 
-<details>
-<summary><strong>Far5eer maintenance and hardware-testing donations</strong></summary>
-
-The following addresses are published by Far5eer in the pinned upstream release README:
-
-- ERC20 / BEP20 — USDT, USDC, ETH, BNB: `0xd1122130ad6e9ab948212087a90797e3129bfc1c`
-- TRC20 — TRX, USDT: `TTcT5m4BriHKyNrB4KYyLMK4ZGn54Nk6z2`
-- BTC: `12N34ZYeiwxKEcM5FSnkgnHwxhW6pE3r4m`
-- LTC: `LLNtEGeZ5C6QnSY6BU1MYAZjh8MJpF6zsK`
-
-Always confirm donation addresses against the [current upstream README](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE#donate) before sending funds. Cryptocurrency transfers are irreversible.
-
-</details>
+For upstream donations or sponsorship, follow the relevant project's own current support page. Mega Edition's developer/maintainer contact information is listed above; upstream funding links are not payment details for this edition.
 
 ## Credits
 
-- [0xFar5eer](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE) — the pinned ZBT-Z8803BE firmware baseline, device integration, release configuration, and hardware-focused documentation.
+- [Michael Foster / @mfoster978](https://github.com/mfoster978) — **developer and maintainer of Mega Edition**: this firmware variant's features, fixes, integration, interface, builds, releases, and ongoing maintenance.
+- Special thanks to [0xFar5eer](https://github.com/0xFar5eer) for putting the pieces together and producing a working OpenWrt foundation for this router. The [upstream ZBT-Z8803BE project](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE) supplies the pinned board-support baseline, release configuration, and hardware-focused documentation.
 - [@pttuan](https://github.com/pttuan) — upstream board-port work through [OpenWrt pull request #23053](https://github.com/openwrt/openwrt/pull/23053), including DT-native fan, GPIO watchdog, thermal, and LED bindings.
 - [@sjanulonoks](https://github.com/sjanulonoks) — fan-control suggestions and release testing credited by the baseline project.
 - [FUjr/QModem](https://github.com/FUjr/QModem) — QModem Next and its modem-management interface.
@@ -522,5 +552,6 @@ For code changes:
 
 <p align="center">
   <strong>Built for one router, two modems, and predictable recovery.</strong><br>
-  Community maintained · Not affiliated with ZBTLink, OpenWrt, Far5eer, FUjr, or Speedify
+  Mega Edition · Developed and maintained by Michael Foster / @mfoster978<br>
+  Independent firmware · Not an official ZBTLink, OpenWrt, Far5eer, FUjr, or Speedify release
 </p>

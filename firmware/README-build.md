@@ -1,8 +1,8 @@
-# Firmware bake workflow (remote Docker friendly)
+# Mega Edition firmware build guide
 
-This directory provides build scaffolding to bake modem UX features into firmware images.
+**ZBTLink ZBT-Z8803BE Mega Edition** is developed and maintained by **Michael Foster / @mfoster978**. This directory builds the edition's fixes, features and interface on the pinned [Far5eer upstream foundation](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE). Mega development and releases live in [the Mega Edition repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition).
 
-The September runtime repairs are source changes, not a newly validated firmware release. Build 17 predates them. See [repair notes and hardware validation checklist](docs/runtime-repair-2026-09.md) before building or flashing.
+Use the exact release notes, checksums and build provenance for your download. Compilation and automated checks do not replace hardware acceptance testing. Build 17 predates the current repairs; see the [repair notes and hardware validation checklist](docs/runtime-repair-2026-09.md) before flashing.
 
 ## What is included
 
@@ -34,6 +34,8 @@ docker run --rm -it \
   -e PROFILE_PACKAGES_FILE=/workspace/firmware/profiles/packages-default.txt \
   -e PROFILE_KCONFIG_FILE=/workspace/firmware/profiles/kconfig-fragment.conf \
   -e INCLUDE_BACKUP_IMAGES=0 \
+  -e HOST_MAKE_JOBS=4 \
+  -e FINAL_MAKE_JOBS=6 \
   -e BACKUP_IMAGES_DIR=/workspace/artifacts/router-backups \
   -v "$PWD":/workspace \
   owrt-remote-builder \
@@ -48,15 +50,15 @@ docker run --rm -it \
 - Per-modem procd instances replace the global restart/auto-enable repair loops. The optional watchdog can act only on the selected modem and only when its actions are explicitly enabled. Automatic post-flash modem factory resets are retired.
 - The default `mwan3` failover order is SFP WAN, copper WAN, modem 1, then modem 2. Missing wired interfaces are omitted without changing the remaining order. A separate balanced policy is available for explicit use.
 - LuCI controls are under `Network -> MultiWAN Manager -> Speed & Recovery`: ping thresholds, minimum download speed, sample interval, failover/prefer-fastest policy, and per-modem actions (`none`, `disconnect`, `redial`, `power_cycle`). Wired WAN priority is retained; cellular demotion uses fresh successful measurements with hysteresis. Invalid or stale tests do not become zero-Mbps failures.
-- `Services -> Speed Test Utility` runs a bounded HTTPS download/upload sample on the active connection or a selected uplink through authenticated RPC. Results show Mbps and TCP connection time, not an ICMP latency measurement. It is an action page with no Save/Apply controls. One interactive test transfers approximately 30 MB; background tests download 25 MB per modem (about 4.8 GB/day for both at the default 15-minute interval, if enabled).
+- `Services -> Speed Test Utility` uses the pinned open-source speedtest-go engine against real Speedtest.net servers, with live measured throughput, a gauge/graph, ping/jitter and server selection. It is an authenticated action page with no Save/Apply controls. Interactive tests can consume substantial data and are not a fixed 30 MB sample. Optional background policy samples remain bounded HTTPS transfers and are disabled by default; see [live speed testing](docs/live-speedtest.md) for the distinction and data-use considerations.
 - `mwan3` is included for user-friendly failover/load-balance policy. True bandwidth bonding (single-flow aggregation) requires a separate architecture such as Speedify or a complete OpenMPTCProuter firmware/server deployment.
 - Speedify's matching OpenWrt dependencies are baked into the image. The proprietary Speedify 17.1.0-r12947 core and LuCI APKs are downloaded over HTTPS on the first online boot, verified against pinned SHA256 values, and installed without fetching kernel packages at runtime. Credentials are never baked into the firmware.
-- `speedtest-netperf` and `speedtest-go` remain available as separate command-line tools. The LuCI utility and optional background samples use curl bound to the selected network device; they do not rely on a source IP that could be identical on both cellular links.
+- `speedtest-netperf` and `speedtest-go` remain available as separate command-line tools. The live LuCI engine and optional background sampler bind to the selected physical network interface; the background sampler uses curl, while the live dashboard uses `zbt-speedtest`. Neither relies only on a source IP that could be identical on both cellular links.
 - Failover and load-balancing support is baked in via `mwan3`, `luci-app-mwan3`, and first-boot defaults in `firmware/files/etc/uci-defaults/95-mwan3-defaults`.
 - VPN support is baked in via `tailscale`, `luci-app-tailscale`, `openvpn-openssl`, and `luci-app-openvpn`.
 - Required tunnel/kernel support is baked in via OpenWrt's `CONFIG_PACKAGE_kmod-tun=y` selector (`firmware/profiles/kconfig-fragment.conf`).
 - Speedify LuCI support defaults on and uses its required `luci-nginx` and `python3-light` packages. Set `speedify_bootstrap.main.install_luci=0` before installation to skip the proprietary UI and install Speedify core only. The installer retains nginx and the authenticated Speedify proxy when a service health check fails; it does not fall back to a web server that cannot serve the vendor UI. Existing packages are not repeatedly reinstalled, avoiding repeated vendor network setup. Completion still requires service and web health checks; a visible menu is not proof the VPN daemon is healthy.
-- OpenMPTCProuter is intentionally not offered as a package toggle here. It is a separate firmware distribution with a companion server stack; adding a subset of its feed packages would not turn this Far5eer image into a supported OpenMPTCProuter build.
+- OpenMPTCProuter is intentionally not offered as a package toggle here. It is a separate firmware distribution with a companion server stack; adding a subset of its feed packages would not turn Mega Edition into a supported OpenMPTCProuter build.
 - To produce a remote Docker environment, run the same container on a remote Docker host (or CI runner) and mount both your OpenWrt source tree and this repository into `/workspace`.
 ## Changes in this build stream
 

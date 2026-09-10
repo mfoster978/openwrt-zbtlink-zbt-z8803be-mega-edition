@@ -23,7 +23,7 @@ import urllib.request
 from generate_firmware_release_notes import valid as valid_notes
 
 REPOSITORIES = {
-    "mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build": ("master", "mega", "Mega"),
+    "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition": ("master", "mega", "Mega"),
     "mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build": ("main", "minimal", "Speedify Minimal"),
 }
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -380,6 +380,10 @@ def finalize(api, root, folder, repository, tag, source_sha):
              "- Repository changes describe intended behavior, not hardware-test certification. This publication workflow did not flash or operate a router.\n"
              "- Use the device-specific SquashFS sysupgrade image for normal upgrades. The initramfs image is for recovery/testing, not a normal persistent upgrade.\n"
              "- Verify downloads using the included `SHA256SUMS`. Back up settings and read upgrade notes before flashing.\n")
+    if REPOSITORIES[repository][1] == "mega":
+        notes += ("\n## Credits\n\n"
+                  "- Mega Edition developer and maintainer: [mfoster978](https://github.com/mfoster978).\n"
+                  "- Upstream firmware foundation: [0xFar5eer](https://github.com/0xFar5eer), with special thanks for assembling the working ZBT-Z8803BE base.\n")
     api.upload_notes(release, notes)
     # Recheck after Gemini/network latency and immediately before publishing.
     current = api.api("/releases/" + str(release["id"]))

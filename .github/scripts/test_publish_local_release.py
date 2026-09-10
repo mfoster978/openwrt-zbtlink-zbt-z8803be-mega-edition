@@ -12,7 +12,7 @@ import urllib.request
 
 import publish_local_release as p
 
-MEGA = next(name for name in p.REPOSITORIES if "dual-modem" in name)
+MEGA = next(name for name in p.REPOSITORIES if "mega-edition" in name)
 MINIMAL = next(name for name in p.REPOSITORIES if "minimal" in name)
 TAG = "firmware-202609100657.1"
 
@@ -111,6 +111,8 @@ class PublicationTests(unittest.TestCase):
         (folder / "ai-notes.md").write_text(text)
 
     def test_valid_mega_publication(self):
+        self.assertEqual(MEGA, "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition")
+        self.assertEqual(MINIMAL, "mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build")
         api = self.api()
         folder = self.prepare(api)
         self.notes(folder)
@@ -120,6 +122,8 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("compiled on the maintainer's local server", api.uploaded[0])
         self.assertIn("did not flash or operate a router", api.uploaded[0])
         self.assertIn("<!-- source-sha: " + self.source, api.uploaded[0])
+        self.assertIn("Mega Edition developer and maintainer: [mfoster978]", api.uploaded[0])
+        self.assertIn("Upstream firmware foundation: [0xFar5eer]", api.uploaded[0])
 
     def test_valid_minimal_publication(self):
         api = self.api(MINIMAL)

@@ -30,6 +30,7 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(manifest["image"]["sha256"], release.hashlib.sha256(self.image.read_bytes()).hexdigest())
         self.assertEqual(manifest["image"]["size"], 1100000)
         self.assertEqual(manifest["variant"], "mega")
+        self.assertEqual(manifest["repository"], "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition")
 
     def test_container_git_trust_is_scoped_to_recipe_checkout(self):
         root = Path(self.temp.name).resolve()

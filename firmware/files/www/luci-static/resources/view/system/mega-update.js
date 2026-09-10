@@ -4,7 +4,7 @@
 'require poll';
 'require ui';
 
-var repository = 'mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build';
+var repository = 'mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition';
 var callInfo = rpc.declare({ object: 'zbt.firmware', method: 'info', expect: {} });
 var callCheck = rpc.declare({ object: 'zbt.firmware', method: 'check', params: ['page'], expect: {} });
 var callPrepare = rpc.declare({ object: 'zbt.firmware', method: 'prepare', params: ['release_id'], expect: {} });

@@ -96,7 +96,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     assert.match(await page.locator('.zfu-notes').innerText(), /<script>/, 'release notes remain text');
     assert.equal(await page.evaluate(() => window.evil), undefined, 'untrusted notes cannot execute');
     assert.equal(await page.locator('.zfu-notes img, .zfu-notes script, .zfu-notes a').count(), 0);
-    assert.equal(await page.getByRole('link', {name:'Read on GitHub ↗',exact:true}).getAttribute('href'), 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build/releases', 'unsafe release link rejected');
+    assert.equal(await page.getByRole('link', {name:'Read on GitHub ↗',exact:true}).getAttribute('href'), 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases', 'unsafe release link rejected');
     if (process.env.ZBT_UI_SCREENSHOTS) await page.screenshot({path:path.join(process.env.ZBT_UI_SCREENSHOTS,'firmware-update-desktop.png'),fullPage:true});
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile overflow');

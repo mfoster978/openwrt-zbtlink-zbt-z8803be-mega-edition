@@ -5,7 +5,7 @@
 /* Mega edition only. This replaces the pinned luci-app-zbt-about view, keeping
  * its route and read-only ACL. All artwork is local SVG; no remote trackers,
  * fonts, badges or images are loaded by this page. Runtime values are text. */
-const MEGA_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build';
+const MEGA_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition';
 const MINIMAL_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build';
 const BASE_REPO = 'https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE';
 const callBoard = rpc.declare({ object: 'system', method: 'board', expect: {} });
@@ -116,7 +116,7 @@ function tabbedAbout(content) {
 	];
 	const tabs = [];
 	const panels = [];
-	const navigation = E('div', { 'class': 'zma-tabs', role: 'tablist', 'aria-label': _('About Mega Firmware'), 'aria-orientation': 'horizontal' });
+	const navigation = E('div', { 'class': 'zma-tabs', role: 'tablist', 'aria-label': _('About Mega Edition'), 'aria-orientation': 'horizontal' });
 	function select(index, focus) {
 		tabs.forEach(function(tab, i) {
 			tab.setAttribute('aria-selected', i === index ? 'true' : 'false');
@@ -142,7 +142,7 @@ function tabbedAbout(content) {
 		tabs.push(tab); panels.push(panel); navigation.appendChild(tab);
 	});
 	const root = E('div', { 'class': 'zma-page' }, [
-		E('div', { 'class': 'zma-masthead' }, [E('span', { 'class': 'zma-masthead-mark', 'aria-hidden': 'true' }, [icon('chip')]), E('div', {}, [E('span', {}, 'ZBT-Z8803BE'), E('h1', {}, _('About Mega Firmware'))])]),
+		E('div', { 'class': 'zma-masthead' }, [E('span', { 'class': 'zma-masthead-mark', 'aria-hidden': 'true' }, [icon('chip')]), E('div', {}, [E('span', {}, 'ZBT-Z8803BE'), E('h1', {}, _('About Mega Edition'))])]),
 		strip, navigation
 	].concat(panels, [footer]));
 	select(0, false);
@@ -173,9 +173,9 @@ return view.extend({
 		const root = E('div', { 'class': 'zma-page' }, [
 			E('header', { 'class': 'zma-hero' }, [
 				E('div', { 'class': 'zma-hero-copy' }, [
-					E('div', { 'class': 'zma-eyebrow' }, [E('span', { 'class': 'zma-spark', 'aria-hidden': 'true' }), _('COMMUNITY BUILT · OPENWRT POWERED')]),
-					E('h2', { 'class': 'zma-hero-title' }, [E('span', { 'class': 'zma-model' }, 'ZBT-Z8803BE'), E('span', { 'class': 'zma-edition' }, 'Mega Firmware')]),
-					E('p', { 'class': 'zma-hero-description' }, _('Your connections. Your control. Dual-cellular tools, wired-first failover, optional Speedify bonding and a richer router dashboard—together in one device-specific build.')),
+					E('div', { 'class': 'zma-eyebrow' }, [E('span', { 'class': 'zma-spark', 'aria-hidden': 'true' }), _('BY MFOSTER978 · OPENWRT POWERED')]),
+					E('h2', { 'class': 'zma-hero-title' }, [E('span', { 'class': 'zma-model' }, 'ZBT-Z8803BE'), E('span', { 'class': 'zma-edition' }, 'Mega Edition')]),
+					E('p', { 'class': 'zma-hero-description' }, _('Turn your router into a versatile networking workhorse. Mega Edition brings together practical add-ons, custom-built features and easy-to-set-up tools for dual cellular, failover, speed testing and optional bonding. Use what you need; keep unused optional features off.')),
 					E('div', { 'class': 'zma-hero-badges' }, [E('span', {}, 'Wi-Fi 7'), E('span', {}, _('Dual modem')), E('span', {}, 'MediaTek Filogic')]),
 					E('div', { 'class': 'zma-actions' }, [
 						external(MEGA_REPO, _('Explore the source ↗'), 'zma-button zma-button-primary')
@@ -186,10 +186,10 @@ return view.extend({
 				E('div', {}, [E('span', {}, _('THIS ROUTER')), E('strong', {}, safeScalar(board.model) || 'ZBT-Z8803BE')]),
 				E('div', {}, [E('span', {}, _('INSTALLED BUILD')), E('strong', { 'class': 'zma-installed-version' }, version)]),
 				E('div', {}, [E('span', {}, _('RUNNING KERNEL')), E('strong', {}, safeScalar(board.kernel) || _('Not available'))]),
-				E('div', {}, [E('span', {}, _('MAINTAINER')), E('strong', {}, 'Michael Foster')])
+				E('div', {}, [E('span', {}, _('DEVELOPER & MAINTAINER')), E('strong', {}, 'Michael Foster · mfoster978')])
 			]),
 			E('section', { id: 'zma-features', 'class': 'zma-section' }, [
-				sectionHeading('01', 'Built for your whole connection setup', 'A full-featured edition built on Far5eer’s ZBT-Z8803BE platform, with independent modem controls and practical everyday tools.'),
+				sectionHeading('01', 'Built for your whole connection setup', 'Mega Edition is developed and maintained by Michael Foster, with independent modem controls and practical everyday tools built on the credited OpenWrt and Far5eer foundation.'),
 				E('div', { 'class': 'zma-grid zma-features' }, [
 					feature('signal', 'Two modems. Independent control.', 'QModem', 'Manage Modem 1 and Modem 2 by physical slot—not by whichever wwan number Linux happens to assign at boot.', [
 						'QModem Next brings modem status, signal/cell information, SMS, AT Debug, SIM information and dial controls into LuCI. Friendly aliases remain separate from stable routing identities.',
@@ -199,7 +199,7 @@ return view.extend({
 					]),
 					feature('route', 'Wired first. Cellular when needed.', 'Multi-WAN', 'mwan3 handles connection monitoring and failover. A balanced policy is available when you deliberately choose to distribute connections.', [
 						'Default priority is available SFP WAN, copper WAN, Modem 1, then Modem 2. Missing wired interfaces are omitted from the generated policy.',
-						'Network → MultiWAN Manager → Speed & Recovery adds optional minimum-speed thresholds, cooldowns, per-modem recovery actions and fastest-modem preference.',
+						'Network → MultiWAN Manager → Speed & Recovery adds optional minimum-speed thresholds, cooldowns, per-modem recovery actions and fastest-modem preference. These advanced automation features are off by default; enable and configure only the tools you want. Core networking and normal failover remain active.',
 						'Additional watchdog actions and speed-based preferences are off by default. Start with monitoring; enable redial or power cycling only after checking your own setup.',
 						'Failover and load balancing are not bonding: ordinary mwan3 does not merge links into a faster single download, and established sessions may need to reconnect.'
 					]),
@@ -263,7 +263,7 @@ return view.extend({
 				sectionHeading('04', 'Made by people. Better together.', 'Report what you observe, share reproducible fixes and give the upstream work the credit it deserves.'),
 				E('div', { 'class': 'zma-community-grid' }, [
 					E('article', { 'class': 'zma-card zma-maintainer' }, [
-						E('span', { 'class': 'zma-avatar', 'aria-hidden': 'true' }, 'MF'), E('div', { 'class': 'zma-eyebrow' }, _('MEGA FIRMWARE MAINTAINER')), E('h3', {}, 'Michael Foster'), E('p', {}, _('Build integration, device-specific additions and this Mega edition.')),
+						E('span', { 'class': 'zma-avatar', 'aria-hidden': 'true' }, 'MF'), E('div', { 'class': 'zma-eyebrow' }, _('MEGA EDITION DEVELOPER & MAINTAINER')), E('h3', {}, 'Michael Foster'), E('p', {}, _('Developer and maintainer of Mega Edition: this firmware variant’s features, fixes, integration, interface, builds, releases and ongoing maintenance. Find me as mfoster978 on GitHub and Discord.')),
 						E('dl', { 'class': 'zma-contact' }, [
 							E('div', {}, [E('dt', {}, 'GitHub'), E('dd', {}, [external('https://github.com/mfoster978', '@mfoster978 ↗')])]),
 							E('div', {}, [E('dt', {}, _('Email')), E('dd', {}, [E('a', { href: 'mailto:mfoster978@gmail.com' }, 'mfoster978@gmail.com')])]),
@@ -275,7 +275,7 @@ return view.extend({
 					E('article', { 'class': 'zma-thanks' }, [
 						E('span', { 'class': 'zma-icon' }, [icon('heart')]), E('div', { 'class': 'zma-eyebrow' }, _('SPECIAL THANKS')), E('h3', {}, [external('https://github.com/0xFar5eer', '0xFar5eer ↗')]),
 						E('p', { 'class': 'zma-thanks-lead' }, _('Thank you for putting the pieces together and creating a working OpenWrt version for this router.')),
-						E('p', {}, _('The board support, modem integration, device tools and release baseline assembled by Far5eer made this project possible. Mega builds on that foundation with focused fixes and extra features; it is not a claim that this project authored the underlying platform.')),
+						E('p', {}, _('Far5eer’s board support, modem integration, device tools and release baseline provide the upstream foundation. Michael Foster develops and maintains Mega Edition independently. OpenWrt, Linux, QModem and other included packages retain their original authorship and licenses.')),
 						external(BASE_REPO, _('Explore Far5eer’s ZBT-Z8803BE project ↗'), 'zma-text-link')
 					])
 				]),
@@ -292,7 +292,7 @@ return view.extend({
 				].map(function(credit) { return E('article', {}, [E('h3', {}, [external(credit[0], credit[1] + ' ↗')]), E('p', {}, credit[2])]); })),
 				E('p', { 'class': 'zma-disclaimer' }, _('Independent community firmware. Not an official ZBT, OpenWrt, Speedify, Tailscale or Ookla product. Credits are acknowledgments, not sponsorships or endorsements. Individual packages retain their own licenses; proprietary services may require separate accounts or payment.'))
 			]),
-			E('footer', { 'class': 'zma-footer' }, [E('span', {}, 'ZBT-Z8803BE · Mega Firmware'), E('span', {}, _('Built on open source. Shaped by your feedback.'))])
+			E('footer', { 'class': 'zma-footer' }, [E('span', {}, 'ZBT-Z8803BE · Mega Edition'), E('span', {}, _('Developed and maintained by Michael Foster · mfoster978'))])
 		]);
 		return tabbedAbout(root);
 	}

@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.repository == 'mfoster978/openwrt-zbtlink-zbt-z8803be-dual-modem-build' && github.ref == 'refs/heads/master'
+    if: github.repository == 'mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -54,7 +54,7 @@ jobs:
           GEMINI_MODEL: gemini-flash-latest
         run: |
           python3 .github/scripts/generate_firmware_release_notes.py \
-            --name 'ZBT-Z8803BE Mega — locally built firmware' \
+            --name 'ZBT-Z8803BE Mega Edition — locally built firmware' \
             --evidence "$RUNNER_TEMP/zbt-local-release/evidence.txt" \
             --output "$RUNNER_TEMP/zbt-local-release/ai-notes.md"
 
