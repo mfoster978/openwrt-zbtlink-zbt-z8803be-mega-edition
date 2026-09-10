@@ -391,11 +391,11 @@ grep -Fq 'network_metric=$(uci -q get network.${interface_name}.metric)' \
   "${rootfs_dir}/usr/share/qmodem/modem_dial.sh" || {
   echo 'QModem is not consuming the persistent network route metric' >&2; exit 4;
 }
-grep -Fq "form.DummyValue, '_route_metric'" \
+grep -Eq "form\.DummyValue,[[:space:]]*'_route_metric'" \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/network_config.js" || {
-  echo 'QModem still exposes an independent editable route metric' >&2; exit 4;
+  echo 'QModem read-only route-metric display is missing from the image' >&2; exit 4;
 }
-grep -Fq "uci.set('network', section_id, 'metric', value);" \
+grep -Eq "uci\.set\('network',[[:space:]]*section_id,[[:space:]]*'metric',[[:space:]]*value\);" \
   "${rootfs_dir}/www/luci-static/resources/view/mwan3/network/interface.js" || {
   echo 'MultiWAN Manager route-metric editor is missing from the image' >&2; exit 4;
 }
