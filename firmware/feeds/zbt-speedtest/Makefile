@@ -34,5 +34,11 @@ define Build/Prepare
 	$(CP) ./src/*.go $(PKG_BUILD_DIR)/cmd/zbt-speedtest/
 endef
 
+define Package/zbt-speedtest/install
+	$(call GoPackage/Package/Install/Bin,$(1))
+	$(INSTALL_DIR) $(1)/usr/share/licenses/zbt-speedtest
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/LICENSE $(1)/usr/share/licenses/zbt-speedtest/LICENSE
+endef
+
 $(eval $(call GoBinPackage,zbt-speedtest))
 $(eval $(call BuildPackage,zbt-speedtest))
