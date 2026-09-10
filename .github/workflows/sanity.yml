@@ -2,9 +2,9 @@ name: Sanity
 on:
   workflow_dispatch:
   push:
-    paths: ['firmware/**', '.github/workflows/sanity.yml', '.github/workflows/build-openwrt-firmware.yml']
+    paths: ['firmware/**', '.github/scripts/**', '.github/workflows/sanity.yml', '.github/workflows/build-openwrt-firmware.yml', '.github/workflows/publish-local-release.yml']
   pull_request:
-    paths: ['firmware/**', '.github/workflows/sanity.yml', '.github/workflows/build-openwrt-firmware.yml']
+    paths: ['firmware/**', '.github/scripts/**', '.github/workflows/sanity.yml', '.github/workflows/build-openwrt-firmware.yml', '.github/workflows/publish-local-release.yml']
 permissions:
   contents: read
 jobs:
@@ -20,6 +20,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends busybox jq patch ripgrep gcc nftables iproute2 python3
       - name: Validate firmware inputs
         run: bash firmware/scripts/check-build-inputs.sh
+      - name: Test release notes and publication guards offline
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Verify pinned patches and behavioral regressions
         run: node firmware/tests/check-patches.cjs
       - name: Verify per-modem TTL on real IPv4 and IPv6 packets in an isolated network

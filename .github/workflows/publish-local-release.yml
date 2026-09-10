@@ -41,7 +41,7 @@ jobs:
           persist-credentials: false
 
       - name: Test publication guards without network, secrets or firmware operations
-        run: python3 -m unittest discover -s .github/scripts -p 'test_publish_local_release.py' -v
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
 
       - name: Verify existing draft and downloaded local-build assets
         env:
