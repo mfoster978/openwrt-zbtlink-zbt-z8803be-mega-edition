@@ -312,24 +312,140 @@
 +}
 --- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
 +++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
-@@ -1149,1 +1149,4 @@
--				var bandData = lockband[bandClass];
-+				var bandData = lockband[bandClass];
-+				if (bandData && bandData.read_error) {
-+					container.appendChild(E('p', { 'class': 'alert-message warning' }, bandClass + ': ' + bandData.read_error));
+@@ -54,0 +55 @@
++		var selectionGeneration = 0;
+@@ -57,0 +59 @@
++			var generation = ++selectionGeneration;
+@@ -66,0 +69 @@
++					if (generation !== selectionGeneration || select.value !== selectedId) return;
+@@ -69,0 +73 @@
++					if (generation !== selectionGeneration || select.value !== selectedId) return;
+@@ -1109,0 +1114,9 @@
++		var generation = (lockbandContent._zbtBandGeneration || 0) + 1;
++		lockbandContent._zbtBandGeneration = generation;
++		dom.content(lockbandContent, E('div', { 'class': 'spinning' }, _('Reading band configuration from this modem...')));
++		function retryRead() {
++			if (!lockbandContent._zbtBandBusy) return self.loadLockBand(modem, lockbandContent);
++		}
++		function retryButton() {
++			return E('button', { 'class': 'btn cbi-button', 'type': 'button', 'click': retryRead }, _('Read bands again'));
++		}
+@@ -1111 +1124,2 @@
+-		qmodem.getLockBand(modem.id).then(function(result) {
++		return qmodem.getLockBand(modem.id).then(function(result) {
++			if (generation !== lockbandContent._zbtBandGeneration) return;
+@@ -1114,2 +1128,2 @@
+-				dom.content(lockbandContent, E('div', { 'class': 'alert-message warning' },
+-					_('No result returned from getLockBand')));
++				dom.content(lockbandContent, E('div', { 'class': 'alert-message warning' }, [
++					E('p', {}, _('No result returned from getLockBand. Current bands are unknown.')), retryButton()]));
+@@ -1124,2 +1138,2 @@
+-				dom.content(lockbandContent, E('div', { 'class': 'alert-message warning' },
+-					_('Invalid lockband data structure')));
++				dom.content(lockbandContent, E('div', { 'class': 'alert-message warning' }, [
++					E('p', {}, _('Invalid band response. Current bands are unknown.')), retryButton()]));
+@@ -1138,2 +1152,2 @@
+-				dom.content(lockbandContent, E('div', { 'class': 'alert-message info' },
+-					_('No bands available for this modem')));
++				dom.content(lockbandContent, E('div', { 'class': 'alert-message info' }, [
++					E('p', {}, _('No band information returned by this modem.')), retryButton()]));
+@@ -1149,0 +1164,17 @@
++				if (bandData && (bandData.read_error || bandData.read_state === 'unknown')) {
++					var unknownSection = E('div', { 'class': 'cbi-section' }, [
++						E('h3', {}, bandClass),
++						E('p', { 'class': 'alert-message warning' }, _('Current bands are unknown, not all disabled. Editing is unavailable until this modem returns a valid band list.')),
++						E('p', {}, bandData.read_error || _('Band query did not return a usable response.')),
++						retryButton()
++					]);
++					if (bandData.read_command || bandData.read_response) {
++						unknownSection.appendChild(E('details', {}, [
++							E('summary', {}, _('Band query diagnostics')),
++							E('pre', { 'style': 'white-space: pre-wrap; overflow-wrap: anywhere;' },
++								[bandData.read_command || '', bandData.read_response || _('No response')].join('\n'))
++						]));
++					}
++					container.appendChild(unknownSection);
++					return;
 +				}
-@@ -1306,2 +1309,6 @@
+@@ -1164,5 +1194,0 @@
+-				if (availableBands.length === 0) {
+-					console.info('No available bands for', bandClass);
+-					return;
+-				}
+-
+@@ -1176,0 +1203,12 @@
++				lockedBands = lockedBands.map(String);
++				if (availableBands.length === 0) {
++					var reportedOnly = E('strong', { 'id': 'locked_' + modem.id + '_' + bandClass });
++					self.updateLockedDisplay(reportedOnly, lockedBands, []);
++					container.appendChild(E('div', { 'class': 'cbi-section' }, [
++						E('h3', {}, bandClass),
++						E('p', {}, _('Bands reported by modem')), reportedOnly,
++						E('p', { 'class': 'alert-message warning' }, _('The supported-band list is unavailable. Reported bands are shown read-only; no capability list has been guessed.')),
++						retryButton()
++					]));
++					return;
++				}
+@@ -1200 +1238 @@
+-				currentSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Locked Bands')));
++				currentSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Bands reported by modem')));
+@@ -1208,0 +1247,6 @@
++				var pendingDisplay = E('p', { 'class': 'cbi-section-descr' }, _('No pending changes.'));
++				function updatePending() {
++					var selected = E('span', {});
++					self.updateLockedDisplay(selected, lockbandState[bandClass].locked, availableBands);
++					dom.content(pendingDisplay, [E('strong', {}, _('Unsaved selection (not applied to modem): ')), selected]);
++				}
+@@ -1241 +1285 @@
+-							self.updateLockedDisplay(lockedDisplay, lockbandState[bandClass].locked, bandData.available_band);
++							updatePending();
+@@ -1256,0 +1301 @@
++				bandSection.appendChild(pendingDisplay);
+@@ -1288 +1333 @@
+-						self.updateLockedDisplay(lockedDisplay, lockbandState[bandClass].locked, bandData.available_band);
++						updatePending();
+@@ -1295,0 +1341,5 @@
++						if (lockbandContent._zbtBandBusy) return;
++						if (lockbandState[bandClass].locked.length === 0) {
++							ui.addNotification(null, E('p', _('Select at least one band. An empty selection is not an unlock command.')), 'error');
++							return;
++						}
+@@ -1303 +1353,2 @@
+-						applyBtn.disabled = true;
++						lockbandContent._zbtBandBusy = true;
++						lockbandContent.querySelectorAll('button, input').forEach(function(control) { control.disabled = true; });
+@@ -1306 +1357,5 @@
 -						qmodem.setLockBand(modem.id, params).then(function(result) {
--							if (result) {
-+						qmodem.setLockBand(modem.id, params).then(function(result) {
++						return qmodem.setLockBand(modem.id, params).then(function(result) {
 +							var reply = result && (result.result || result);
 +							var response = reply && reply.set_lockband;
-+							if (typeof response !== 'string' || !/OK/.test(response) || /ERROR/.test(response))
++							if (typeof response !== 'string' || !/(^|\n)OK(?:\s|$)/.test(response) || /ERROR/.test(response))
 +								throw new Error(response || _('Modem did not confirm the band change'));
-+							if (result) {
-@@ -1347,1 +1354,1 @@
+@@ -1309,2 +1363,0 @@
+-								// Refresh the display
+-								self.loadLockBand(modem, lockbandContent);
+@@ -1313,2 +1365,0 @@
+-								applyBtn.disabled = false;
+-								applyBtn.textContent = _('Apply');
+@@ -1318,2 +1369,5 @@
+-							applyBtn.disabled = false;
+-							applyBtn.textContent = _('Apply');
++						}).then(function() {
++							// A rejected/mismatched write may still have changed the modem.
++							// Always discard the draft and query its actual state again.
++							lockbandContent._zbtBandBusy = false;
++							return self.loadLockBand(modem, lockbandContent);
+@@ -1330,0 +1385 @@
++			container.appendChild(retryButton());
+@@ -1334,0 +1390 @@
++			if (generation !== lockbandContent._zbtBandGeneration) return;
+@@ -1340 +1396,2 @@
+-					_('Please check browser console for more details'))
++					_('Current bands are unknown. Reading bands does not change settings.')),
++				retryButton()
+@@ -1347 +1404 @@
 -			displayElement.textContent = _('None (All bands unlocked)');
-+			displayElement.textContent = _('No band selection reported (not proof that SA is disabled)');
++			displayElement.textContent = _('No bands selected (not an unlock command)');
 --- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/qmodem/qmodem.js
 +++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/qmodem/qmodem.js
 @@ -255,7 +255,25 @@

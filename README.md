@@ -74,7 +74,7 @@ The build retains Far5eer's board target, kernel, device-tree work, Wi-Fi suppor
 - QMI/MBIM paths using `quectel-CM-M -d` use `proto=none`: the connection manager owns addresses and routes, with no competing DHCP client. ECM/RNDIS retain their protocol-specific behavior.
 - Both USB modems use the same startup, APN, protocol, and recovery logic. The connection manager applies the MTU reported for each data connection, rather than copying one carrier's value to everyone.
 - Blank/auto QMI APNs retain modem/network profile negotiation. Manual APNs, credentials, PINs, and SIM selections are not erased; some carriers/plans still require manual configuration.
-- Band changes require a successful AT response and matching readback. An unreadable SA band mask is shown as unknown, not falsely reported as every SA band disabled.
+- Band changes require a successful AT response and matching readback. Unknown masks have read-only diagnostics and Retry; reported bands stay separate from pending edits. See [per-modem band readback](firmware/docs/band-readback.md).
 - Existing Far5eer carrier TTL/hop-limit handling and modem NAT detection remain available.
 
 ### Multi-WAN and recovery
