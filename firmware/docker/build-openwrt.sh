@@ -40,6 +40,9 @@ if [[ -n "${EXPECTED_OPENWRT_COMMIT}" && "${resolved_openwrt_commit}" != "${EXPE
   echo "OpenWrt ref resolved to ${resolved_openwrt_commit}; expected ${EXPECTED_OPENWRT_COMMIT}" >&2
   exit 2
 fi
+printf '%s  %s\n' \
+  '9adb2d14a022727f12364ab6040d15a0d7391465e33abff03602923196e508e4' \
+  'target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh' | sha256sum -c -
 if [[ -d "${CUSTOM_FEED_DIR}" ]]; then
   grep -q "^src-link ${CUSTOM_FEED_NAME} " feeds.conf.default || \
     echo "src-link ${CUSTOM_FEED_NAME} ${CUSTOM_FEED_DIR}" >> feeds.conf.default
@@ -118,7 +121,10 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/packages < "$poli
 fi
 mkdir -p files
 if [[ -d "${FILES_OVERLAY_DIR}" ]]; then
-  rsync -a "${FILES_OVERLAY_DIR}/" files/
+  # This source tree is intentionally reusable between local builds. Mirror
+  # the selected edition exactly so files removed from an overlay cannot leak
+  # into a later firmware image through OpenWrt's persistent files/ directory.
+  rsync -a --delete "${FILES_OVERLAY_DIR}/" files/
 fi
 # Read this identity from /rom at runtime: a settings-preserving upgrade must
 # not misidentify its new image because an old /etc file was restored.
@@ -179,6 +185,10 @@ if [[ -f "${PROFILE_KCONFIG_FILE}" ]]; then
   cat "${PROFILE_KCONFIG_FILE}" >> .config
 fi
 make defconfig
+# A patch applied inside package/luci-app-mlo is not guaranteed to invalidate
+# an existing package stamp in a reused local tree. Always rebuild this small
+# LuCI package so the firmware cannot ship the stale per-band MLO writer.
+make package/luci-app-mlo/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
@@ -318,7 +328,7 @@ required_overlay_files=(
   etc/init.d/zbt-modem-leds
   etc/uci-defaults/48-zbt-modem-led-dark-repair
   etc/uci-defaults/49-zbt-modem-labels-leds
-  etc/uci-defaults/73-zbt-mlo-shared-iface-repair
+  etc/uci-defaults/74-zbt-mlo-shared-iface-repair
   etc/uci-defaults/50-zbt-luci-web-recovery
   usr/lib/zbt/quectel-bands.sh
   usr/lib/zbt/speed-lock.sh
@@ -354,7 +364,10 @@ mapfile -t modem_led_links < <(find "${rootfs_dir}/etc/rc.d" -maxdepth 1 -type l
 test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/iface/40-zbt-status-led" || {
   echo 'Far5eer status LED runtime is missing from the image' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds usr/sbin/zbt-qmodem-profile etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-mlo-shared-iface-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
+  echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
+}
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }

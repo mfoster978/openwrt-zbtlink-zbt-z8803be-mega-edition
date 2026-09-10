@@ -33,7 +33,7 @@ done < <(rg --files firmware/files firmware/feeds)
 test -s firmware/patches/luci-app-mlo-shared-iface.patch
 grep -Fq 'writeCommon(mldIface, selectedDevices);' firmware/patches/luci-app-mlo-shared-iface.patch
 grep -Fq "uci -q add_list \"wireless.\${first}.device=\${device}\"" \
-  firmware/files/etc/uci-defaults/73-zbt-mlo-shared-iface-repair
+  firmware/files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair
 
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config

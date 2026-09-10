@@ -1,8 +1,7 @@
 #!/bin/sh /etc/rc.common
-# LED-only service. Run after OpenWrt's generic S96 LED service so preserved
-# System -> LED Configuration rows cannot clear an automatic modem indicator
-# after the poller has restored it.
-# No AT polling, modem resets or power writes.
+# LED-only service. It runs after OpenWrt's generic S96 LED service and
+# reapplies Far5eer's /etc/zbt-leds.sh states if another service cleared a
+# modem lamp. It never writes modem power, SIM selection, or AT commands.
 START=97
 STOP=05
 USE_PROCD=1

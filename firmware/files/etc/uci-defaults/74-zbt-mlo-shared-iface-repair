@@ -1,6 +1,7 @@
 #!/bin/sh
-# Convert only the legacy MLO layout written by the old custom LuCI page.
-# Ordinary same-SSID APs without option mlo=1 are intentionally untouched.
+# Repair MLD records written by older versions of the custom LuCI page.
+# The new filename deliberately reruns this migration on the next sysupgrade.
+# Ordinary APs and manually named MLO sections are intentionally untouched.
 
 . /lib/functions.sh
 
@@ -11,8 +12,11 @@ esac
 
 sections="$(uci -q show wireless | sed -nE 's/^wireless\.([^.]+)=wifi-iface$/\1/p')"
 changed=0
+processed=' '
 
 for first in $sections; do
+	case "$processed" in *" $first "*) continue ;; esac
+	case "$first" in mld_*) ;; *) continue ;; esac
 	[ "$(uci -q get "wireless.${first}.mlo")" = "1" ] || continue
 	mode="$(uci -q get "wireless.${first}.mode")"
 	[ -z "$mode" ] || [ "$mode" = "ap" ] || continue
@@ -20,7 +24,6 @@ for first in $sections; do
 	[ -n "$ssid" ] || continue
 
 	members="$first"
-	count=1
 	for candidate in $sections; do
 		[ "$candidate" != "$first" ] || continue
 		[ "$(uci -q get "wireless.${candidate}.mlo")" = "1" ] || continue
@@ -28,9 +31,7 @@ for first in $sections; do
 		[ -z "$candidate_mode" ] || [ "$candidate_mode" = "ap" ] || continue
 		[ "$(uci -q get "wireless.${candidate}.ssid")" = "$ssid" ] || continue
 		members="$members $candidate"
-		count=$((count + 1))
 	done
-	[ "$count" -gt 1 ] || continue
 
 	devices=""
 	for member in $members; do
@@ -43,19 +44,42 @@ for first in $sections; do
 	done
 
 	set -- $devices
-	[ "$#" -ge 2 ] || continue
+	if [ "$#" -lt 2 ]; then
+		logger -t zbt-mlo "leaving invalid one-link MLD '$ssid' unchanged"
+		processed="${processed}${members} "
+		continue
+	fi
+
+	# One wifi-iface with list device is the representation consumed by the
+	# pinned netifd MLO implementation. Make its LAN membership explicit so
+	# the common ap-mld interface is added to br-lan and receives DHCP traffic.
 	uci -q delete "wireless.${first}.device"
 	for device in "$@"; do
 		uci -q add_list "wireless.${first}.device=${device}"
 	done
+	uci -q delete "wireless.${first}.network"
+	uci -q add_list "wireless.${first}.network=lan"
+	uci -q set "wireless.${first}.mode=ap"
 	uci -q set "wireless.${first}.mlo=1"
 	uci -q set "wireless.${first}.ieee80211w=2"
+	uci -q set "wireless.${first}.disabled=0"
+	uci -q delete "wireless.${first}.mld_ap" 2>/dev/null
+	uci -q delete "wireless.${first}.mld_id" 2>/dev/null
 	for member in $members; do
 		[ "$member" = "$first" ] || uci -q delete "wireless.${member}"
 	done
+	processed="${processed}${members} "
 	changed=1
-	logger -t zbt-mlo "combined legacy MLO SSID '$ssid' into one ${#}-radio wifi-iface"
+	logger -t zbt-mlo "repaired MLO SSID '$ssid' as one ${#}-radio LAN wifi-iface"
 done
 
-[ "$changed" -eq 0 ] || uci -q commit wireless
+[ "$changed" -eq 0 ] || {
+	uci -q commit wireless
+	# On upgrades, the vendor first-boot Wi-Fi script exits early for custom
+	# SSIDs and therefore does not schedule its own reload.
+	(
+		sleep 3
+		/sbin/wifi reload >/dev/null 2>&1
+	) &
+}
 exit 0

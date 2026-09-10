@@ -61,4 +61,12 @@ test('MLO editor rewrites legacy per-band records as one shared multi-radio ifac
   assert.deepEqual(mlo[0].device, [ 'radio0', 'radio1', 'radio2' ]);
   assert.equal(mlo[0].ieee80211w, '2');
   assert.equal(mlo[0].ssid, 'Fostah Logistics');
+  assert.equal(mlo[0].network, 'lan');
+
+  const migration = fs.readFileSync(path.join(__dirname, '../files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair'), 'utf8');
+  assert.match(migration, /add_list "wireless\.\$\{first\}\.network=lan"/);
+  assert.match(migration, /\/sbin\/wifi reload/);
+  const builder = fs.readFileSync(path.join(__dirname, '../docker/build-openwrt.sh'), 'utf8');
+  assert.match(builder, /make package\/luci-app-mlo\/clean/);
+  assert.match(builder, /rsync -a --delete "\$\{FILES_OVERLAY_DIR\}\/?" files\//);
 });

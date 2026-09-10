@@ -52,10 +52,9 @@ zbt_led_name_user_managed() {
 
 zbt_led_user_managed() { zbt_led_name_user_managed "$ZBT_LED"; }
 
-zbt_led_apply() {
+zbt_led_apply_fallback() {
 	local trigger maximum carrier
 	[ -d "$ZBT_LED_PATH" ] || return 1
-	zbt_led_user_managed && return 0
 	trigger=$(zbt_led_trigger)
 	carrier=$(cat "${ZBT_SYSFS:-/sys}/class/net/$ZBT_LED_DEVICE/carrier" 2>/dev/null)
 	maximum=$(zbt_led_read max_brightness)
@@ -91,4 +90,37 @@ zbt_led_apply() {
 	# Unsupported trigger / unreliable WWAN carrier: visible steady fallback,
 	# not an extinguished LED. Status reports this instead of claiming activity.
 	zbt_led_write trigger none && zbt_led_write brightness "$maximum"
+}
+
+zbt_led_apply() {
+	local helper slot substate
+	[ -d "$ZBT_LED_PATH" ] || return 1
+	zbt_led_user_managed && return 0
+
+	case "$ZBT_SECTION" in
+		4_1) slot=1 ;;
+		2_1) slot=2 ;;
+		*) return 1 ;;
+	esac
+	case "$ZBT_LED_STATE" in
+		off) substate=off ;;
+		waiting) substate=no_signal ;;
+		data) substate=wwan ;;
+		*) return 1 ;;
+	esac
+
+	# Far5eer v25.12.021 drives these active-low GPIO LEDs through this
+	# helper. Use that proven path in production; retain the bounded direct
+	# writer only as a rescue fallback if a damaged image lacks the helper.
+	helper=${ZBT_LED_HELPER:-/etc/zbt-leds.sh}
+	if [ -x "$helper" ]; then
+		if [ "$substate" = wwan ]; then
+			[ -n "$ZBT_LED_DEVICE" ] || return 1
+			"$helper" slot "$slot" wwan "$ZBT_LED_DEVICE"
+		else
+			"$helper" slot "$slot" "$substate"
+		fi
+		return $?
+	fi
+	zbt_led_apply_fallback
 }

@@ -65,6 +65,23 @@ ip() { [ "$4" = "$ONLINE" ] && echo '    inet 192.0.0.2/27 scope global'; }
 logger() { :; }
 `;
 
+test('production path delegates both physical slots to the pinned Far5eer helper', () => {
+  const f = fixture();
+  const helper = path.join(f.dir, 'zbt-leds.sh');
+  const helperCalls = path.join(f.dir, 'helper-calls');
+  fs.writeFileSync(helper, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HELPER_CALLS"\n');
+  fs.chmodSync(helper, 0o755);
+  run(led + mocks + '\nzbt_led_detect 4_1; zbt_led_apply; zbt_led_detect 2_1; zbt_led_apply', {
+    ...f.env, ZBT_LED_HELPER: helper, HELPER_CALLS: helperCalls
+  });
+  assert.equal(fs.readFileSync(helperCalls, 'utf8'), 'slot 1 wwan wwan8\nslot 2 no_signal\n');
+
+  const hotplug = file('firmware/files/etc/hotplug.d/net/20-zbt-modem-led');
+  assert.match(hotplug, /4-1\) slot=1; led=\/sys\/class\/leds\/blue:mobile-1/);
+  assert.match(hotplug, /2-1\) slot=2; led=\/sys\/class\/leds\/blue:mobile-2/);
+  assert.match(hotplug, /\/etc\/zbt-leds\.sh slot "\$slot" wwan "\$DEVICENAME"/);
+});
+
 test('LEDs use physical slots: online primary gets activity, waiting secondary blinks', () => {
   const f = fixture();
   run(led + mocks + '\nzbt_led_detect 4_1; zbt_led_apply; zbt_led_detect 2_1; zbt_led_apply', f.env);
