@@ -250,8 +250,12 @@ esac
 configure_watchdog "$mode"
 commit_all
 
-# Reload only policy services. Cellular interfaces and modem processes stay up.
-/etc/init.d/mwan3 reload >/dev/null 2>&1 || true
-/etc/init.d/modem_watchdog restart >/dev/null 2>&1 || true
+# Reload only policy services for an interactive preset change. First-boot and
+# sysupgrade migrations run before these services start and explicitly suppress
+# this block to avoid racing their normal rc.d initialization.
+if [ "${ZBT_MWAN_NO_RELOAD:-0}" != 1 ]; then
+	/etc/init.d/mwan3 reload >/dev/null 2>&1 || true
+	/etc/init.d/modem_watchdog restart >/dev/null 2>&1 || true
+fi
 logger -t zbt-mwan-preset "applied $mode routing preset"
 printf 'Applied %s routing preset.\n' "$mode"

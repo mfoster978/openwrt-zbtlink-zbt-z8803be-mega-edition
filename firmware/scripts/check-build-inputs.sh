@@ -112,7 +112,20 @@ grep -Fq 'ensure_route_metric wan_sfp 9' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric wan 10' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric 4_1 200' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric 2_1 210' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'DEFAULTS_VERSION=2' firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq 'ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset "$preset"' \
+  firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq 'if [ "${ZBT_MWAN_NO_RELOAD:-0}" != 1 ]; then' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'option routing_preset' firmware/feeds/luci-app-modem-watchdog/root/etc/config/modem_watchdog
+grep -Fq 'ZBT-Z8803BE Mega Edition' firmware/files/etc/banner
+grep -Fq 'github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition' firmware/files/etc/banner
+grep -Fq 'Developer: Michael Foster / GitHub @mfoster978' firmware/files/etc/banner
+grep -Fq 'Contact  : mfoster978@gmail.com - Discord: mfoster978' firmware/files/etc/banner
+if rg -n -i 'donate|ERC20|BEP20|TRC20|0xfar5eer@gmail\.com|0xFar5eer#6504' \
+  firmware/files/etc/banner firmware/files/etc/profile.d/10-zbt-info.sh; then
+  echo 'Mega SSH identity still contains the upstream donation or contact block' >&2
+  exit 1
+fi
 
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config

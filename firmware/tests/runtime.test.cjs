@@ -484,6 +484,7 @@ test('MWAN3 interface UI edits the persistent network metric', { skip: !process.
 
 test('routing presets keep one explicit whole-router priority order', () => {
   const preset = file('firmware/files/usr/sbin/zbt-mwan-preset');
+  const migration = file('firmware/files/etc/uci-defaults/99-zbt-route-priority-repair');
   assert.match(preset, /ensure_route_metric wan_sfp 9 "\$exact"/);
   assert.match(preset, /ensure_route_metric wan 10 "\$exact"/);
   assert.match(preset, /ensure_route_metric 4_1 200 "\$exact"/);
@@ -492,7 +493,20 @@ test('routing presets keep one explicit whole-router priority order', () => {
   assert.match(preset, /configure_member failover_wan wan 2 1/);
   assert.match(preset, /configure_member failover_4_1 4_1 3 1/);
   assert.match(preset, /configure_member failover_2_1 2_1 4 1/);
-  assert.match(preset, /# Reload only policy services/);
+  assert.match(preset, /if \[ "\$\{ZBT_MWAN_NO_RELOAD:-0\}" != 1 \]; then/);
+  assert.match(migration, /DEFAULTS_VERSION=2/);
+  assert.match(migration, /ZBT_MWAN_NO_RELOAD=1 \/usr\/sbin\/zbt-mwan-preset "\$preset"/);
+  assert.match(migration, /priority\|failover\|fastest/);
+});
+
+test('Mega SSH banner carries project identity without a donation block', () => {
+  const banner = file('firmware/files/etc/banner');
+  const shellInfo = file('firmware/files/etc/profile.d/10-zbt-info.sh');
+  assert.match(banner, /ZBT-Z8803BE Mega Edition/);
+  assert.match(banner, /github\.com\/mfoster978\/openwrt-zbtlink-zbt-z8803be-mega-edition/);
+  assert.match(banner, /Developer: Michael Foster \/ GitHub @mfoster978/);
+  assert.match(banner, /mfoster978@gmail\.com - Discord: mfoster978/);
+  assert.doesNotMatch(banner + shellInfo, /Donate|ERC20|BEP20|TRC20|0xfar5eer@gmail\.com|0xFar5eer#6504/i);
 });
 
 test('pinned mwan3 policy builder consumes RAM metric override', { skip: !process.env.MWAN3_TEST_TREE }, () => {

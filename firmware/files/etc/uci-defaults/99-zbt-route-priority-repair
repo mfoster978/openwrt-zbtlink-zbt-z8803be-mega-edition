@@ -1,11 +1,28 @@
 #!/bin/sh
 set -eu
 
-[ "$(uci -q get system.zbt_route_priority.version 2>/dev/null || true)" = 1 ] && exit 0
+DEFAULTS_VERSION=2
+[ "$(uci -q get system.zbt_route_priority.version 2>/dev/null || true)" = "$DEFAULTS_VERSION" ] && exit 0
 
-/usr/sbin/zbt-mwan-preset repair
+# Version 1 repaired only /etc/config/network metrics. That left the older
+# mwan3 catch-all/balanced policy active on settings-preserving upgrades, so a
+# newly connected modem2 could take traffic even while modem1 was healthy.
+preset="$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || true)"
+[ -n "$preset" ] || preset=priority
+case "$preset" in
+	priority|failover|fastest)
+		# UCI defaults run before mwan3/netifd start; write the complete selected
+		# policy now and let normal service startup consume it once.
+		ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset "$preset"
+		;;
+	*)
+		# Preserve a genuinely custom policy while still filling missing route
+		# identity and metric fields.
+		/usr/sbin/zbt-mwan-preset repair
+		;;
+esac
 uci -q set system.zbt_route_priority=runtime_defaults
-uci -q set system.zbt_route_priority.version=1
+uci -q set "system.zbt_route_priority.version=$DEFAULTS_VERSION"
 uci -q commit system
 
 exit 0
