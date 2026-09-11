@@ -54,7 +54,7 @@ jobs:
           GEMINI_MODEL: gemini-flash-latest
         run: |
           python3 .github/scripts/generate_firmware_release_notes.py \
-            --name 'ZBT-Z8803BE Mega Edition — locally built firmware' \
+            --name 'OpenWrt Mega Edition — locally built firmware' \
             --evidence "$RUNNER_TEMP/zbt-local-release/evidence.txt" \
             --output "$RUNNER_TEMP/zbt-local-release/ai-notes.md"
 

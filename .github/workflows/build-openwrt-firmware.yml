@@ -202,7 +202,7 @@ jobs:
             range="$base..$GITHUB_SHA"
           fi
           {
-            echo "Build: ZBT-Z8803BE Mega Edition"
+            echo "Build: OpenWrt Mega Edition"
             echo "Pinned base: Far5eer $OPENWRT_GIT_REF / Linux 6.12.74"
             echo "Changed files:"
             git diff --find-renames --name-status "$range" -- firmware README.md
@@ -225,7 +225,7 @@ jobs:
           ai_notes="$RUNNER_TEMP/ai-notes.md"
           final_notes="$RUNNER_TEMP/release-notes.md"
           python3 .github/scripts/generate_firmware_release_notes.py \
-            --name 'ZBT-Z8803BE Mega Edition' --evidence "$EVIDENCE" --output "$ai_notes"
+            --name 'OpenWrt Mega Edition' --evidence "$EVIDENCE" --output "$ai_notes"
           {
             printf '<!-- source-sha: %s -->\n\n' "$GITHUB_SHA"
             cat "$ai_notes"
@@ -249,7 +249,7 @@ jobs:
           tag="$MEGA_RELEASE_VERSION"
           gh release create "$tag" artifacts/release-assets/* \
             --target "$GITHUB_SHA" \
-            --title "ZBT-Z8803BE Mega Edition ${MEGA_RELEASE_VERSION}" \
+            --title "OpenWrt Mega Edition — ${MEGA_RELEASE_VERSION}" \
             --notes-file "$NOTES_FILE" --latest
 
       - name: Upload validated firmware

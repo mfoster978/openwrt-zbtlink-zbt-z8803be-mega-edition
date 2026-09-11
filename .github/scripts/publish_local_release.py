@@ -405,7 +405,7 @@ def finalize(api, root, folder, repository, tag, source_sha):
     if not valid_notes(ai):
         raise ValueError("Expected bounded release notes from the trusted Gemini generator")
     notes = (f"<!-- source-sha: {source_sha} -->\n\n" + ai.strip() + "\n\n## Build provenance\n\n"
-             f"- Edition: ZBT-Z8803BE {REPOSITORIES[repository][2]}; release `{tag}`.\n"
+             f"- Edition: OpenWrt {REPOSITORIES[repository][2]} Edition for ZBT-Z8803BE; release `{tag}`.\n"
              "- Firmware was compiled on the maintainer's local server. This Actions workflow only validated uploaded assets, generated release notes and published the draft.\n"
              "- Base: Far5eer `v25.12.021`, Linux `6.12.74`; target ZBT-Link ZBT-Z8803BE.\n"
              "- Repository changes describe intended behavior, not hardware-test certification. This publication workflow did not flash or operate a router.\n"
