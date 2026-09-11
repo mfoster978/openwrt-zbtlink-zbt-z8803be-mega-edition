@@ -83,7 +83,7 @@ curl -sS --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1/cgi-bin/
 printf 'luci_https_status='
 curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/cgi-bin/luci/
 printf 'speedify_installer_done=%s\n' "$([ -f /etc/speedify.installed ] && echo yes || echo no)"
-printf 'speedify_unauthenticated_http_status='
+printf 'speedify_http_redirect_status='
 curl -sS --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1/luci-app-speedify/view/index.html
 printf 'speedify_unauthenticated_https_status='
 # Self-signed local health probe only. Upstream HTTPS downloads stay verified.
@@ -115,4 +115,6 @@ iw dev 2>/dev/null || true
 bridge link show 2>/dev/null || true
 ubus list 'hostapd.*' 2>/dev/null || true
 logread 2>/dev/null | grep -Ei 'mld|mlo|AP-ENABLED|too many open files|not supported' | tail -n 120
+printf '%s\n' 'mac80211 peer-link objects (two or more link-* entries are required for an active multi-link peer)'
+find /sys/kernel/debug/ieee80211 -type d -path '*/stations/*/link-*' -print 2>/dev/null || true
 printf '\n%s\n' 'Compare AT registration/band readbacks separately in the selected modem AT Debug tab; do not publish SIM identifiers.'

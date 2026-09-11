@@ -1,0 +1,17 @@
+# Speedify's embedded application uses authenticated WebSockets and browser
+# secure-context features. Keep ordinary LuCI available on LAN HTTP, but move
+# only the Speedify outer page and its private application endpoints to HTTPS.
+#
+# This file is included inside nginx's _lan server by conf.d/*.locations. The
+# two guarded assignments form "hs" only for an HTTP Speedify request;
+# HTTPS requests therefore cannot enter a redirect loop.
+set $zbt_speedify_https "";
+if ($scheme = http) {
+	set $zbt_speedify_https h;
+}
+if ($request_uri ~ "^(?:/cgi-bin/luci/(?:[^/?]+/)*speedify(?:[/?]|$)|/luci-app-speedify(?:[/?]|$))") {
+	set $zbt_speedify_https "${zbt_speedify_https}s";
+}
+if ($zbt_speedify_https = hs) {
+	return 307 https://$host$request_uri;
+}

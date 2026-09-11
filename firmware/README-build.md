@@ -43,6 +43,7 @@ docker run --rm -it \
 ```
 ## Notes
 
+- `patches/hostapd-mlo-interoperability.patch` is applied after OpenWrt's hostapd patch queue and backports a bounded set of upstream AP-MLD advertisement, reassociation, interface-reuse, and reload fixes. It keeps the pinned hostapd source version and adds no key-material logging.
 - The watchdog is safe-defaulted to off: `modem_watchdog.global.enabled=0` and `actions_enabled=0`.
 - Prefer-fastest/failover options are exposed in LuCI but disabled by default.
 - Both modem slots are default-on at first boot. QModem and mwan3 use stable internal names `4_1` and `2_1`; the UI displays editable **Modem 1** / **Modem 2** labels independently. Physical USB paths, not enumeration-dependent `wwan` or `ttyUSB` numbers, determine modem identity. The Far5eer `5g2` power setting is enabled once; later operator changes and SIM selections are preserved.
@@ -58,7 +59,7 @@ docker run --rm -it \
 - Failover and load-balancing support is baked in via `mwan3`, `luci-app-mwan3`, and first-boot defaults in `firmware/files/etc/uci-defaults/95-mwan3-defaults`.
 - VPN support is baked in via `tailscale`, `luci-app-tailscale`, `openvpn-openssl`, and `luci-app-openvpn`.
 - Required tunnel/kernel support is baked in via OpenWrt's `CONFIG_PACKAGE_kmod-tun=y` selector (`firmware/profiles/kconfig-fragment.conf`).
-- Speedify LuCI support defaults on and uses its required `luci-nginx` and `python3-light` packages. Set `speedify_bootstrap.main.install_luci=0` before installation to skip the proprietary UI and install Speedify core only. The installer retains nginx and the authenticated Speedify proxy when a service health check fails; it does not fall back to a web server that cannot serve the vendor UI. Existing packages are not repeatedly reinstalled, avoiding repeated vendor network setup. Completion still requires service and web health checks; a visible menu is not proof the VPN daemon is healthy.
+- Speedify LuCI support defaults on and uses its required `luci-nginx` and `python3-light` packages. Set `speedify_bootstrap.main.install_luci=0` before installation to skip the proprietary UI and install Speedify core only. Ordinary LuCI remains available over LAN HTTP, while a dedicated nginx rule redirects only Speedify pages and endpoints to HTTPS for its WebSocket/secure-context requirements. The installer retains nginx and the authenticated Speedify proxy when a service health check fails; it does not fall back to a web server that cannot serve the vendor UI. Existing packages are not repeatedly reinstalled, avoiding repeated vendor network setup. Completion still requires service and web health checks; a visible menu is not proof the VPN daemon is healthy.
 - OpenMPTCProuter is intentionally not offered as a package toggle here. It is a separate firmware distribution with a companion server stack; adding a subset of its feed packages would not turn Mega Edition into a supported OpenMPTCProuter build.
 - To produce a remote Docker environment, run the same container on a remote Docker host (or CI runner) and mount both your OpenWrt source tree and this repository into `/workspace`.
 ## Changes in this build stream

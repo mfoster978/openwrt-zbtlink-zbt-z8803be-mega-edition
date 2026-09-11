@@ -35,6 +35,14 @@ done < <(rg --files firmware/files firmware/feeds)
 
 test -s firmware/patches/luci-app-mlo-shared-iface.patch
 grep -Fq 'writeCommon(mldIface, selectedDevices);' firmware/patches/luci-app-mlo-shared-iface.patch
+hostapd_mlo_patch=firmware/patches/hostapd-mlo-interoperability.patch
+test -s "$hostapd_mlo_patch"
+grep -Fq 'AP MLD: Clear reserved fields in EML capability for AP MLD' "$hostapd_mlo_patch"
+grep -Fq 'nl80211: Avoid bogus ENFILE with use_existing' "$hostapd_mlo_patch"
+grep -Fq 'hostapd_remove_hapd_iface' "$hostapd_mlo_patch"
+grep -Fq 'ap_sta_free_sta_profile(info);' "$hostapd_mlo_patch"
+grep -Fq 'hostapd_mlo_patch_target=package/network/services/hostapd/patches/804-zbt-mlo-interoperability.patch' \
+  firmware/docker/build-openwrt.sh
 test -s firmware/patches/luci-app-mwan3-route-metric.patch
 grep -Fq "uci.set('network', section_id, 'metric', value);" \
   firmware/patches/luci-app-mwan3-route-metric.patch
@@ -79,6 +87,13 @@ grep -Fq "http://127.0.0.1/luci-app-speedify/view/index.html" \
   firmware/files/usr/sbin/speedify-installer-loop
 grep -Fq "https://127.0.0.1/luci-app-speedify/view/index.html" \
   firmware/files/usr/sbin/speedify-installer-loop
+grep -Fq '[ "$http_status" = 307 ]' firmware/files/usr/sbin/speedify-installer-loop
+grep -Fq 'return 307 https://$host$request_uri;' \
+  firmware/files/etc/nginx/conf.d/zbt-speedify-https.locations
+grep -Fq 'if ($scheme = http)' \
+  firmware/files/etc/nginx/conf.d/zbt-speedify-https.locations
+grep -Fq '/cgi-bin/luci/(?:[^/?]+/)*speedify' \
+  firmware/files/etc/nginx/conf.d/zbt-speedify-https.locations
 
 # MWAN3 owns route selection; QModem preserves stable interfaces and consumes
 # their network metrics instead of deleting or overwriting them on redial.

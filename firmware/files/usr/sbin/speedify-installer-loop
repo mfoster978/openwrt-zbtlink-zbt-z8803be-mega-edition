@@ -76,10 +76,11 @@ luci_healthy() {
 		2??|3??) ;;
 		*) return 1 ;;
 	esac
-	# The protected entry point must challenge an unauthenticated request.
+	# Speedify requires HTTPS. HTTP must redirect only this application while
+	# the protected HTTPS entry point challenges an unauthenticated request.
 	# 404 means the nginx locations were not included; 502 means proxy down.
 	http_status="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/luci-app-speedify/view/index.html 2>/dev/null || true)"
-	[ "$http_status" = 401 ] || return 1
+	[ "$http_status" = 307 ] || return 1
 	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' https://127.0.0.1/luci-app-speedify/view/index.html 2>/dev/null || true)"
 	[ "$http_status" = 401 ]
 }

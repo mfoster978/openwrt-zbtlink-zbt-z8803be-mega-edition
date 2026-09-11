@@ -249,7 +249,7 @@ test('speed sample errors are not fabricated zero-speed successes', () => {
   assert.equal(rejected.calls, '');
 });
 
-test('Speedify health requires the authenticated nginx route on HTTP and HTTPS', () => {
+test('Speedify health requires an HTTP-to-HTTPS application redirect and authenticated HTTPS route', () => {
   const installer = source('firmware/files/usr/sbin/speedify-installer-loop').split('\n[ "$(cat /etc/apk/arch')[0]
     .replace('\t[ -S /var/run/luci-webui.socket ] || return 1', '\t: # fixture models an available uWSGI socket');
   const mocks = `
@@ -265,11 +265,15 @@ curl() {
 luci_healthy && echo healthy || echo unhealthy
 `;
   assert.equal(shell('uci() { echo 1; }\n' + installer + mocks,
-    { HTTP_UI_CODE: '401', HTTPS_UI_CODE: '401' }), 'healthy');
-  for (const [http, https] of [['404', '401'], ['502', '401'], ['401', '404'], ['401', '502']])
+    { HTTP_UI_CODE: '307', HTTPS_UI_CODE: '401' }), 'healthy');
+  for (const [http, https] of [['404', '401'], ['502', '401'], ['401', '401'], ['307', '404'], ['307', '502']])
     assert.equal(shell('uci() { echo 1; }\n' + installer + mocks,
       { HTTP_UI_CODE: http, HTTPS_UI_CODE: https }), 'unhealthy');
   assert.doesNotMatch(installer, /restore_uhttpd/);
+  const redirect = file('firmware/files/etc/nginx/conf.d/zbt-speedify-https.locations');
+  assert.match(redirect, /return 307 https:\/\/\$host\$request_uri/);
+  assert.ok(redirect.includes('/cgi-bin/luci/(?:[^/?]+/)*speedify'));
+  assert.match(redirect, /\/luci-app-speedify/);
   const runtimeLoop = file('firmware/files/usr/sbin/speedify-installer-loop').split('while :; do')[1];
   const installedBranch = runtimeLoop.split('if packages_complete; then')[1].split('\n\tfi')[0];
   assert.doesNotMatch(installedBranch, /install_bundle|download_bundle/);

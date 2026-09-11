@@ -18,20 +18,42 @@ done
 # Wait for Python to bind its socket, not just for nginx to accept requests.
 i=0
 while :; do
-  code=$(curl -s -o /tmp/test-response -w '%{http_code}' http://127.0.0.1:8080/luci-app-speedify/view/index.html)
+  code=$(curl -ks -o /tmp/test-response -w '%{http_code}' https://127.0.0.1:8443/luci-app-speedify/view/index.html)
   [ "$code" != 502 ] && break
   i=$((i+1)); [ "$i" -lt 20 ]; sleep 0.2
 done
 [ "$code" = 401 ]
-for base in http://127.0.0.1:8080 https://127.0.0.1:8443; do
-  curl_flags='-s'
-  case "$base" in https:*) curl_flags='-ks' ;; esac
-  code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' "$base/luci-app-speedify/view/index.html")
-  [ "$code" = 401 ]
-  code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' -H 'Cookie: sfy-session=zbtTestAdminSession' "$base/luci-app-speedify/view/index.html")
-  [ "$code" = 200 ]
-  grep -qi '<html' /tmp/test-response
-  code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' -H 'Cookie: sfy-session=invalidSession' "$base/luci-app-speedify/view/index.html")
-  [ "$code" = 401 ]
+
+# HTTP LuCI remains usable, but every Speedify entry point moves to HTTPS.
+code=$(curl -s -D /tmp/test-headers -o /tmp/test-response -w '%{http_code}' \
+  http://127.0.0.1:8080/cgi-bin/luci/admin/speedify)
+[ "$code" = 307 ]
+grep -qi '^Location: https://127.0.0.1/cgi-bin/luci/admin/speedify' /tmp/test-headers
+code=$(curl -s -D /tmp/test-headers -o /tmp/test-response -w '%{http_code}' \
+  http://127.0.0.1:8080/luci-app-speedify/view/index.html)
+[ "$code" = 307 ]
+grep -qi '^Location: https://127.0.0.1/luci-app-speedify/view/index.html' /tmp/test-headers
+code=$(curl -s -o /tmp/test-response -w '%{http_code}' http://127.0.0.1:8080/cgi-bin/luci/admin/system)
+[ "$code" = 200 ]
+
+base=https://127.0.0.1:8443
+curl_flags='-ks'
+code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' "$base/cgi-bin/luci/admin/speedify")
+[ "$code" = 200 ]
+for token in missing valid invalid; do
+  cookie=''
+  [ "$token" = valid ] && cookie='sfy-session=zbtTestAdminSession'
+  [ "$token" = invalid ] && cookie='sfy-session=invalidSession'
+  if [ -n "$cookie" ]; then
+    code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' -H "Cookie: $cookie" "$base/luci-app-speedify/view/index.html")
+  else
+    code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' "$base/luci-app-speedify/view/index.html")
+  fi
+  if [ "$token" = valid ]; then
+    [ "$code" = 200 ]
+    grep -qi '<html' /tmp/test-response
+  else
+    [ "$code" = 401 ]
+  fi
 done
-printf '%s\n' 'Speedify nginx/proxy integration: HTTP+HTTPS authenticated index=200; missing/invalid session=401; LuCI fixture remains reachable'
+printf '%s\n' 'Speedify nginx/proxy integration: HTTP Speedify=307 to HTTPS; HTTPS auth and ordinary HTTP LuCI remain healthy'

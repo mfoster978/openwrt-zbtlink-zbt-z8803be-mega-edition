@@ -106,6 +106,15 @@ grep -Eq 'writeCommon\(mldIface,[[:space:]]*selectedDevices\);' \
   package/luci-app-mlo/htdocs/luci-static/resources/view/mlo/main.js || {
   echo 'MLO page did not retain the shared multi-radio writer' >&2; exit 3;
 }
+# Keep the pinned hostapd release while applying the reviewed upstream AP-MLD
+# interoperability and reload fixes after OpenWrt's existing package patches.
+# This avoids an unbounded hostapd upgrade while correcting the actual MLE and
+# reused-interface paths exercised by the three-radio Z8803BE MLD.
+hostapd_mlo_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/hostapd-mlo-interoperability.patch"
+hostapd_mlo_patch_target=package/network/services/hostapd/patches/804-zbt-mlo-interoperability.patch
+if ! cmp -s "$hostapd_mlo_patch" "$hostapd_mlo_patch_target"; then
+  cp "$hostapd_mlo_patch" "$hostapd_mlo_patch_target"
+fi
 # Add LED callbacks to the pinned MT7988 Ethernet PHY driver before the kernel
 # is prepared. The kernel version, modem drivers and power/SIM pins stay pinned.
 kernel_led_patch="$(dirname "${FILES_OVERLAY_DIR}")/kernel-patches/753-net-phy-mediatek-mt7988-led-control.patch"
@@ -210,6 +219,7 @@ make defconfig
 make package/feeds/qmodem/qmodem/clean
 make package/feeds/qmodem/luci-app-qmodem-next/clean
 make package/luci-app-mlo/clean
+make package/network/services/hostapd/clean
 make package/feeds/luci/luci-app-mwan3/clean
 make package/firmware/wireless-regdb/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
@@ -336,6 +346,7 @@ required_overlay_files=(
   etc/uci-defaults/95-mwan3-defaults
   etc/uci-defaults/99-cellular-multiwan-defaults
   etc/uci-defaults/99-speedify-bootstrap
+  etc/nginx/conf.d/zbt-speedify-https.locations
   etc/init.d/speedify-installer
   etc/init.d/zbt-luci-backend
   usr/sbin/speedify-installer-loop

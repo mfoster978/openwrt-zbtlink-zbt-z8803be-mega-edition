@@ -99,6 +99,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - Device-specific ZBT-Z8803BE support from the pinned Far5eer release.
 - MediaTek Filogic 880 platform with MT7996-family tri-band Wi-Fi 7 support.
 - 2.4 GHz, 5 GHz, and 6 GHz operation, including the upstream opt-in Wi-Fi 7 MLO interface.
+- The pinned hostapd receives focused upstream AP-MLD interoperability fixes: correct partner-profile length accounting, per-link BSS change counters, valid EML capability fields, clean reassociation state, and reliable MLD reload/interface reuse. It also records key-free requested/accepted link bitmaps in `logread` so single-link negotiation can be distinguished from a link lost later in the stack.
 - SFP+, copper Ethernet, USB 3.0, ext4, vfat, exfat, block mounting, and SFTP support inherited from the baseline.
 - ZBT temperature charts, health monitoring, fan information, modem LED services, event history, and device-specific LuCI styling inherited from the baseline.
 - Mainline OpenWrt base without requiring a MediaTek vendor firmware feed.
@@ -505,11 +506,11 @@ nginx -t
 logread -e speedify-installer
 ```
 
-Without a login session, the protected Speedify index should return **401** over both HTTP and HTTPS, not 404 or 502. The upgrade migration repairs older preserved nginx configurations so the HTTP LuCI server includes the same authenticated Speedify routes as HTTPS. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
+Clicking Speedify from an HTTP LuCI session now returns a Speedify-only **307 redirect to HTTPS**; ordinary LuCI pages remain available over HTTP. Without a login session, the protected HTTPS Speedify index should return **401**, not 404 or 502. This is required because the embedded application uses authenticated WebSockets and browser secure-context features. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
 
 ### HTTPS warning on the router's private IP address
 
-Use `http://192.168.1.1` for the default warning-free LAN login. HTTPS remains available at `https://192.168.1.1`, but its per-router self-signed certificate cannot be trusted automatically by a public browser and will show a warning until you install a trusted local CA or a certificate for a hostname you control. HTTP is restricted to the local router interface but is not encrypted, so use HTTPS with a trusted certificate on untrusted LANs. This setting never disables certificate verification for firmware or package downloads.
+Use `http://192.168.1.1` for the default warning-free LAN login. Speedify is the exception: selecting it redirects that page to HTTPS because its embedded application requires a secure context. HTTPS uses a per-router self-signed certificate and will show a warning until you install a trusted local CA or a certificate for a hostname you control. HTTP is restricted to the local router interface but is not encrypted, so use HTTPS with a trusted certificate on untrusted LANs. This setting never disables certificate verification for firmware or package downloads.
 
 ## Support and sponsorship
 
