@@ -308,6 +308,8 @@ required_config_flags=(
   "CONFIG_PACKAGE_libimobiledevice-utils=y"
   "CONFIG_PACKAGE_usbutils=y"
   "CONFIG_PACKAGE_block-mount=y"
+  "CONFIG_PACKAGE_e2fsprogs=y"
+  "CONFIG_PACKAGE_parted=y"
   "CONFIG_PACKAGE_kmod-usb-storage=y"
   "CONFIG_PACKAGE_kmod-usb-storage-uas=y"
   "CONFIG_PACKAGE_kmod-fs-ext4=y"
@@ -353,7 +355,7 @@ required_image_packages=(
   iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra
   iptables-mod-conntrack-extra luci-nginx python3-light
   kmod-usb-net-cdc-ether kmod-usb-net-rndis kmod-usb-net-ipheth
-  usbmuxd libimobiledevice-utils usbutils block-mount
+  usbmuxd libimobiledevice-utils usbutils block-mount e2fsprogs parted
   kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-exfat
   kmod-fs-vfat kmod-nls-utf8 ksmbd-server luci-app-ksmbd
   usbip usbip-client usbip-server kmod-usbip kmod-usbip-client

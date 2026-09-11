@@ -70,7 +70,7 @@ The board target, Linux version, Wi-Fi and modem-driver sources remain pinned to
 | Running two cellular modems | Review [Dual-modem layout](#dual-modem-layout) and [Default routing behavior](#default-routing-behavior) before inserting or power-cycling modules. |
 | Using wired WAN with cellular backup | The default `mwan3` policy prioritizes SFP, then copper WAN, USB tethering, modem 1, and modem 2. |
 | Looking for connection bonding | Read [Speedify](#speedify) and [OpenMPTCProuter](#openmptcprouter) before choosing an architecture. |
-| Connecting a phone, disk, SMB share, or USB/IP device | Start with [USB tethering, storage and sharing](#usb-tethering-storage-and-sharing), then use the [complete setup and safety guide](firmware/docs/usb-tethering-storage-sharing.md). |
+| Connecting a phone, network drive, extroot disk, SMB share, or USB/IP device | Start with [USB tethering, storage and sharing](#usb-tethering-storage-and-sharing), then use the [complete setup and safety guide](firmware/docs/usb-tethering-storage-sharing.md). |
 | Developing or auditing the firmware | Use [Build it yourself](#build-it-yourself), then inspect the resolved config, package manifest, checksums, and runtime verifier. |
 
 ## Your router, your features
@@ -89,7 +89,7 @@ Mega Edition combines a wide selection of add-on packages with custom-developed 
 | Speedify | Dependencies are baked in and its first-online installer is enabled. Bonding still requires your own account and setup; no credentials are preconfigured. |
 | Tailscale and OpenVPN | Available for your own account/tunnel configuration; no user VPN connection is preconfigured. |
 | Android/iPhone USB tethering | Drivers and Apple pairing tools are ready; a supported phone binds to `usb_tether` after owner-side tethering/Trust setup. |
-| USB storage, SMB shares, and USB over IP | Storage drivers are ready. Mounts, the KSMBD server, and the USB/IP server are not activated until the owner configures/enables them. |
+| USB storage, extroot, SMB shares, and USB over IP | Storage, ext4 formatting, and external-overlay tools are ready. Mounts, the KSMBD server, and the USB/IP server are not activated until the owner configures/enables them. |
 | Firmware updates and downgrades | Explicitly requested and confirmed by you; no unattended flashing. |
 | Root administrator password | A clean install starts without a shared factory password and requires root to set one at the first local LuCI login. An upgrade keeps the existing password. |
 
@@ -162,10 +162,11 @@ These capabilities are **Mega-only**. Nothing is silently shared. A supported at
 | Android USB tethering | Enable tethering on a data-capable cable; supported RNDIS/CDC Ethernet devices bind to `usb_tether`. | DHCP/MultiWAN is prepared automatically at route metric 100; confirm the device and carrier behavior before relying on it. |
 | iPhone/iPad tethering | Enable Personal Hotspot, accept Trust and pair when required; `ipheth` binds to `usb_tether`. | `usbmuxd` and `libimobiledevice` tools are present; Apple/carrier behavior still depends on the device and account. |
 | USB storage | Open **Services → USB Storage**, which links to OpenWrt's Mount Points page. | Mass-storage/UAS and ext4, exFAT, and FAT support are included. Media is neither auto-mounted into an unsafe guessed path nor automatically shared. |
+| Expand writable storage with extroot | Prepare a dedicated ext4 partition, copy the current writable overlay, and configure it by UUID using the documented SSH procedure. | `block-mount`, `e2fsprogs`, `parted`, USB/UAS, and ext4 support are built in. This can provide room for larger compatible applications such as AdGuard Home, but it does not add RAM/CPU or enlarge the physical NAND. |
 | SMB file sharing | Mount the filesystem first, then use **Services → Network Shares**. | KSMBD has an explicit **Enable server** switch that defaults off. Configure paths, users/guest policy, and trusted listening interfaces before enabling it. |
 | USB over IP | Configure `/etc/config/usbipd`, then use the `usbip`/`usbipd` command-line tools to bind, export, list, or attach devices. | The server defaults off. The pinned feeds have no USB/IP LuCI app, and the service must never be exposed directly to an untrusted WAN. |
 
-Storage and exported devices can contain sensitive data. Use adequate USB power, stable mount paths, restrictive firewall rules, and backups. See the [USB tethering, storage, KSMBD and USB/IP guide](firmware/docs/usb-tethering-storage-sharing.md) for setup order, checks, limitations, and rollback steps.
+Extroot uses the USB drive as part of the running operating system: use reliable powered media, never unplug it while active, and keep a current backup and recovery path. Storage and exported devices can contain sensitive data. Use stable UUID-based mounts and restrictive firewall rules. See the [USB tethering, storage, extroot, KSMBD and USB/IP guide](firmware/docs/usb-tethering-storage-sharing.md) for setup order, checks, limitations, and rollback steps, and compare it with the [official OpenWrt extroot guide](https://openwrt.org/docs/guide-user/additional-software/extroot_configuration) before changing a disk.
 
 ### Build integrity and safety
 

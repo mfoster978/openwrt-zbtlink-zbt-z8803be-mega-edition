@@ -93,7 +93,7 @@ renderAbout();
     assert.equal(await page.locator('.zma-speedify-video img[loading="lazy"][referrerpolicy="no-referrer"]').count(), 1);
     assert.equal(await page.getByRole('link', { name: 'Pair & Share | Peer-to-Peer Cellular Bonding | Speedify', exact: true }).getAttribute('href'), 'https://speedify.com/enterprise/pair-and-share-cellular-connection-pooling/?wvideo=lrxei2q3dw');
     await page.getByRole('tab', { name: 'USB & Sharing', exact: true }).click();
-    assert.match(await page.locator('#zma-usb').innerText(), /nothing is silently shared[\s\S]*Android & iPhone tethering[\s\S]*KSMBD network shares[\s\S]*USB over IP/i);
+    assert.match(await page.locator('#zma-usb').innerText(), /nothing is silently shared[\s\S]*Android & iPhone tethering[\s\S]*USB storage & network drives[\s\S]*Expand OpenWrt with extroot[\s\S]*AdGuard Home[\s\S]*KSMBD network shares[\s\S]*USB over IP/i);
     assert.equal(await page.getByRole('link', { name: 'Open Network Interfaces', exact: true }).getAttribute('href'), '/cgi-bin/luci/admin/network/network');
     assert.equal(await page.getByRole('link', { name: 'Open USB Storage', exact: true }).getAttribute('href'), '/cgi-bin/luci/admin/services/usb-storage');
     assert.equal(await page.getByRole('link', { name: 'Open Network Shares', exact: true }).getAttribute('href'), '/cgi-bin/luci/admin/services/ksmbd');

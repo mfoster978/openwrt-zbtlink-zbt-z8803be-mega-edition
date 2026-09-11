@@ -159,6 +159,9 @@ grep -Fq 'admin/system/mounts' firmware/files/usr/share/luci/menu.d/zbt-usb-serv
 test -s firmware/docs/usb-tethering-storage-sharing.md
 grep -Fq "['usb', _('USB & Sharing')" firmware/files/www/luci-static/resources/view/zbt8803be/about.js
 grep -Fq 'Safe starting point: nothing is silently shared.' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
+grep -Fq 'Expand OpenWrt with extroot' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
+grep -Fq 'AdGuard Home' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
+grep -Fq 'Expand writable storage with extroot' README.md
 grep -Fq 'KSMBD has an explicit **Enable server** switch that defaults off.' README.md
 
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
@@ -182,7 +185,7 @@ grep -qx 'zbt-firmware-updater' firmware/profiles/packages-default.txt
 
 mega_usb_packages=(
   kmod-usb-net-cdc-ether kmod-usb-net-rndis kmod-usb-net-ipheth
-  usbmuxd libimobiledevice-utils usbutils block-mount
+  usbmuxd libimobiledevice-utils usbutils block-mount e2fsprogs parted
   kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-exfat
   kmod-fs-vfat kmod-nls-utf8 ksmbd-server luci-app-ksmbd
   usbip usbip-client usbip-server kmod-usbip kmod-usbip-client

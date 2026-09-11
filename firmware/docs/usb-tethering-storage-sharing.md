@@ -9,6 +9,7 @@ These features are included only in ZBT-Z8803BE Mega Edition. Supported Android/
 | Android RNDIS/CDC Ethernet drivers | Yes | Binds to `usb_tether`; DHCP/MultiWAN activates when the device appears |
 | Apple `ipheth`, `usbmuxd`, and pairing utilities | Yes | After Trust/pairing, `ipheth` binds to `usb_tether` |
 | USB mass-storage/UAS and ext4, exFAT, FAT support | Yes | No network share is created |
+| Ext4 formatting, partitioning, and extroot tools | Yes | No disk is erased and internal overlay remains in use |
 | KSMBD server and LuCI application | Yes | No — `enabled=0` |
 | USB/IP client, server, and kernel support | Yes | No — `usbipd` has `enable=0` |
 
@@ -45,6 +46,40 @@ Trust, pairing, hotspot entitlement, and reconnect behavior are controlled partl
 5. Only after the mount is reliable should an application or SMB share depend on that path.
 
 Unmount removable media before unplugging it. Filesystem support does not provide a backup, encryption, RAID, or protection from sudden power loss.
+
+### Turn a mounted disk into a network drive
+
+A normal storage mount and an extroot drive serve different purposes. For a network drive, keep the filesystem mounted under a path such as `/mnt/storage`, then publish only the intended folder with **Services → Network Shares**. KSMBD remains disabled until the owner enables it. Do not configure that same partition as extroot, and do not expose SMB to a WAN or public-hotspot firewall zone.
+
+## Expand writable package space with extroot
+
+OpenWrt extroot places the writable overlay on an external Linux filesystem. It can provide substantially more room for compatible packages such as AdGuard Home, databases, or additional monitoring tools. It does **not** enlarge the physical NAND, add RAM, or make the CPU faster. Application support and memory requirements still have to be checked separately.
+
+Mega includes the standard prerequisites in the image: `block-mount`, `e2fsprogs`, `parted`, USB/UAS storage support, and the ext4 kernel driver. No automatic wizard formats a disk or changes the boot overlay because choosing the wrong device would destroy data and could make the router fail to boot normally.
+
+Before changing extroot:
+
+- download a current router configuration backup and keep the matching sysupgrade/recovery image;
+- use a reliable SSD or high-quality flash device with adequate USB power;
+- disconnect every USB storage device except the intended extroot disk;
+- record `block info`, `ls -l /sys/block`, `mount`, and `df -h` before making changes;
+- never assume that a device is `/dev/sda` based on an example;
+- do not use FAT or exFAT for extroot; use a dedicated ext4 partition;
+- expect settings installed only on the external overlay to be unavailable if that drive is removed.
+
+Follow the [official OpenWrt extroot procedure](https://openwrt.org/docs/guide-user/additional-software/extroot_configuration) from an SSH or serial session. In outline, the owner must identify the exact disk, create a dedicated partition if needed, format that partition as ext4, configure an `fstab` mount by UUID for the current overlay target, copy the existing overlay contents, and reboot. Partitioning and `mkfs.ext4` erase data; inspect the resolved device immediately before either command.
+
+After reboot, do not install a large application until all of these checks pass:
+
+```sh
+block info
+uci show fstab
+grep -e '/overlay' /etc/mtab
+df -h / /overlay
+logread | sed -n -e '/- preinit -/,/- init -/p'
+```
+
+The USB partition should be mounted at `/overlay`, and `/` should report the external filesystem's available space. Reboot once more and repeat the checks. Only then install larger packages. If extroot does not mount, stop and diagnose the preinit log rather than reformatting or repeatedly changing UUIDs. The internal overlay is a recovery path, but it can contain older configuration, so maintain deliberate backups of both states.
 
 ## KSMBD network shares
 
@@ -88,7 +123,7 @@ block info
 mount
 uci show ksmbd
 uci show usbipd
-logread | grep -Ei 'usb|rndis|cdc_ether|ipheth|usbmux|storage|uas|ksmbd|usbip'
+logread | grep -Ei 'usb|rndis|cdc_ether|ipheth|usbmux|storage|uas|extroot|overlay|ksmbd|usbip'
 ```
 
 If an attached phone unexpectedly affects Internet selection, remove its logical interface from MultiWAN and inspect route metrics with `ip route`; do not change the stable `4_1` and `2_1` modem identities. If sharing behaves unexpectedly, disable KSMBD or USB/IP first, verify that the backing device is still present, and then correct the mount, interface, or firewall configuration.

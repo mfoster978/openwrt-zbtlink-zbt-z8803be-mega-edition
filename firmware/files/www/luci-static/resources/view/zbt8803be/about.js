@@ -41,6 +41,7 @@ function icon(kind) {
 		light: ['M8 15a6 6 0 1 1 8 0l-1 3H9Z', 'M9 21h6M12 1v1M2 8h2m16 0h2'],
 		chip: ['M6 6h12v12H6Z', 'M9 1v5m6-5v5M9 18v5m6-5v5M1 9h5m-5 6h5m12-6h5m-5 6h5'],
 		box: ['m3 7 9-4 9 4v10l-9 4-9-4Z', 'm3 7 9 4 9-4M12 11v10'],
+		layers: ['m3 7 9-4 9 4-9 4Z', 'm3 12 9 4 9-4', 'm3 17 9 4 9-4'],
 		heart: ['M12 21 3 12C-2 4 8 0 12 7c4-7 14-3 9 5Z'],
 		arrow: ['M5 12h14m-6-6 6 6-6 6']
 	};
@@ -257,7 +258,7 @@ return view.extend({
 					feature('chip', 'A device-specific foundation.', 'Far5eer baseline', 'This is an OpenWrt build for the ZBTLink ZBT-Z8803BE—not a universal image for other routers.', [
 						'MediaTek MT7988A / Filogic 880, MT7996-family tri-band Wi-Fi 7, SFP+ and copper Ethernet board support come from the pinned upstream platform.',
 						'2.4 GHz, 5 GHz and 6 GHz default to the US domain. Power stays automatic on 2.4/5 GHz so regulatory and EEPROM limits remain authoritative; mobile 6 GHz uses the 14 dBm VLP class. Other countries must select their own domain, and 6 GHz still requires compliant hardware, antennas and clients.',
-						'USB storage, block mounting, ext4/FAT/exFAT, Android and iPhone tethering, opt-in SMB sharing and opt-in USB-over-IP support are included. A clean installation requires root to choose a new password on its first local LuCI login.',
+						'USB storage, block mounting, ext4/FAT/exFAT, optional extroot expansion, Android and iPhone tethering, opt-in SMB sharing and opt-in USB-over-IP support are included. A clean installation requires root to choose a new password on its first local LuCI login.',
 						'Source and package selections are pinned and checked during the build. Successful compilation is not a substitute for real hardware validation.'
 					])
 				])
@@ -289,11 +290,16 @@ return view.extend({
 						'For iPhone or iPad, enable Personal Hotspot, accept the Trust prompt and complete pairing when required. ipheth, usbmuxd and libimobiledevice utilities are included.',
 						'Supported phone devices bind to stable usb_tether automatically. It uses DHCP and sits after SFP/copper WAN but before Modem 1 and Modem 2 in the default MultiWAN failover order.'
 					], ['admin', 'network', 'network'], 'Open Network Interfaces'),
-					usbCard('box', 'USB storage & mount points', 'LOCAL STORAGE', 'Mount USB mass-storage and UAS devices with ext4, exFAT or FAT filesystems.', [
+					usbCard('box', 'USB storage & network drives', 'LOCAL STORAGE', 'Mount USB mass-storage and UAS devices with ext4, exFAT or FAT filesystems, then optionally publish selected folders as network drives.', [
 						'Use a powered hub or enclosure when a disk needs more current than the router USB port can safely provide.',
 						'Create a stable mount point and verify it after a reboot before using it for backups, applications or a network share.',
-						'Mounting a filesystem does not make it accessible to LAN clients; sharing is a separate, explicit step.'
+						'Mounting a filesystem does not make it accessible to LAN clients; KSMBD sharing is a separate, explicit step and remains off until you enable it.'
 					], ['admin', 'services', 'usb-storage'], 'Open USB Storage'),
+					usbCard('layers', 'Expand OpenWrt with extroot', 'MORE PACKAGE SPACE', 'Move the writable OpenWrt overlay to an ext4 USB drive so larger optional applications have room to install.', [
+						'Mega includes block-mount, ext4 tools and a partition editor, so the external overlay can be prepared on the router. Setup is intentionally manual because selecting or formatting the wrong device destroys data.',
+						'Extroot expands writable package space; it does not increase RAM, CPU performance or the physical internal NAND. Larger applications such as AdGuard Home must still be compatible with this OpenWrt release and available memory.',
+						'Use a reliable powered SSD or high-quality drive, back up first, copy the existing overlay, reboot, then verify /overlay and free space. Never unplug an active extroot drive.'
+					], ['admin', 'services', 'usb-storage'], 'Open Mount Points'),
 					usbCard('shield', 'KSMBD network shares', 'SMB · DEFAULT OFF', 'Share an already-mounted directory with computers on trusted networks.', [
 						'The in-kernel KSMBD server and its LuCI page are installed, but the new Enable server switch defaults off.',
 						'Configure the share path, users or guest policy, and listening interface before enabling the server.',
@@ -314,7 +320,7 @@ return view.extend({
 					packageGroup('Modem kernel support', 'Built-in USB and PCIe MHI families support compatible modem modes; listing a driver does not certify every modem model or carrier.', ['kmod-usb-net-qmi-wwan', 'kmod-usb-net-cdc-mbim', 'kmod-usb-wdm', 'kmod-usb-serial-option', 'kmod-usb-net-cdc-ncm', 'kmod-mhi-bus', 'kmod-mhi-pci-generic', 'kmod-mhi-net', 'kmod-mhi-wwan-ctrl', 'kmod-mhi-wwan-mbim']),
 					packageGroup('Routing, recovery & diagnostics', 'Normal mwan3 connectivity failover is enabled. Additional automated recovery and speed sampling require opt-in.', ['mwan3', 'luci-app-mwan3', 'luci-app-modem-watchdog', 'luci-app-speedtest-lite', 'zbt-speedtest', 'speedtest-go', 'speedtest-netperf', 'ethtool', 'jq', 'curl']),
 					packageGroup('VPN & Speedify support', 'Speedify itself is a separately downloaded, checksum-verified runtime package. These supporting components are selected in the image.', ['tailscale', 'luci-app-tailscale', 'openvpn-openssl', 'luci-app-openvpn', 'wireguard-tools', 'kmod-wireguard', 'kmod-tun', 'libstdcpp', 'libkeyutils', 'libatomic', 'kmod-tcp-bbr', 'kmod-nft-tproxy', 'iptables-nft', 'iptables-mod-tproxy', 'iptables-mod-extra', 'iptables-mod-conntrack-extra']),
-					packageGroup('USB tethering, storage & sharing', 'Android and Apple USB networking drivers are ready for owner setup. Storage is configurable in LuCI; KSMBD and USB/IP servers remain disabled until explicitly enabled.', ['kmod-usb-net-cdc-ether', 'kmod-usb-net-rndis', 'kmod-usb-net-ipheth', 'usbmuxd', 'libimobiledevice-utils', 'usbutils', 'block-mount', 'kmod-usb-storage', 'kmod-usb-storage-uas', 'kmod-fs-ext4', 'kmod-fs-exfat', 'kmod-fs-vfat', 'kmod-nls-utf8', 'luci-app-ksmbd', 'ksmbd-server', 'usbip', 'usbip-client', 'usbip-server', 'kmod-usbip', 'kmod-usbip-client', 'kmod-usbip-server']),
+					packageGroup('USB tethering, storage & sharing', 'Android and Apple USB networking drivers are ready for owner setup. Storage, ext4 formatting and extroot are supported; KSMBD and USB/IP servers remain disabled until explicitly enabled.', ['kmod-usb-net-cdc-ether', 'kmod-usb-net-rndis', 'kmod-usb-net-ipheth', 'usbmuxd', 'libimobiledevice-utils', 'usbutils', 'block-mount', 'e2fsprogs', 'parted', 'kmod-usb-storage', 'kmod-usb-storage-uas', 'kmod-fs-ext4', 'kmod-fs-exfat', 'kmod-fs-vfat', 'kmod-nls-utf8', 'luci-app-ksmbd', 'ksmbd-server', 'usbip', 'usbip-client', 'usbip-server', 'kmod-usbip', 'kmod-usbip-client', 'kmod-usbip-server']),
 					packageGroup('LuCI & device dashboards', 'The board baseline and project overlays provide the local web interface, dashboards and customization controls.', ['luci', 'luci-ssl', 'luci-nginx', 'luci-app-firewall', 'luci-app-package-manager', 'luci-app-mlo', 'luci-app-zbt-about', 'luci-app-zbt-health', 'luci-app-zbt-temperature', 'luci-app-zbt-modem-events', 'python3-light', 'ca-bundle']),
 					E('div', { 'class': 'zma-package-note' }, [icon('box'), E('h3', {}, _('Need the exact package inventory?')), E('p', {}, _('These are feature highlights, not a live installed-package scan or every transitive dependency. Each release includes its package manifest and build information. Packages can differ after local changes. OpenMPTCProuter is not included: it is a separate firmware platform, not a Mega package toggle.')), external(MEGA_REPO + '/releases', _('Open release manifests ↗'), 'zma-text-link')])
 				])
