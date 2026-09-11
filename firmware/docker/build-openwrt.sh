@@ -497,7 +497,7 @@ grep -Fq 'config_get_bool enabled globals enabled 0' \
   "${rootfs_dir}/etc/init.d/ksmbd" || {
   echo 'KSMBD service lacks its disabled-by-default runtime gate' >&2; exit 4;
 }
-grep -Fq "form.Flag, 'enabled'" \
+grep -Eq "form\.Flag,[[:space:]]*'enabled'" \
   "${rootfs_dir}/www/luci-static/resources/view/ksmbd.js" || {
   echo 'KSMBD LuCI enable switch is missing from the image' >&2; exit 4;
 }
