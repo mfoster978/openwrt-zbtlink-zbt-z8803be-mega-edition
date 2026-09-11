@@ -76,6 +76,8 @@ grep -Fq -- $'-\t(5925 - 7125 @ 320), (12), NO-OUTDOOR, NO-IR' "$regdb_patch"
 grep -Fq 'regdb_patch_target=package/firmware/wireless-regdb/patches/610-us-6ghz-vlp.patch' \
   firmware/docker/build-openwrt.sh
 grep -Fq 'make package/firmware/wireless-regdb/clean' firmware/docker/build-openwrt.sh
+grep -Fq 'make package/feeds/custom_local/zbt-speedtest/clean' firmware/docker/build-openwrt.sh
+grep -Fq 'make package/feeds/custom_local/luci-app-speedtest-lite/clean' firmware/docker/build-openwrt.sh
 
 # LuCI must remain reachable over warning-free LAN HTTP while preserving the
 # optional HTTPS listener. This is a one-time migration so operator changes
