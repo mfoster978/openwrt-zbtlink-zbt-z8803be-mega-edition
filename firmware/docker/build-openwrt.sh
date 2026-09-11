@@ -280,6 +280,7 @@ make package/feeds/luci/luci-app-ksmbd/clean
 make package/feeds/iwrt_luci/luci-theme-argon/clean
 make package/feeds/custom_local/zbt-speedtest/clean
 make package/feeds/custom_local/luci-app-speedtest-lite/clean
+make package/feeds/custom_local/zbt-firmware-updater/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
