@@ -30,9 +30,10 @@ for radio in $(uci -q show wireless | sed -nE 's/^wireless\.([^.]+)=wifi-device$
 	esac
 
 	uci -q set "wireless.${radio}.country=US"
-	# 32 is the neutral third country-string octet. VLP is not restricted to
-	# the indoor-only operating environment used by US low-power indoor APs.
-	uci -q set "wireless.${radio}.country3=32"
+	# hostapd parses country3 as hexadecimal. 20 therefore emits the neutral
+	# 0x20 country-string octet; the old value 32 incorrectly emitted 0x32.
+	# VLP is not restricted to the indoor-only environment used by US LPI APs.
+	uci -q set "wireless.${radio}.country3=20"
 	uci -q delete "wireless.${radio}.txpower" 2>/dev/null
 	uci -q delete "wireless.${radio}.min_tx_power" 2>/dev/null
 
@@ -50,12 +51,9 @@ done
 uci -q commit wireless
 logger -t zbt-wifi 'applied US defaults; 2.4/5 GHz auto power and 6 GHz 14 dBm VLP ceiling'
 
-# The vendor defaults already queue a reload on a clean install. This second
-# reload is intentional for upgrades where that older script exits after it
-# sees a customized SSID.
-(
-	sleep 5
-	/sbin/wifi reload >/dev/null 2>&1
-) &
+# The vendor defaults may already queue a reload on a clean install. Defer our
+# reload long enough for that one to finish and coalesce it with the MLO repair
+# below, avoiding concurrent hostapd teardown/creation and false disabled radios.
+/usr/sbin/zbt-wifi-reload-deferred 10
 
 exit 0

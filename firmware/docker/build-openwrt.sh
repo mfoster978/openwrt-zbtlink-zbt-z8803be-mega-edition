@@ -351,7 +351,8 @@ required_overlay_files=(
   etc/init.d/zbt-luci-backend
   usr/sbin/speedify-installer-loop
   www/luci-static/resources/view/speedify/speedify.js
-  usr/share/luci/menu.d/luci-app-speedify.json
+  usr/share/luci/menu.d/zbt-speedify-launcher.json
+  www/luci-static/resources/view/speedify/launcher.js
   usr/share/rpcd/acl.d/luci-app-speedify.json
   usr/sbin/zbt-luci-backend-check
   usr/sbin/zbt-speed-sample
@@ -364,6 +365,7 @@ required_overlay_files=(
   etc/uci-defaults/49-zbt-modem-labels-leds
   etc/uci-defaults/73-zbt-us-wifi-defaults
   etc/uci-defaults/74-zbt-mlo-shared-iface-repair
+  usr/sbin/zbt-wifi-reload-deferred
   etc/uci-defaults/50-zbt-luci-web-recovery
   usr/lib/zbt/quectel-bands.sh
   usr/lib/zbt/speed-lock.sh
@@ -404,7 +406,7 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset usr/sbin/zbt-wifi-reload-deferred etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }

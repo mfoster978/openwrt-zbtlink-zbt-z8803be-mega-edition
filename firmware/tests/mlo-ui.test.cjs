@@ -65,7 +65,10 @@ test('MLO editor rewrites legacy per-band records as one shared multi-radio ifac
 
   const migration = fs.readFileSync(path.join(__dirname, '../files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair'), 'utf8');
   assert.match(migration, /add_list "wireless\.\$\{first\}\.network=lan"/);
-  assert.match(migration, /\/sbin\/wifi reload/);
+  assert.match(migration, /\/usr\/sbin\/zbt-wifi-reload-deferred 10/);
+  const deferredReload = fs.readFileSync(path.join(__dirname, '../files/usr/sbin/zbt-wifi-reload-deferred'), 'utf8');
+  assert.match(deferredReload, /mkdir "\$pending" 2>\/dev\/null \|\| exit 0/);
+  assert.match(deferredReload, /\/sbin\/wifi reload/);
   const builder = fs.readFileSync(path.join(__dirname, '../docker/build-openwrt.sh'), 'utf8');
   assert.match(builder, /make package\/luci-app-mlo\/clean/);
   assert.match(builder, /rsync -a --delete "\$\{FILES_OVERLAY_DIR\}\/?" files\//);

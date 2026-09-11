@@ -280,12 +280,21 @@ luci_healthy && echo healthy || echo unhealthy
 });
 
 test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
-  const menu = JSON.parse(file('firmware/files/usr/share/luci/menu.d/luci-app-speedify.json'))['admin/speedify'];
+  const menuTree = JSON.parse(file('firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json'));
+  const menu = menuTree['admin/speedify'];
+  const appRoute = menuTree['admin/speedify/app'];
   const acl = JSON.parse(file('firmware/files/usr/share/rpcd/acl.d/luci-app-speedify.json'))['luci-app-speedify'];
   const view = file('firmware/files/www/luci-static/resources/view/speedify/speedify.js');
-  assert.deepEqual(menu.action, { type: 'view', path: 'speedify/speedify' });
+  const launcher = file('firmware/files/www/luci-static/resources/view/speedify/launcher.js');
+  assert.deepEqual(menu.action, { type: 'view', path: 'speedify/launcher' });
+  assert.deepEqual(appRoute.action, { type: 'view', path: 'speedify/speedify' });
+  assert.equal(appRoute.firstchild_ineligible, true);
   assert.deepEqual(menu.depends.acl, ['luci-app-speedify']);
   assert.ok(acl.read.ubus['luci.speedify'].includes('read'));
+  assert.match(launcher, /L\.url\('admin\/speedify\/app'\)/);
+  assert.match(launcher, /target\.protocol = 'https:'/);
+  assert.match(launcher, /target\.port = ''/);
+  assert.match(launcher, /window\.location\.replace\(target\.href\)/);
   assert.match(view, /Finishing Speedify setup/);
   assert.doesNotMatch(view, /handleSaveApply:\s*function|fetch\(/);
   assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);

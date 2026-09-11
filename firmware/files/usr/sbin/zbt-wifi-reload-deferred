@@ -1,0 +1,30 @@
+#!/bin/sh
+# Coalesce first-boot wireless changes into one reload. The vendor defaults,
+# regulatory migration, and MLO migration can otherwise race one another while
+# hostapd is still tearing down multi-link interfaces.
+
+delay="${1:-10}"
+pending=/tmp/zbt-wifi-reload.pending
+output=/tmp/zbt-wifi-reload.log
+
+case "$delay" in
+	''|*[!0-9]*) delay=10 ;;
+esac
+
+# mkdir is the lock: only the first caller starts a worker. /tmp is recreated
+# on every boot, so an interrupted first-boot sequence cannot leave stale state.
+mkdir "$pending" 2>/dev/null || exit 0
+
+(
+	sleep "$delay"
+	if /sbin/wifi reload >"$output" 2>&1; then
+		logger -t zbt-wifi 'applied one deferred wireless reload'
+	else
+		status=$?
+		logger -p daemon.err -t zbt-wifi \
+			"wireless reload failed (status $status); diagnostics: $output"
+	fi
+	rmdir "$pending" 2>/dev/null
+) &
+
+exit 0

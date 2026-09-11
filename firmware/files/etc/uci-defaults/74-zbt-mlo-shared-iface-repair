@@ -75,11 +75,8 @@ done
 
 [ "$changed" -eq 0 ] || {
 	uci -q commit wireless
-	# On upgrades, the vendor first-boot Wi-Fi script exits early for custom
-	# SSIDs and therefore does not schedule its own reload.
-	(
-		sleep 3
-		/sbin/wifi reload >/dev/null 2>&1
-	) &
+	# Share one delayed reload with regulatory defaults. Overlapping reloads can
+	# strand an otherwise-enabled MLO link after hostapd returns -23 or -95.
+	/usr/sbin/zbt-wifi-reload-deferred 10
 }
 exit 0

@@ -1,0 +1,23 @@
+{
+  "admin/speedify": {
+    "title": "Speedify",
+    "order": 35,
+    "action": {
+      "type": "view",
+      "path": "speedify/launcher"
+    },
+    "depends": {
+      "acl": [ "luci-app-speedify" ]
+    }
+  },
+  "admin/speedify/app": {
+    "action": {
+      "type": "view",
+      "path": "speedify/speedify"
+    },
+    "depends": {
+      "acl": [ "luci-app-speedify" ]
+    },
+    "firstchild_ineligible": true
+  }
+}

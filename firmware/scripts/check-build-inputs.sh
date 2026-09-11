@@ -11,6 +11,7 @@ for script in \
   firmware/files/etc/init.d/zbt-luci-backend \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery \
   firmware/files/etc/uci-defaults/73-zbt-us-wifi-defaults \
+  firmware/files/usr/sbin/zbt-wifi-reload-deferred \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
   firmware/files/etc/uci-defaults/99-zbt-route-priority-repair \
   firmware/files/etc/uci-defaults/99-speedify-bootstrap \
@@ -56,7 +57,12 @@ grep -Fq "uci -q add_list \"wireless.\${first}.device=\${device}\"" \
 us_wifi_defaults=firmware/files/etc/uci-defaults/73-zbt-us-wifi-defaults
 grep -Fq 'wireless.${radio}.country=US' "$us_wifi_defaults"
 grep -Fq 'wireless.${radio}.reg_power_type=2' "$us_wifi_defaults"
-grep -Fq 'wireless.${radio}.country3=32' "$us_wifi_defaults"
+grep -Fq 'wireless.${radio}.country3=20' "$us_wifi_defaults"
+grep -Fq '/usr/sbin/zbt-wifi-reload-deferred 10' "$us_wifi_defaults"
+grep -Fq '/usr/sbin/zbt-wifi-reload-deferred 10' \
+  firmware/files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair
+grep -Fq 'mkdir "$pending" 2>/dev/null || exit 0' \
+  firmware/files/usr/sbin/zbt-wifi-reload-deferred
 grep -F 'wireless.${radio}.txpower' "$us_wifi_defaults" | grep -Fq 'delete'
 if grep -Eq 'txpower=[0-9]|\.txpower=[0-9]' "$us_wifi_defaults"; then
   echo 'US Wi-Fi defaults must not bypass the regulatory/EEPROM power minimum' >&2
@@ -143,12 +149,16 @@ done
 test -x firmware/files/usr/libexec/rpcd/zbt.firmware
 for metadata in \
   firmware/files/usr/share/luci/menu.d/zbt-firmware.json \
-  firmware/files/usr/share/luci/menu.d/luci-app-speedify.json \
+  firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json \
   firmware/files/usr/share/rpcd/acl.d/luci-app-speedify.json \
   firmware/files/usr/share/rpcd/acl.d/zbt-firmware.json \
   firmware/files/usr/share/rpcd/acl.d/luci-app-zbt-about.json; do
   python3 -m json.tool "$metadata" >/dev/null
 done
+grep -Fq '"path": "speedify/launcher"' firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json
+grep -Fq '"path": "speedify/speedify"' firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json
+grep -Fq "target.protocol = 'https:'" firmware/files/www/luci-static/resources/view/speedify/launcher.js
+grep -Fq 'window.location.replace(target.href)' firmware/files/www/luci-static/resources/view/speedify/launcher.js
 
 grep -q "OPENWRT_GIT_REF:-v25.12.021" firmware/docker/build-openwrt.sh
 grep -q "OPENWRT_GIT_URL:-https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git" \
