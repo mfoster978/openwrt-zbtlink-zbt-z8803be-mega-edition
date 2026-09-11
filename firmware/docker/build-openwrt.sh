@@ -53,6 +53,12 @@ fi
 [[ "$(git -C feeds/qmodem rev-parse HEAD)" = a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf ]] || {
   echo 'Unexpected QModem revision; review runtime patches before building' >&2; exit 3;
 }
+# Feed updates preserve tracked local modifications. Since the performance UI
+# patch intentionally refines lines added by the deployment patch, testing an
+# earlier patch in isolation cannot recognize an already-applied full stack.
+# Restore this generated, commit-pinned feed checkout before applying the
+# reviewed stack so cached local builds remain deterministic and repeatable.
+git -C feeds/qmodem reset --hard --quiet HEAD
 [[ "$(git -C feeds/packages rev-parse HEAD)" = db3b315119519f9194dad8aa668aa40618df9b20 ]] || {
   echo 'Unexpected packages revision; review mwan3 patch before building' >&2; exit 3;
 }

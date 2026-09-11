@@ -152,6 +152,7 @@ test -s firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
 grep -Fq 'qmodem-cell-discovery.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-5g-deployment.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-performance-ui.patch' firmware/docker/build-openwrt.sh
+grep -Fq 'git -C feeds/qmodem reset --hard --quiet HEAD' firmware/docker/build-openwrt.sh
 grep -Fq 'zbt_quectel_sim_number "$at_port"' firmware/patches/qmodem-cell-discovery.patch
 grep -Fq 'zbt_quectel_get_cells "$at_port"' firmware/patches/qmodem-cell-discovery.patch
 grep -Fq "'AT+QSCAN=3,1'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
