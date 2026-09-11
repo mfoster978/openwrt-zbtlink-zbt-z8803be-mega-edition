@@ -249,18 +249,26 @@ test('speed sample errors are not fabricated zero-speed successes', () => {
   assert.equal(rejected.calls, '');
 });
 
-test('Speedify health requires authenticated nginx route (401, never 404/502)', () => {
+test('Speedify health requires the authenticated nginx route on HTTP and HTTPS', () => {
   const installer = source('firmware/files/usr/sbin/speedify-installer-loop').split('\n[ "$(cat /etc/apk/arch')[0]
     .replace('\t[ -S /var/run/luci-webui.socket ] || return 1', '\t: # fixture models an available uWSGI socket');
   const mocks = `
 service_running() { return 0; }
 nginx() { return 0; }
-curl() { case "$*" in *index.html*) echo "$UI_CODE";; *) echo 200;; esac; }
+curl() {
+  case "$*" in
+    *http://127.0.0.1/luci-app-speedify/view/index.html*) echo "$HTTP_UI_CODE" ;;
+    *https://127.0.0.1/luci-app-speedify/view/index.html*) echo "$HTTPS_UI_CODE" ;;
+    *) echo 200 ;;
+  esac
+}
 luci_healthy && echo healthy || echo unhealthy
 `;
-  for (const code of ['401', '404', '502']) {
-    assert.equal(shell('uci() { echo 1; }\n' + installer + mocks, { UI_CODE: code }), code === '401' ? 'healthy' : 'unhealthy');
-  }
+  assert.equal(shell('uci() { echo 1; }\n' + installer + mocks,
+    { HTTP_UI_CODE: '401', HTTPS_UI_CODE: '401' }), 'healthy');
+  for (const [http, https] of [['404', '401'], ['502', '401'], ['401', '404'], ['401', '502']])
+    assert.equal(shell('uci() { echo 1; }\n' + installer + mocks,
+      { HTTP_UI_CODE: http, HTTPS_UI_CODE: https }), 'unhealthy');
   assert.doesNotMatch(installer, /restore_uhttpd/);
   const runtimeLoop = file('firmware/files/usr/sbin/speedify-installer-loop').split('while :; do')[1];
   const installedBranch = runtimeLoop.split('if packages_complete; then')[1].split('\n\tfi')[0];
@@ -288,6 +296,8 @@ test('LuCI recovery makes nginx the only frontend and repairs a 502 backend once
   assert.match(migration, /uhttpd disable/);
   assert.match(migration, /uwsgi enable/);
   assert.match(migration, /nginx enable/);
+  assert.match(migration, /nginx\._lan\.include='conf\.d\/\*\.locations'/);
+  assert.match(migration, /nginx_migrated='2'/);
   assert.match(migration, /zbt-luci-backend start/);
   assert.match(checker, /\[ -S "\$SOCKET" \]/);
   assert.match(checker, /\[ "\$http_status" = 502 \]/);

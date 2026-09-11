@@ -250,7 +250,7 @@ The installer:
 3. downloads the pinned core and LuCI APKs over HTTPS with retries;
 4. rejects either file unless its reviewed SHA256 matches;
 5. installs only the downloaded local APKs with `--no-network`, preventing an ABI-mismatched kernel module from being pulled later;
-6. starts and health-checks Speedify, its web service, nginx, and LuCI;
+6. starts and health-checks Speedify, its web service, nginx, and both the HTTP and HTTPS LuCI routes;
 7. keeps nginx and its authenticated Speedify routes in place if a service health check fails; retries do not reinstall already-present packages or repeatedly run vendor network setup;
 8. records completion only after all selected services pass.
 
@@ -505,7 +505,7 @@ nginx -t
 logread -e speedify-installer
 ```
 
-Without a login session, the protected Speedify index should return **401**, not 404 or 502. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
+Without a login session, the protected Speedify index should return **401** over both HTTP and HTTPS, not 404 or 502. The upgrade migration repairs older preserved nginx configurations so the HTTP LuCI server includes the same authenticated Speedify routes as HTTPS. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
 
 ### HTTPS warning on the router's private IP address
 

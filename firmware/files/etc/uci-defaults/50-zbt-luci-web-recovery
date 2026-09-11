@@ -6,19 +6,29 @@ if [ -x /etc/init.d/uwsgi ] && [ -x /etc/init.d/nginx ]; then
 	# A public firmware image cannot ship a browser-trusted certificate for a
 	# private address such as 192.168.1.1. Serve the same LAN-only LuCI site on
 	# port 80 as the warning-free default, while retaining optional HTTPS on
-	# port 443. Run this migration once so a later administrator choice to
-	# disable HTTP is preserved.
-	if [ "$(uci -q get system.zbt_luci_http.nginx_migrated 2>/dev/null || true)" != 1 ]; then
+	# port 443. Version 2 also repairs upgrades from the first HTTP migration,
+	# which added the listener but did not guarantee that preserved nginx UCI
+	# still included the LuCI/Speedify location snippets in that server.
+	if [ "$(uci -q get system.zbt_luci_http.nginx_migrated 2>/dev/null || true)" != 2 ]; then
 		uci -q delete nginx._redirect2ssl 2>/dev/null || true
+		uci -q set nginx.global='main'
+		uci -q set nginx.global.uci_enable='true'
+		uci -q set nginx._lan='server'
+		uci -q set nginx._lan.server_name='_lan'
 		uci -q del_list nginx._lan.listen='80' 2>/dev/null || true
 		uci -q del_list nginx._lan.listen='80 default_server' 2>/dev/null || true
 		uci -q del_list nginx._lan.listen='[::]:80' 2>/dev/null || true
 		uci -q del_list nginx._lan.listen='[::]:80 default_server' 2>/dev/null || true
 		uci -q add_list nginx._lan.listen='80 default_server'
 		uci -q add_list nginx._lan.listen='[::]:80 default_server'
+		# Both LuCI and the vendor Speedify proxy are delivered by *.locations.
+		# Normalize this entry so an older preserved nginx config cannot leave
+		# HTTP with a working login page but a missing Speedify route.
+		uci -q del_list nginx._lan.include='conf.d/*.locations' 2>/dev/null || true
+		uci -q add_list nginx._lan.include='conf.d/*.locations'
 		uci -q commit nginx
 		uci -q set system.zbt_luci_http='defaults'
-		uci -q set system.zbt_luci_http.nginx_migrated='1'
+		uci -q set system.zbt_luci_http.nginx_migrated='2'
 		uci -q commit system
 	fi
 	/etc/init.d/uhttpd stop >/dev/null 2>&1 || true

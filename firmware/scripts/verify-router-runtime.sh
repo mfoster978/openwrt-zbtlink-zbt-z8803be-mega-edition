@@ -84,6 +84,8 @@ printf 'luci_https_status='
 curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/cgi-bin/luci/
 printf 'speedify_installer_done=%s\n' "$([ -f /etc/speedify.installed ] && echo yes || echo no)"
 printf 'speedify_unauthenticated_http_status='
+curl -sS --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1/luci-app-speedify/view/index.html
+printf 'speedify_unauthenticated_https_status='
 # Self-signed local health probe only. Upstream HTTPS downloads stay verified.
 curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/luci-app-speedify/view/index.html
 printf 'tailscale_state='

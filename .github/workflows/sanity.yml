@@ -39,6 +39,27 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq file
       - name: Test pinned measurement engine and build static ARM64 binary
         run: bash firmware/tests/check-speedtest.sh
+  speedify-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test pinned Speedify UI through HTTP and HTTPS nginx frontends
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo alpine:3.23 sh -lc '
+            apk add --no-cache curl nginx openssl python3 tar >/dev/null
+            apk_file=$(mktemp)
+            curl -fL --retry 3 --retry-all-errors --connect-timeout 20 --max-time 600 \
+              -o "$apk_file" https://downloads.speedify.com/luci-app-speedify_noarch.apk
+            printf "%s  %s\n" \
+              efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167 \
+              "$apk_file" | sha256sum -c -
+            tar -xf "$apk_file" -C /
+            install -m 0755 firmware/tests/mock-speedify-ubus /usr/local/bin/ubus
+            SFY_AUTH_SCRIPT=/usr/libexec/sfy-ws-auth.py \
+              NGINX_CONFIG=/repo/firmware/tests/nginx-speedify.conf \
+              sh firmware/tests/check-speedify-web.sh
+          '
   speedtest-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 10

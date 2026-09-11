@@ -68,7 +68,7 @@ Speed preferences apply only to the project's cellular members, are stored in RA
 - Static shell syntax, base-config SHA256, selected dependency and source-pin checks.
 - Zero-fuzz forward and reverse patch checks against the exact pinned QModem and packages sources; patched shell and LuCI JavaScript syntax checks.
 - `node firmware/tests/check-patches.cjs`: physical-path/AT-port isolation, missing/ambiguous devices, per-modem settings fingerprints, APN arguments for both modems, speed units/interface binding/download-only mode, failed samples, threshold/recovery counters, expiring preferences/measurement locks, stopped-service status, SA band read/write failures, and utility-page/RPC contracts.
-- Isolated nginx + **the pinned vendor Python proxy and UI**: main LuCI route fixture reachable, valid test session serves the index (200), missing/invalid sessions denied (401). The authentication service was mocked; this does not authenticate a real router session or test the ARM VPN daemon.
+- Isolated nginx + **the pinned vendor Python proxy and UI** over HTTP and self-signed HTTPS: main LuCI route fixture reachable, valid test session serves the index (200), missing/invalid sessions denied (401). The authentication service was mocked; this does not authenticate a real router session or test the ARM VPN daemon.
 
 The web test uses `firmware/tests/nginx-speedify.conf`, `mock-speedify-ubus`, and `check-speedify-web.sh` in a disposable Alpine container with nginx/Python/curl and read-only mounts of the extracted, checksum-verified vendor UI. These fixtures are outside the router files overlay and must never replace the router's real ubus executable.
 

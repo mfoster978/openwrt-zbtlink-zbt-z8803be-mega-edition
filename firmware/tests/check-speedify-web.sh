@@ -2,11 +2,15 @@
 # Run only inside a disposable container with the pinned Speedify UI APK
 # extracted at /usr/share/luci-app-speedify and its proxy mounted in /opt.
 set -eu
-python3 -u /opt/sfy-ws-auth.py >/tmp/proxy-test.log 2>&1 &
+auth_script="${SFY_AUTH_SCRIPT:-/opt/sfy-ws-auth.py}"
+nginx_config="${NGINX_CONFIG:-/opt/nginx-speedify.conf}"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=127.0.0.1 \
+  -keyout /tmp/speedify-test.key -out /tmp/speedify-test.crt >/dev/null 2>&1
+python3 -u "$auth_script" >/tmp/proxy-test.log 2>&1 &
 proxy_pid=$!
-trap 'kill "$proxy_pid" 2>/dev/null || true; nginx -c /opt/nginx-speedify.conf -s quit 2>/dev/null || true' EXIT
-nginx -t -c /opt/nginx-speedify.conf
-nginx -c /opt/nginx-speedify.conf
+trap 'kill "$proxy_pid" 2>/dev/null || true; nginx -c "$nginx_config" -s quit 2>/dev/null || true' EXIT
+nginx -t -c "$nginx_config"
+nginx -c "$nginx_config"
 i=0
 until curl -fsS http://127.0.0.1:8080/cgi-bin/luci/ >/dev/null; do
   i=$((i+1)); [ "$i" -lt 20 ]; sleep 0.2
@@ -19,9 +23,15 @@ while :; do
   i=$((i+1)); [ "$i" -lt 20 ]; sleep 0.2
 done
 [ "$code" = 401 ]
-code=$(curl -s -o /tmp/test-response -w '%{http_code}' -H 'Cookie: sfy-session=zbtTestAdminSession' http://127.0.0.1:8080/luci-app-speedify/view/index.html)
-[ "$code" = 200 ]
-grep -qi '<html' /tmp/test-response
-code=$(curl -s -o /tmp/test-response -w '%{http_code}' -H 'Cookie: sfy-session=invalidSession' http://127.0.0.1:8080/luci-app-speedify/view/index.html)
-[ "$code" = 401 ]
-printf '%s\n' 'Speedify nginx/proxy integration: authenticated index=200; missing/invalid session=401; LuCI fixture remains reachable'
+for base in http://127.0.0.1:8080 https://127.0.0.1:8443; do
+  curl_flags='-s'
+  case "$base" in https:*) curl_flags='-ks' ;; esac
+  code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' "$base/luci-app-speedify/view/index.html")
+  [ "$code" = 401 ]
+  code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' -H 'Cookie: sfy-session=zbtTestAdminSession' "$base/luci-app-speedify/view/index.html")
+  [ "$code" = 200 ]
+  grep -qi '<html' /tmp/test-response
+  code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' -H 'Cookie: sfy-session=invalidSession' "$base/luci-app-speedify/view/index.html")
+  [ "$code" = 401 ]
+done
+printf '%s\n' 'Speedify nginx/proxy integration: HTTP+HTTPS authenticated index=200; missing/invalid session=401; LuCI fixture remains reachable'

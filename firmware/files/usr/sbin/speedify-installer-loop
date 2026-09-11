@@ -37,6 +37,26 @@ service_running() {
 	[ -x "/etc/init.d/$1" ] && "/etc/init.d/$1" status >/dev/null 2>&1
 }
 
+sync_nginx_luci_frontend() {
+	# The Speedify APK installs nginx location snippets. Keep port 80 on the
+	# same _lan server that includes those snippets; a preserved redirect or
+	# missing include otherwise makes LuCI work while Speedify returns 404.
+	uci -q delete nginx._redirect2ssl 2>/dev/null || true
+	uci -q set nginx.global='main' || return 1
+	uci -q set nginx.global.uci_enable='true' || return 1
+	uci -q set nginx._lan='server' || return 1
+	uci -q set nginx._lan.server_name='_lan' || return 1
+	uci -q del_list nginx._lan.listen='80' 2>/dev/null || true
+	uci -q del_list nginx._lan.listen='80 default_server' 2>/dev/null || true
+	uci -q del_list nginx._lan.listen='[::]:80' 2>/dev/null || true
+	uci -q del_list nginx._lan.listen='[::]:80 default_server' 2>/dev/null || true
+	uci -q add_list nginx._lan.listen='80 default_server' || return 1
+	uci -q add_list nginx._lan.listen='[::]:80 default_server' || return 1
+	uci -q del_list nginx._lan.include='conf.d/*.locations' 2>/dev/null || true
+	uci -q add_list nginx._lan.include='conf.d/*.locations' || return 1
+	uci -q commit nginx || return 1
+}
+
 luci_healthy() {
 	[ "$INSTALL_LUCI" = '1' ] || return 0
 	service_running uwsgi || return 1
@@ -44,8 +64,13 @@ luci_healthy() {
 	service_running nginx || return 1
 	service_running sfy-ws-auth || return 1
 	nginx -t >/tmp/speedify-nginx-check.log 2>&1 || return 1
-	# Verify the actual HTTPS frontend, not a port-80 redirect. -k applies
-	# ONLY to this loopback self-signed certificate, never APK downloads.
+	# Verify both real frontends. -k applies ONLY to this loopback self-signed
+	# certificate, never to APK downloads.
+	http_status="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/cgi-bin/luci/ 2>/dev/null || true)"
+	case "$http_status" in
+		2??|3??) ;;
+		*) return 1 ;;
+	esac
 	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' https://127.0.0.1/cgi-bin/luci/ 2>/dev/null || true)"
 	case "$http_status" in
 		2??|3??) ;;
@@ -53,6 +78,8 @@ luci_healthy() {
 	esac
 	# The protected entry point must challenge an unauthenticated request.
 	# 404 means the nginx locations were not included; 502 means proxy down.
+	http_status="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/luci-app-speedify/view/index.html 2>/dev/null || true)"
+	[ "$http_status" = 401 ] || return 1
 	http_status="$(curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' https://127.0.0.1/luci-app-speedify/view/index.html 2>/dev/null || true)"
 	[ "$http_status" = 401 ]
 }
@@ -75,6 +102,7 @@ activate_services() {
 	/etc/init.d/speedify enable >/dev/null 2>&1 || return 1
 	service_running speedify || /etc/init.d/speedify start >/tmp/speedify-service.log 2>&1
 	if [ "$INSTALL_LUCI" = '1' ]; then
+		sync_nginx_luci_frontend || return 1
 		# Keep LuCI itself healthy independently of the optional vendor UI.
 		# This also repairs a preserved, incompatible uWSGI configuration once.
 		/usr/sbin/zbt-luci-backend-check >/tmp/speedify-luci-backend.log 2>&1 || return 1

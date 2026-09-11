@@ -52,6 +52,12 @@ grep -Fq "uci -q add_list nginx._lan.listen='[::]:80 default_server'" \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
 grep -Fq "system.zbt_luci_http.nginx_migrated" \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq "nginx._lan.include='conf.d/*.locations'" \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq "http://127.0.0.1/luci-app-speedify/view/index.html" \
+  firmware/files/usr/sbin/speedify-installer-loop
+grep -Fq "https://127.0.0.1/luci-app-speedify/view/index.html" \
+  firmware/files/usr/sbin/speedify-installer-loop
 
 # MWAN3 owns route selection; QModem preserves stable interfaces and consumes
 # their network metrics instead of deleting or overwriting them on redial.
