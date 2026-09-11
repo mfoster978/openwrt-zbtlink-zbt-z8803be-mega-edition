@@ -4,7 +4,7 @@
 zbt_speed_metric() {
 	local member="$1" iface="$2" original="$3" expiry value now
 	case "$member:$iface:$original" in
-		failover_4_1:4_1:3|failover_2_1:2_1:4) ;;
+		failover_4_1:4_1:4|failover_2_1:2_1:5) ;;
 		*) printf '%s\n' "$original"; return ;;
 	esac
 	now=$(cut -d. -f1 /proc/uptime)

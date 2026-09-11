@@ -6,9 +6,9 @@ The selected value sets IPv4 TTL and IPv6 Hop Limit on egress, including router-
 
 ## Defaults and upgrades
 
-- The primary modem retains the inherited automatic behavior, now visible and switchable. The secondary modem's TTL policy defaults off in both editions. This is independent of its power/dial setting; minimal still defaults modem 2's power/dial off.
+- Both TTL policies default off. Automatic recommendations remain available independently for either modem, but a recommendation is not enabled without the administrator's choice. This keeps software and hardware flow offload available on a fresh install. Minimal still defaults modem 2's power/dial off.
 - Automatic mode retains the old passive address heuristic: 65 for recognized modem-NAT address prefixes, otherwise 64. It runs separately for each enabled modem and never rewrites a stored custom value. It is not an AT query, carrier database or guarantee that a particular plan requires that value.
-- An explicit old enabled global TTL is copied to both modem policies as a custom value. An old standalone primary rule is migrated when its exact structure is recognized. Existing per-modem choices are preserved.
+- An explicit old enabled global TTL is copied to both modem policies as a custom value. An old standalone primary rule is retained as the primary recommendation but migrated in the disabled state when its exact structure is recognized; its mere presence did not prove that the old LuCI plugin was enabled. Existing per-modem choices are preserved.
 - The two old TTL include files are moved to `/etc/qmodem-ttl-backup/`, not deleted. Review archived hand-edited rules if necessary; arbitrary unrelated firewall files are not moved. The old global automatic writer is disabled.
 - The old boot-time `wwan0` rule is no longer generated. Disabling both modem policies removes this feature's TTL rules, rather than leaving an invisible rewrite active.
 

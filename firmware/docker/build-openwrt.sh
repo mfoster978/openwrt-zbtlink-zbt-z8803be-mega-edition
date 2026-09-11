@@ -59,6 +59,16 @@ fi
 [[ "$(git -C feeds/luci rev-parse HEAD)" = a611522a2bfc24ca2625e8cd2fcc9404288532a6 ]] || {
   echo 'Unexpected LuCI revision; review mwan3 route-metric patch before building' >&2; exit 3;
 }
+# Fresh Mega installs must replace the shared vendor-label password on their
+# first local LuCI login. Keep the enforcement as a narrow patch against the
+# exact pinned dispatcher instead of carrying an unreviewed LuCI fork.
+first_login_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/luci-first-login-password.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/luci < "$first_login_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/luci < "$first_login_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci < "$first_login_patch" >/dev/null; then
+  echo 'First-login password patch does not match pinned LuCI; refusing an insecure build' >&2
+  exit 3
+fi
 # Strict userspace-only patch against the pinned QModem feed. No kernel,
 # modem driver or wireless firmware revision changes.
 runtime_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-dual-runtime.patch"
@@ -390,12 +400,15 @@ cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/vie
   "${rootfs_dir}/www/luci-static/resources/view/speedtest-lite/style.css"
 required_overlay_files=(
   etc/uci-defaults/95-mwan3-defaults
+  etc/uci-defaults/40-zbt-usb-tether-defaults
+  etc/uci-defaults/80-zbt-z8803be-admin-password
   etc/uci-defaults/99-cellular-multiwan-defaults
   etc/uci-defaults/99-speedify-bootstrap
   etc/nginx/conf.d/zbt-speedify-https.locations
   etc/init.d/speedify-installer
   etc/init.d/zbt-luci-backend
   usr/sbin/speedify-installer-loop
+  usr/share/zbt/speedify-luci-wrapper.js
   www/luci-static/resources/view/speedify/speedify.js
   usr/share/luci/menu.d/zbt-speedify-launcher.json
   www/luci-static/resources/view/speedify/launcher.js
@@ -422,6 +435,7 @@ required_overlay_files=(
   usr/sbin/zbt-mwan-preset
   etc/init.d/qmodem_network
   etc/uci-defaults/99-zbt-route-priority-repair
+  etc/hotplug.d/net/15-zbt-rndis-auto
   usr/share/rpcd/acl.d/zbt-speedtest.json
   usr/share/luci/menu.d/tailscale.json
   etc/config/usbipd
@@ -453,7 +467,7 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
@@ -548,6 +562,18 @@ for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.
     echo "US APN preset missing from one or both built SIM selectors: $apn" >&2; exit 4;
   }
 done
+grep -Fq 'Phone Number (MSISDN)' \
+  "${rootfs_dir}/www/luci-static/resources/view/qmodem/overview.js" || {
+  echo 'Per-modem SIM phone-number field is missing from built LuCI' >&2; exit 4;
+}
+grep -Fq 'add_quectel_ca_report "$ca_response"' \
+  "${rootfs_dir}/usr/share/qmodem/vendor/quectel.sh" || {
+  echo 'Full Quectel carrier-aggregation report is missing from the image' >&2; exit 4;
+}
+grep -Fq 'root_password_is_unset()' \
+  "${rootfs_dir}/usr/share/ucode/luci/dispatcher.uc" || {
+  echo 'First-login root-password enforcement is missing from built LuCI' >&2; exit 4;
+}
 
 for image_pattern in '*zbt-z8803be-initramfs-kernel.bin' '*zbt-z8803be-squashfs-sysupgrade.bin'; do
   image="$(find "bin/targets/${target_main}/${SUBTARGET}" -maxdepth 1 -type f -size +0c -name "${image_pattern}" -print -quit)"

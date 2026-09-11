@@ -94,6 +94,30 @@ test('QModem offers matching editable US APN presets for both SIM selectors', { 
   }
 });
 
+test('QModem reports every Quectel component carrier and distinguishes active from idle SCCs', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  const quectel = fs.readFileSync(path.join(process.env.QMODEM_TEST_TREE,
+    'application/qmodem/files/usr/share/qmodem/vendor/quectel.sh'), 'utf8');
+  const start = quectel.indexOf('add_quectel_ca_report()');
+  const end = quectel.indexOf('\ncell_info()', start);
+  assert.ok(start >= 0 && end > start);
+  const helper = quectel.slice(start, end);
+  const result = shell(`
+add_plain_info_entry() { printf '%s|%s|%s\\n' "$1" "$2" "$extra_info"; }
+get_bandwidth() { [ "$2" = 12 ] && printf '100\\n'; }
+${helper}
+add_quectel_ca_report "$CA_SAMPLE"`, {
+    CA_SAMPLE: '+QCAINFO: "PCC",875,100,"LTE BAND 2",1,10,-90,-8,-60,20\r\n' +
+      '+QCAINFO: "SCC",66786,100,"LTE BAND 66",2,11,-91,-9,-61,19,0,-,-\r\n' +
+      '+QCAINFO: "SCC",5035,100,"LTE BAND 12",1,12,-92,-10,-62,18,0,-,-\r\n' +
+      '+QCAINFO: "SCC",520110,12,"NR5G BAND 41",2,13,1,3,135600\r\nOK\r\n'
+  });
+  assert.match(result, /Carrier Aggregation\|3 active \/ 4 reported\|/);
+  assert.match(result, /Component Carrier 1\|LTE BAND 2; channel 875; bandwidth 20 MHz; registered\|PCC/);
+  assert.match(result, /Component Carrier 2\|LTE BAND 66; channel 66786; bandwidth 20 MHz; active\|SCC/);
+  assert.match(result, /Component Carrier 3\|LTE BAND 12; channel 5035; bandwidth 20 MHz; configured, idle\|SCC/);
+  assert.match(result, /Component Carrier 4\|NR5G BAND 41; channel 520110; bandwidth 100 MHz; active\|SCC/);
+});
+
 test('fresh slow samples demote after threshold and two good samples recover', () => {
   const policy = source('firmware/files/usr/lib/zbt/speed-policy.sh');
   assert.equal(shell(policy + `
@@ -112,9 +136,9 @@ test('speed metric overrides only project cellular members and expires', () => {
   const policy = source('firmware/files/usr/lib/zbt/mwan3-speed-metric.sh').replaceAll('/tmp/modem-watchdog', dir);
   const expiry = Math.floor(Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0])) + 100;
   fs.writeFileSync(path.join(dir, '4_1.metric'), `${expiry} 5\n`);
-  assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 3; zbt_speed_metric failover_wan wan 2; zbt_speed_metric custom 4_1 3; zbt_speed_metric failover_4_1 4_1 7'), '5\n2\n3\n7');
+  assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 4; zbt_speed_metric failover_wan wan 2; zbt_speed_metric custom 4_1 4; zbt_speed_metric failover_4_1 4_1 7'), '5\n2\n4\n7');
   fs.writeFileSync(path.join(dir, '4_1.metric'), '0 5\n');
-  assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 3'), '3');
+  assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 4'), '4');
 });
 
 test('shared measurement lease rejects overlap and recovers expired workers', () => {
@@ -286,6 +310,8 @@ test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
   const acl = JSON.parse(file('firmware/files/usr/share/rpcd/acl.d/luci-app-speedify.json'))['luci-app-speedify'];
   const view = file('firmware/files/www/luci-static/resources/view/speedify/speedify.js');
   const launcher = file('firmware/files/www/luci-static/resources/view/speedify/launcher.js');
+  const wrapper = file('firmware/files/usr/share/zbt/speedify-luci-wrapper.js');
+  const installer = file('firmware/files/usr/sbin/speedify-installer-loop');
   assert.deepEqual(menu.action, { type: 'view', path: 'speedify/launcher' });
   assert.deepEqual(appRoute.action, { type: 'view', path: 'speedify/speedify' });
   assert.equal(appRoute.firstchild_ineligible, true);
@@ -297,6 +323,11 @@ test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
   assert.match(launcher, /window\.location\.replace\(target\.href\)/);
   assert.match(view, /Finishing Speedify setup/);
   assert.doesNotMatch(view, /handleSaveApply:\s*function|fetch\(/);
+  assert.match(installer, /install_luci_wrapper \|\| return 1/);
+  assert.match(wrapper, /window\.addEventListener\('focus', scheduleRefresh\)/);
+  assert.match(wrapper, /document\.addEventListener\('visibilitychange', visibilityChanged\)/);
+  assert.match(wrapper, /speedifyuiframe\.contentWindow\.location\.reload\(\)/);
+  assert.match(wrapper, /now - backgroundedAt < 1500/);
   assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);
 });
 
@@ -487,23 +518,38 @@ test('routing presets keep one explicit whole-router priority order', () => {
   const migration = file('firmware/files/etc/uci-defaults/99-zbt-route-priority-repair');
   assert.match(preset, /ensure_route_metric wan_sfp 9 "\$exact"/);
   assert.match(preset, /ensure_route_metric wan 10 "\$exact"/);
+  assert.match(preset, /ensure_route_metric usb_tether 100 "\$exact"/);
   assert.match(preset, /ensure_route_metric 4_1 200 "\$exact"/);
   assert.match(preset, /ensure_route_metric 2_1 210 "\$exact"/);
   assert.match(preset, /configure_member failover_wan_sfp wan_sfp 1 1/);
   assert.match(preset, /configure_member failover_wan wan 2 1/);
-  assert.match(preset, /configure_member failover_4_1 4_1 3 1/);
-  assert.match(preset, /configure_member failover_2_1 2_1 4 1/);
+  assert.match(preset, /configure_member failover_usb_tether usb_tether 3 1/);
+  assert.match(preset, /configure_member failover_4_1 4_1 4 1/);
+  assert.match(preset, /configure_member failover_2_1 2_1 5 1/);
   assert.match(preset, /if \[ "\$\{ZBT_MWAN_NO_RELOAD:-0\}" != 1 \]; then/);
-  assert.match(migration, /DEFAULTS_VERSION=2/);
+  assert.match(migration, /DEFAULTS_VERSION=3/);
+  assert.match(migration, /''\|priority\) preset=failover/);
   assert.match(migration, /ZBT_MWAN_NO_RELOAD=1 \/usr\/sbin\/zbt-mwan-preset "\$preset"/);
   assert.match(migration, /priority\|failover\|fastest/);
+});
+
+test('Mega phone tethering has a stable hotplug identity ahead of cellular modems', () => {
+  const defaults = file('firmware/files/etc/uci-defaults/40-zbt-usb-tether-defaults');
+  const hotplug = file('firmware/files/etc/hotplug.d/net/15-zbt-rndis-auto');
+  assert.match(defaults, /network\.usb_tether\.proto=dhcp/);
+  assert.match(defaults, /network\.usb_tether\.metric=100/);
+  assert.match(defaults, /firewall\.\$wan_zone\.network=usb_tether/);
+  assert.match(hotplug, /rndis_host\|cdc_ether\|cdc_ncm\|ipheth/);
+  assert.match(hotplug, /net_path\/qmi/);
+  assert.match(hotplug, /usb4\/4-1\/\*\|\*\/usb2\/2-1\/\*/);
+  assert.match(hotplug, /network\.usb_tether\.device="\$DEVICENAME"/);
 });
 
 test('Mega SSH banner carries project identity without a donation block', () => {
   const banner = file('firmware/files/etc/banner');
   const shellInfo = file('firmware/files/etc/profile.d/10-zbt-info.sh');
   assert.match(banner, /ZBT-Z8803BE Mega Edition/);
-  assert.match(banner, /github\.com\/mfoster978\/openwrt-zbtlink-zbt-z8803be-mega-edition/);
+  assert.match(banner, /github\.com\/mfoster978\/OpenWrt-ZBT-Z8803BE-Mega/);
   assert.match(banner, /Developer: Michael Foster \/ GitHub @mfoster978/);
   assert.match(banner, /mfoster978@gmail\.com - Discord: mfoster978/);
   assert.doesNotMatch(banner + shellInfo, /Donate|ERC20|BEP20|TRC20|0xfar5eer@gmail\.com|0xFar5eer#6504/i);

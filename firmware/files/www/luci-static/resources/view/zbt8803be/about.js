@@ -6,7 +6,7 @@
  * its route and read-only ACL. The sole remote image is the user-requested
  * Speedify video poster; it is lazy-loaded without a referrer. Runtime values
  * are always inserted as text. */
-const MEGA_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition';
+const MEGA_REPO = 'https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega';
 const MINIMAL_REPO = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build';
 const BASE_REPO = 'https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE';
 const SPEEDIFY_VIDEO = 'https://speedify.com/enterprise/pair-and-share-cellular-connection-pooling/?wvideo=lrxei2q3dw';
@@ -17,6 +17,10 @@ const callBuild = rpc.declare({ object: 'zbt.firmware', method: 'info', expect: 
 
 function external(url, label, className) {
 	return E('a', { href: url, target: '_blank', rel: 'noopener noreferrer', 'class': className || '' }, label);
+}
+
+function local(path, label) {
+	return E('a', { href: L.url.apply(L, path), 'class': 'zma-button zma-button-secondary' }, label);
 }
 
 function svgNode(tag, attrs, children) {
@@ -87,6 +91,15 @@ function feature(kind, title, label, summary, details) {
 	]);
 }
 
+function usbCard(kind, title, label, summary, details, path, action) {
+	const children = [
+		E('div', { 'class': 'zma-card-top' }, [E('span', { 'class': 'zma-icon' }, [icon(kind)]), E('span', { 'class': 'zma-tag' }, _(label))]),
+		E('h3', {}, _(title)), E('p', {}, _(summary)), bullets(details)
+	];
+	if (path && action) children.push(E('div', { 'class': 'zma-card-action' }, [local(path, _(action))]));
+	return E('article', { 'class': 'zma-card zma-usb-card' }, children);
+}
+
 function packageGroup(title, description, packages) {
 	return E('details', { 'class': 'zma-package-group' }, [
 		E('summary', {}, [E('span', {}, _(title)), E('span', { 'class': 'zma-package-count' }, packages.length + ' ' + _('highlights'))]),
@@ -131,6 +144,7 @@ function tabbedAbout(content) {
 		['overview', _('Overview'), [content.querySelector('.zma-hero'), content.querySelector('#zma-build')]],
 		['features', _('Features'), [content.querySelector('#zma-features')]],
 		['speedify', 'Speedify', [content.querySelector('#zma-speedify')]],
+		['usb', _('USB & Sharing'), [content.querySelector('#zma-usb')]],
 		['packages', _('Packages'), [content.querySelector('#zma-packages')]],
 		['community', _('Project & Credits'), [content.querySelector('#zma-community')]]
 	];
@@ -195,8 +209,8 @@ return view.extend({
 				E('div', { 'class': 'zma-hero-copy' }, [
 					E('div', { 'class': 'zma-eyebrow' }, [E('span', { 'class': 'zma-spark', 'aria-hidden': 'true' }), _('BY MFOSTER978 · OPENWRT POWERED')]),
 					E('h2', { 'class': 'zma-hero-title' }, [E('span', { 'class': 'zma-model' }, 'ZBT-Z8803BE'), E('span', { 'class': 'zma-edition' }, 'Mega Edition')]),
-					E('p', { 'class': 'zma-hero-description' }, _('Turn your router into a versatile networking workhorse. Mega Edition brings together practical add-ons, custom-built features and easy-to-set-up tools for dual cellular, failover, speed testing and optional bonding. Use what you need; keep unused optional features off.')),
-					E('div', { 'class': 'zma-hero-badges' }, [E('span', {}, 'Wi-Fi 7'), E('span', {}, _('Dual modem')), E('span', {}, 'MediaTek Filogic')]),
+					E('p', { 'class': 'zma-hero-description' }, _('Turn your router into a versatile networking workhorse. Mega Edition brings together practical add-ons, custom-built features and easy-to-set-up tools for dual cellular, failover, speed testing, USB connectivity and optional bonding. Use what you need; keep unused optional features off.')),
+					E('div', { 'class': 'zma-hero-badges' }, [E('span', {}, 'Wi-Fi 7'), E('span', {}, _('Dual modem')), E('span', {}, _('USB tools')), E('span', {}, 'MediaTek Filogic')]),
 					E('div', { 'class': 'zma-actions' }, [
 						external(MEGA_REPO, _('Explore the source ↗'), 'zma-button zma-button-primary')
 					])
@@ -214,12 +228,13 @@ return view.extend({
 					feature('signal', 'Two modems. Independent control.', 'QModem', 'Manage Modem 1 and Modem 2 by physical slot—not by whichever wwan number Linux happens to assign at boot.', [
 						'QModem Next brings modem status, signal/cell information, SMS, AT Debug, SIM information and dial controls into LuCI. Friendly aliases remain separate from stable routing identities.',
 						'QMI, MBIM, NCM, USB serial and compatible PCIe MHI support are included. Quectel connection-manager paths own their own addresses and routes without a competing DHCP client.',
-						'Each slot has its own IPv4 TTL / IPv6 Hop Limit enable switch and automatic or custom value. Band controls verify AT-command results and show readback diagnostics instead of pretending an unknown band mask is empty.',
+						'Each slot has its own opt-in IPv4 TTL / IPv6 Hop Limit switch and automatic or custom value. Both start off so flow offload remains available. Band controls verify AT-command results and show readback diagnostics instead of pretending an unknown band mask is empty.',
+						'SIM information shows a carrier-provided phone number when AT+CNUM returns one. Carrier Aggregation lists every PCC/SCC, state and bandwidth reported by AT+QCAINFO in LTE, 5G NSA and 5G SA modes.',
 						'Blank/auto APN keeps modem/network profile negotiation; manual APNs and SIM choices are preserved. Carrier coverage, activation, device support and plan requirements still apply—automatic connection is not guaranteed on every carrier.'
 					]),
 					feature('route', 'Wired first. Cellular when needed.', 'Multi-WAN', 'mwan3 handles connection monitoring and failover. A balanced policy is available when you deliberately choose to distribute connections.', [
-						'Default priority is available SFP WAN, copper WAN, Modem 1, then Modem 2. Missing wired interfaces are omitted from the generated policy.',
-						'Network → MultiWAN Manager → Speed & Recovery adds optional minimum-speed thresholds, cooldowns, per-modem recovery actions and fastest-modem preference. These advanced automation features are off by default; enable and configure only the tools you want. Core networking and normal failover remain active.',
+						'Default priority is available SFP WAN, copper WAN, a connected USB phone tether, Modem 1, then Modem 2. The faster failover preset is active by default; recovered preferred paths carry new connections again.',
+						'Network → MultiWAN Manager → Speed & Recovery adds optional minimum-speed thresholds, cooldowns, per-modem recovery actions and fastest-modem preference. Those advanced automation features are off by default; core health-checked priority failover remains active.',
 						'Additional watchdog actions and speed-based preferences are off by default. Start with monitoring; enable redial or power cycling only after checking your own setup.',
 						'Failover and load balancing are not bonding: ordinary mwan3 does not merge links into a faster single download, and established sessions may need to reconnect.'
 					]),
@@ -242,7 +257,7 @@ return view.extend({
 					feature('chip', 'A device-specific foundation.', 'Far5eer baseline', 'This is an OpenWrt build for the ZBTLink ZBT-Z8803BE—not a universal image for other routers.', [
 						'MediaTek MT7988A / Filogic 880, MT7996-family tri-band Wi-Fi 7, SFP+ and copper Ethernet board support come from the pinned upstream platform.',
 						'2.4 GHz, 5 GHz and 6 GHz default to the US domain. Power stays automatic on 2.4/5 GHz so regulatory and EEPROM limits remain authoritative; mobile 6 GHz uses the 14 dBm VLP class. Other countries must select their own domain, and 6 GHz still requires compliant hardware, antennas and clients.',
-						'USB storage, block mounting, ext4/FAT/exFAT, Android and iPhone tethering, opt-in SMB sharing and opt-in USB-over-IP support are included. HTTPS LuCI, package management and SFTP provide familiar administration tools.',
+						'USB storage, block mounting, ext4/FAT/exFAT, Android and iPhone tethering, opt-in SMB sharing and opt-in USB-over-IP support are included. A clean installation requires root to choose a new password on its first local LuCI login.',
 						'Source and package selections are pinned and checked during the build. Successful compilation is not a substitute for real hardware validation.'
 					])
 				])
@@ -259,17 +274,47 @@ return view.extend({
 				E('div', { 'class': 'zma-speedify-steps' }, [
 					E('article', {}, [E('span', {}, '1'), E('div', {}, [E('h3', {}, _('Dependencies baked in')), E('p', {}, _('Matching TUN, crypto/network support, TLS certificates, C++/atomic/keyutils runtime libraries, nginx and the Python support needed by the LuCI integration are built with the firmware.'))])]),
 					E('article', {}, [E('span', {}, '2'), E('div', {}, [E('h3', {}, _('Installed after Internet is ready')), E('p', {}, _('A guarded first-boot installer fetches the pinned Speedify core and optional LuCI APKs over HTTPS, checks their SHA256 and installs them without fetching replacement kernel modules. It waits and retries if connectivity or service health is not ready.'))])]),
-					E('article', {}, [E('span', {}, '3'), E('div', {}, [E('h3', {}, _('You choose the account and policy')), E('p', {}, _('Complete your own Speedify sign-in and connection settings. The installer is included; the proprietary service is separate and governed by Speedify’s licensing, privacy policy and availability. This page does not assert it is installed, signed in or bonding on your router.'))])])
+					E('article', {}, [E('span', {}, '3'), E('div', {}, [E('h3', {}, _('You choose the account and policy')), E('p', {}, _('Complete your own Speedify sign-in and connection settings. After an external account-login screen, return to the router tab; Mega refreshes the embedded app so it reads the new daemon state. The proprietary service remains separately licensed, and this page does not assert it is signed in or bonding.'))])])
 				])
 			]),
+			E('section', { id: 'zma-usb', 'class': 'zma-section zma-usb' }, [
+				sectionHeading('02', 'USB tethering, storage and sharing', 'Connect a phone as an additional WAN, mount local storage, or deliberately share a device. Drivers and tools are ready, while network exposure remains under the router owner’s control.'),
+				E('div', { 'class': 'zma-callout' }, [
+					E('strong', {}, _('Safe starting point: nothing is silently shared.')),
+					E('p', {}, _('Phone interfaces are not automatically added to routing, storage is not automatically published, and both the SMB and USB-over-IP servers start disabled. Configure only the feature you intend to use.'))
+				]),
+				E('div', { 'class': 'zma-grid zma-usb-grid' }, [
+					usbCard('signal', 'Android & iPhone tethering', 'EXTRA INTERNET', 'Use a supported phone’s USB data connection as an owner-configured OpenWrt interface.', [
+						'Android RNDIS and CDC Ethernet drivers are included. Enable USB tethering on the phone after connecting it with a data-capable cable.',
+						'For iPhone or iPad, enable Personal Hotspot, accept the Trust prompt and complete pairing when required. ipheth, usbmuxd and libimobiledevice utilities are included.',
+						'Supported phone devices bind to stable usb_tether automatically. It uses DHCP and sits after SFP/copper WAN but before Modem 1 and Modem 2 in the default MultiWAN failover order.'
+					], ['admin', 'network', 'network'], 'Open Network Interfaces'),
+					usbCard('box', 'USB storage & mount points', 'LOCAL STORAGE', 'Mount USB mass-storage and UAS devices with ext4, exFAT or FAT filesystems.', [
+						'Use a powered hub or enclosure when a disk needs more current than the router USB port can safely provide.',
+						'Create a stable mount point and verify it after a reboot before using it for backups, applications or a network share.',
+						'Mounting a filesystem does not make it accessible to LAN clients; sharing is a separate, explicit step.'
+					], ['admin', 'services', 'usb-storage'], 'Open USB Storage'),
+					usbCard('shield', 'KSMBD network shares', 'SMB · DEFAULT OFF', 'Share an already-mounted directory with computers on trusted networks.', [
+						'The in-kernel KSMBD server and its LuCI page are installed, but the new Enable server switch defaults off.',
+						'Configure the share path, users or guest policy, and listening interface before enabling the server.',
+						'Keep SMB on trusted LAN interfaces. Do not expose file sharing directly to cellular, WAN or public-hotspot networks.'
+					], ['admin', 'services', 'ksmbd'], 'Open Network Shares'),
+					usbCard('route', 'USB over IP', 'ADVANCED · DEFAULT OFF', 'Attach or export a USB device across a trusted IP network using the included client and server tools.', [
+						'The usbip, usbipd and matching kernel components are included; the server defaults off in /etc/config/usbipd.',
+						'The pinned OpenWrt feeds do not provide a USB/IP LuCI application, so binding, export and remote attachment are command-line operations.',
+						'USB/IP is not an Internet-safe file-sharing protocol. Restrict it with firewall rules and never publish it directly to an untrusted WAN.'
+					])
+				]),
+				E('p', { 'class': 'zma-disclaimer' }, _('USB support depends on the phone, cable, USB power, filesystem health and device compatibility. Back up important storage before changing mounts. A phone or exported USB device is not added to failover, firewall or sharing policy until the owner configures it.'))
+			]),
 			E('section', { id: 'zma-packages', 'class': 'zma-section' }, [
-				sectionHeading('02', 'Inside the Mega edition', 'Package highlights from this project’s build profile. Expand a category to see the components behind the features.'),
+				sectionHeading('03', 'Inside the Mega edition', 'Package highlights from this project’s build profile. Expand a category to see the components behind the features.'),
 				E('div', { 'class': 'zma-package-grid' }, [
 					packageGroup('Cellular control & protocols', 'The two modems share the same control stack, while dial state and settings remain per-slot.', ['qmodem', 'luci-app-qmodem-next', 'luci-app-qmodem-monitor', 'luci-app-qmodem-ttlfw4', 'quectel-CM-5G-M', 'uqmi', 'umbim', 'luci-proto-qmi', 'luci-proto-mbim', 'sms-tool_q', 'sms-forwarder-next']),
 					packageGroup('Modem kernel support', 'Built-in USB and PCIe MHI families support compatible modem modes; listing a driver does not certify every modem model or carrier.', ['kmod-usb-net-qmi-wwan', 'kmod-usb-net-cdc-mbim', 'kmod-usb-wdm', 'kmod-usb-serial-option', 'kmod-usb-net-cdc-ncm', 'kmod-mhi-bus', 'kmod-mhi-pci-generic', 'kmod-mhi-net', 'kmod-mhi-wwan-ctrl', 'kmod-mhi-wwan-mbim']),
 					packageGroup('Routing, recovery & diagnostics', 'Normal mwan3 connectivity failover is enabled. Additional automated recovery and speed sampling require opt-in.', ['mwan3', 'luci-app-mwan3', 'luci-app-modem-watchdog', 'luci-app-speedtest-lite', 'zbt-speedtest', 'speedtest-go', 'speedtest-netperf', 'ethtool', 'jq', 'curl']),
 					packageGroup('VPN & Speedify support', 'Speedify itself is a separately downloaded, checksum-verified runtime package. These supporting components are selected in the image.', ['tailscale', 'luci-app-tailscale', 'openvpn-openssl', 'luci-app-openvpn', 'wireguard-tools', 'kmod-wireguard', 'kmod-tun', 'libstdcpp', 'libkeyutils', 'libatomic', 'kmod-tcp-bbr', 'kmod-nft-tproxy', 'iptables-nft', 'iptables-mod-tproxy', 'iptables-mod-extra', 'iptables-mod-conntrack-extra']),
-					packageGroup('USB tethering, storage & sharing', 'Android and Apple USB networking drivers are ready for owner setup. Storage is configurable in LuCI; KSMBD and USB/IP servers remain disabled until explicitly enabled.', ['kmod-usb-net-cdc-ether', 'kmod-usb-net-rndis', 'kmod-usb-net-ipheth', 'usbmuxd', 'libimobiledevice-utils', 'block-mount', 'kmod-usb-storage', 'kmod-usb-storage-uas', 'kmod-fs-ext4', 'kmod-fs-exfat', 'kmod-fs-vfat', 'luci-app-ksmbd', 'ksmbd-server', 'usbip-client', 'usbip-server']),
+					packageGroup('USB tethering, storage & sharing', 'Android and Apple USB networking drivers are ready for owner setup. Storage is configurable in LuCI; KSMBD and USB/IP servers remain disabled until explicitly enabled.', ['kmod-usb-net-cdc-ether', 'kmod-usb-net-rndis', 'kmod-usb-net-ipheth', 'usbmuxd', 'libimobiledevice-utils', 'usbutils', 'block-mount', 'kmod-usb-storage', 'kmod-usb-storage-uas', 'kmod-fs-ext4', 'kmod-fs-exfat', 'kmod-fs-vfat', 'kmod-nls-utf8', 'luci-app-ksmbd', 'ksmbd-server', 'usbip', 'usbip-client', 'usbip-server', 'kmod-usbip', 'kmod-usbip-client', 'kmod-usbip-server']),
 					packageGroup('LuCI & device dashboards', 'The board baseline and project overlays provide the local web interface, dashboards and customization controls.', ['luci', 'luci-ssl', 'luci-nginx', 'luci-app-firewall', 'luci-app-package-manager', 'luci-app-mlo', 'luci-app-zbt-about', 'luci-app-zbt-health', 'luci-app-zbt-temperature', 'luci-app-zbt-modem-events', 'python3-light', 'ca-bundle']),
 					E('div', { 'class': 'zma-package-note' }, [icon('box'), E('h3', {}, _('Need the exact package inventory?')), E('p', {}, _('These are feature highlights, not a live installed-package scan or every transitive dependency. Each release includes its package manifest and build information. Packages can differ after local changes. OpenMPTCProuter is not included: it is a separate firmware platform, not a Mega package toggle.')), external(MEGA_REPO + '/releases', _('Open release manifests ↗'), 'zma-text-link')])
 				])
@@ -282,7 +327,7 @@ return view.extend({
 					]), E('p', { 'class': 'zma-small' }, _('Values above come from this router when the page opens. Missing build metadata is shown as unavailable, never guessed from the latest GitHub release.'))])
 			]),
 			E('section', { id: 'zma-community', 'class': 'zma-section' }, [
-				sectionHeading('04', 'Made by people. Better together.', 'Report what you observe, share reproducible fixes and give the upstream work the credit it deserves.'),
+				sectionHeading('05', 'Made by people. Better together.', 'Report what you observe, share reproducible fixes and give the upstream work the credit it deserves.'),
 				E('div', { 'class': 'zma-community-grid' }, [
 					E('article', { 'class': 'zma-card zma-maintainer' }, [
 						E('span', { 'class': 'zma-avatar', 'aria-hidden': 'true' }, 'MF'), E('div', { 'class': 'zma-eyebrow' }, _('MEGA EDITION DEVELOPER & MAINTAINER')), E('h3', {}, 'Michael Foster'), E('p', {}, _('Developer and maintainer of Mega Edition: this firmware variant’s features, fixes, integration, interface, builds, releases and ongoing maintenance. Find me as mfoster978 on GitHub and Discord.')),

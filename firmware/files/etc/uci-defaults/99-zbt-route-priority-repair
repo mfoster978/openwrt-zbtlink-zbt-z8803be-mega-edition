@@ -1,14 +1,20 @@
 #!/bin/sh
 set -eu
 
-DEFAULTS_VERSION=2
+DEFAULTS_VERSION=3
 [ "$(uci -q get system.zbt_route_priority.version 2>/dev/null || true)" = "$DEFAULTS_VERSION" ] && exit 0
 
 # Version 1 repaired only /etc/config/network metrics. That left the older
 # mwan3 catch-all/balanced policy active on settings-preserving upgrades, so a
 # newly connected modem2 could take traffic even while modem1 was healthy.
 preset="$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || true)"
-[ -n "$preset" ] || preset=priority
+# Versions through schema 2 wrote "priority" automatically. Migrate that
+# generated value to the quicker recovery preset once. An explicitly selected
+# fastest or custom layout remains untouched, and users may select priority
+# again after this migration has completed.
+case "$preset" in
+	''|priority) preset=failover ;;
+esac
 case "$preset" in
 	priority|failover|fastest)
 		# UCI defaults run before mwan3/netifd start; write the complete selected

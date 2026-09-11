@@ -543,6 +543,28 @@
  				
  				modems.push({
  					id: section['.name'],
+@@ -360,4 +359,21 @@
+ 		]).then(function(results) {
++			// AT+CNUM is queried independently for each modem. Some SIMs do not
++			// provision an MSISDN, so explain that instead of hiding the row.
++			var simEntries = results[1] && Array.isArray(results[1].modem_info) ? results[1].modem_info : [];
++			var phoneEntry = simEntries.find(function(entry) {
++				return /^(SIM Number|Phone Number|MSISDN)$/i.test(entry.key || '');
++			});
++			if (phoneEntry) {
++				phoneEntry.full_name = 'Phone Number (MSISDN)';
++				if (phoneEntry.value == null || String(phoneEntry.value).trim() === '')
++					phoneEntry.value = _('Not provided by SIM or carrier');
++			} else {
++				simEntries.push({
++					type: 'plain_text', key: 'SIM Number', full_name: 'Phone Number (MSISDN)',
++					value: _('Not provided by SIM or carrier'), 'class': 'SIM Information'
++				});
++			}
++
+ 			// Merge all modem_info arrays (exclude copyright)
+ 			var all_info = [];
+ 			for (var i = 0; i < results.length - 1; i++) {
 --- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js
 +++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js
 @@ -19,7 +19,8 @@
@@ -668,5 +690,109 @@
 -	o.description = _('After setting this option, the first module loaded into this slot will automatically be assigned this default alias.');
 +	o = s.option(form.Value, 'display_name', _('Default Modem Alias'));
 +	o.description = _('Display name for a newly discovered modem in this slot. The stable network interface name is unchanged.');
- 	o.placeholder = _('e.g.') + ' Modem';
- 	o.editable = true;
+	o.placeholder = _('e.g.') + ' Modem';
+	o.editable = true;
+ 
+--- a/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
++++ b/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
+@@ -1492,12 +1492,75 @@
+ }
+ 
+ #小区信息
++add_quectel_ca_report()
++{
++    local ca_response="$1"
++    local ca_lines total active index line role freq bandwidth band state_code state_label bandwidth_label value
++    ca_lines=$(printf '%s\n' "$ca_response" | sed -n '/^[[:space:]]*+QCAINFO: "\(PCC\|SCC\)"/p')
++    [ -n "$ca_lines" ] || return 0
++
++    total=$(printf '%s\n' "$ca_lines" | wc -l | tr -d ' ')
++    active=0
++    while IFS= read -r line; do
++        role=$(printf '%s\n' "$line" | awk -F',' '{gsub(/^[^"]*"/, "", $1); gsub(/".*$/, "", $1); print $1}')
++        state_code=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $5); print $5}')
++        if { [ "$role" = "PCC" ] && [ "$state_code" = 1 ]; } ||
++            { [ "$role" = "SCC" ] && [ "$state_code" = 2 ]; }; then
++            active=$((active + 1))
++        fi
++    done <<EOF
++$ca_lines
++EOF
++
++    add_plain_info_entry "Carrier Aggregation" "$active active / $total reported" "Carrier Aggregation"
++    index=0
++    while IFS= read -r line; do
++        [ -n "$line" ] || continue
++        index=$((index + 1))
++        role=$(printf '%s\n' "$line" | awk -F',' '{gsub(/^[^"]*"/, "", $1); gsub(/".*$/, "", $1); print $1}')
++        freq=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $2); print $2}')
++        bandwidth=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $3); print $3}')
++        band=$(printf '%s\n' "$line" | awk -F',' '{gsub(/^[[:space:]]*"|"[[:space:]\r]*$/, "", $4); print $4}')
++        state_code=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $5); print $5}')
++        case "$role:$state_code" in
++            PCC:1) state_label="registered" ;;
++            PCC:0) state_label="not serving" ;;
++            SCC:2) state_label="active" ;;
++            SCC:1) state_label="configured, idle" ;;
++            SCC:0) state_label="deconfigured" ;;
++            *) state_label="state $state_code" ;;
++        esac
++        bandwidth_label="$bandwidth"
++        case "$band:$bandwidth" in
++            "LTE BAND "*:6) bandwidth_label="1.4 MHz" ;;
++            "LTE BAND "*:15) bandwidth_label="3 MHz" ;;
++            "LTE BAND "*:25) bandwidth_label="5 MHz" ;;
++            "LTE BAND "*:50) bandwidth_label="10 MHz" ;;
++            "LTE BAND "*:75) bandwidth_label="15 MHz" ;;
++            "LTE BAND "*:100) bandwidth_label="20 MHz" ;;
++            "NR5G BAND "*:*)
++                case "$bandwidth" in
++                    ''|*[!0-9]*) ;;
++                    *) bandwidth_label=$(get_bandwidth "NR" "$bandwidth"); [ -n "$bandwidth_label" ] && bandwidth_label="$bandwidth_label MHz" || bandwidth_label="$bandwidth" ;;
++                esac
++                ;;
++        esac
++        value="$band; channel $freq; bandwidth $bandwidth_label; $state_label"
++        extra_info="$role"
++        add_plain_info_entry "Component Carrier $index" "$value" "Component Carrier $index"
++        unset extra_info
++    done <<EOF
++$ca_lines
++EOF
++}
++
+ cell_info()
+ {
+     m_debug  "Quectel cell info"
+ 
+     at_command='AT+QENG="servingcell"'
+     response=$(at $at_port $at_command)
++    ca_response=$(at $at_port 'AT+QCAINFO')
+     
+     local lte=$(echo "$response" | grep "+QENG: \"LTE\"")
+     local nr5g_nsa=$(echo "$response" | grep "+QENG: \"NR5G-NSA\"")
+@@ -1546,8 +1609,6 @@
+         case $rat in
+             "NR5G-SA")
+                 network_mode="NR5G-SA Mode"
+-                at_command="AT+QCAINFO"
+-                ca_response=$(at $at_port $at_command)
+                 ca_scc_info=$(echo "$ca_response" | grep "+QCAINFO:" | grep "SCC")
+ 
+                 if [ -n "$ca_scc_info" ]; then
+@@ -1585,7 +1646,6 @@
+                     done <<EOF
+ $(echo "$ca_scc_info")
+ EOF
+-                    [ $scc_count -gt 1 ] && network_mode="$network_mode with $scc_count CA"
+                 fi
+                 nr_duplex_mode=$(echo "$response" | awk -F',' '{print $4}' | sed 's/"//g')
+                 nr_mcc=$(echo "$response" | awk -F',' '{print $5}')
+@@ -1657,6 +1717,7 @@
+     fi
+     class="Cell Information"
+     add_plain_info_entry "network_mode" "$network_mode" "Network Mode"
++    add_quectel_ca_report "$ca_response"
+     case $network_mode in
+     "NR5G-SA Mode"*)
+         add_plain_info_entry "Duplex Mode" "$nr_duplex_mode" "Duplex Mode"

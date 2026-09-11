@@ -34,16 +34,19 @@ This is a **user-initiated** updater, not an unattended upgrade agent. Opening
 the page does not contact GitHub, download firmware, or flash it.
 
 1. Check for updates. The router reads published releases from the fixed
-   [Mega Edition repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases).
+   [Mega Edition repository](https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases).
    No GitHub account or API key is needed for public releases.
 2. Review the installed/selected versions and release notes, or select an older
    published version. Drafts, prereleases and unsupported assets are excluded.
 3. Download and verify. The image is streamed into temporary `/tmp` storage,
-   checked against SHA256 and validated for this router by OpenWrt.
+   checked against SHA256 and validated for this router by OpenWrt. The live
+   status card scrolls into view immediately and reports bytes/percentage when
+   GitHub supplies a size, followed by validation progress.
 4. Download a backup using **System → Backup / Flash Firmware**. Review the
    final flash confirmation and keep-settings choice before confirming.
 5. Keep power connected while flashing/rebooting. Prefer wired LAN and do not
-   run another flash operation concurrently. Reconnect after the reboot.
+   run another flash operation concurrently. The confirmation popup changes to
+   a write/reboot progress state as soon as flashing starts. Reconnect after the reboot.
 
 Only the device-specific **SquashFS sysupgrade `.bin`** is selected, never an
 initramfs kernel, source archive, package, arbitrary URL, or Minimal image.
@@ -60,6 +63,10 @@ packages installed after flashing are not preserved as installed binaries by
 normal sysupgrade. An older firmware may lack this updater; subsequent updates
 then use the standard LuCI flash page. This is not automatic rollback or a
 guarantee that a historical image will boot. There is no Force button.
+
+A settings-preserving update keeps the existing root password. A clean install
+or an update performed without keeping settings begins with an empty local root
+password and requires the user to set a new one in LuCI before other admin pages.
 
 ## Verification and trust
 

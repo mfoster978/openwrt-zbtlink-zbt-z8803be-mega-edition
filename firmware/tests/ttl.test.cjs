@@ -158,10 +158,10 @@ test('failed atomic firewall update restores its include and previous offload se
   assert.equal(f.get('firewall.@defaults[0].flow_offloading_hw'), '1');
 });
 
-test('new installations retain primary auto TTL; explicit global settings migrate once', () => {
+test('new installations keep both TTL policies off; explicit global settings migrate once', () => {
   const f = fixture(); f.worker('migrate');
   for (const id of ['4_1', '2_1']) {
-    assert.equal(f.get(`qmodem_ttl.${id}.enable`), id === '4_1' ? '1' : '0');
+    assert.equal(f.get(`qmodem_ttl.${id}.enable`), '0');
     assert.equal(f.get(`qmodem_ttl.${id}.ttl`), '64');
     assert.equal(f.get(`qmodem_ttl.${id}.mode`), 'auto');
   }
@@ -182,6 +182,31 @@ test('new installations retain primary auto TTL; explicit global settings migrat
   assert.equal(upgrade.get('qmodem_ttl.main.zbt_auto_ttl'), '0');
 });
 
+test('schema 2 implicit primary default is disabled once while custom policy is preserved', () => {
+  const seeded = fixture();
+  for (const [key, value] of [
+    ['qmodem_ttl.main.schema', 2], ['qmodem_ttl.4_1', 'modem'],
+    ['qmodem_ttl.4_1.enable', 1], ['qmodem_ttl.4_1.ttl', 64], ['qmodem_ttl.4_1.mode', 'auto'],
+    ['qmodem_ttl.2_1', 'modem'], ['qmodem_ttl.2_1.enable', 0],
+    ['qmodem_ttl.2_1.ttl', 64], ['qmodem_ttl.2_1.mode', 'auto']
+  ]) seeded.set(key, value);
+  seeded.worker('migrate');
+  assert.equal(seeded.get('qmodem_ttl.4_1.enable'), '0');
+  assert.equal(seeded.get('qmodem_ttl.main.schema'), '3');
+
+  const custom = fixture();
+  for (const [key, value] of [
+    ['qmodem_ttl.main.schema', 2], ['qmodem_ttl.4_1', 'modem'],
+    ['qmodem_ttl.4_1.enable', 1], ['qmodem_ttl.4_1.ttl', 65], ['qmodem_ttl.4_1.mode', 'manual'],
+    ['qmodem_ttl.2_1', 'modem'], ['qmodem_ttl.2_1.enable', 0],
+    ['qmodem_ttl.2_1.ttl', 64], ['qmodem_ttl.2_1.mode', 'auto']
+  ]) custom.set(key, value);
+  custom.worker('migrate');
+  assert.equal(custom.get('qmodem_ttl.4_1.enable'), '1');
+  assert.equal(custom.get('qmodem_ttl.4_1.ttl'), '65');
+  assert.equal(custom.get('qmodem_ttl.main.schema'), '3');
+});
+
 test('automatic recommendations are per modem and never overwrite a custom TTL', () => {
   const f = fixture(); policies(f, 66, 128);
   f.set('qmodem_ttl.4_1.mode', 'auto');
@@ -197,13 +222,13 @@ test('automatic recommendations are per modem and never overwrite a custom TTL',
   assert.match(f.render(), /meta oif 71 ip ttl set 66/);
 });
 
-test('old implicit primary TTL becomes visible; exact legacy files are archived, not deleted', () => {
+test('old implicit primary TTL is retained but disabled; exact legacy files are archived, not deleted', () => {
   const f = fixture(), old = legacyRule(65), custom = '# Custom legacy file preserved for review\n';
   fs.writeFileSync(path.join(f.etc, 'nftables.d/99-tether-ttl.nft'), old);
   fs.writeFileSync(path.join(f.etc, 'nftables.d/99-reset-ttl-from-br-lan.nft'), custom);
   fs.writeFileSync(path.join(f.etc, 'nftables.d/user-firewall.nft'), '# unrelated');
   f.worker('migrate');
-  assert.equal(f.get('qmodem_ttl.4_1.enable'), '1');
+  assert.equal(f.get('qmodem_ttl.4_1.enable'), '0');
   assert.equal(f.get('qmodem_ttl.4_1.ttl'), '65');
   assert.equal(f.get('qmodem_ttl.2_1.enable'), '0');
   assert.deepEqual(fs.readdirSync(path.join(f.etc, 'nftables.d')), ['user-firewall.nft']);

@@ -65,22 +65,37 @@ zbt_ttl_legacy_primary() {
 }
 
 zbt_ttl_migrate() {
-	local etc="${ZBT_TTL_ETC:-/etc}" section key value legacy enable ttl mode changed=0 file backup
+	local etc="${ZBT_TTL_ETC:-/etc}" section key value legacy enable ttl mode schema changed=0 file backup
 	legacy=$(zbt_ttl_legacy_primary "$etc/nftables.d/99-tether-ttl.nft") || legacy=''
+	schema=$(uci -q get qmodem_ttl.main.schema) || schema=0
+	# Schema 2 briefly seeded primary automatic TTL on. Correct only that exact
+	# generated footprint so upgrades regain flow offload; preserve every custom
+	# value, mode, secondary policy and subsequently edited configuration.
+	if [ "$schema" = 2 ] &&
+		[ "$(uci -q get qmodem_ttl.4_1.enable)" = 1 ] &&
+		[ "$(uci -q get qmodem_ttl.4_1.ttl)" = 64 ] &&
+		[ "$(uci -q get qmodem_ttl.4_1.mode)" = auto ] &&
+		[ "$(uci -q get qmodem_ttl.2_1.enable)" = 0 ] &&
+		[ "$(uci -q get qmodem_ttl.2_1.ttl)" = 64 ] &&
+		[ "$(uci -q get qmodem_ttl.2_1.mode)" = auto ]; then
+		uci set qmodem_ttl.4_1.enable=0 || return 1
+		changed=1
+	fi
 	for section in 4_1 2_1; do
-		# Preserve the inherited primary-slot automatic behavior, now visible.
-		# Secondary rewriting remains opt-in, even if its power/dial is enabled.
+		# TTL rewriting disables flow offload, so both slots are opt-in on a
+		# fresh installation. Preserve an explicitly enabled legacy plugin, but
+		# do not mistake the old always-present wwan0 include for user consent.
 		enable=0; ttl=64; mode=auto
-		[ "$section" != 4_1 ] || enable=1
-		if [ "$(uci -q get qmodem_ttl.main.schema)" != 2 ]; then
+		if [ "$schema" != 2 ] && [ "$schema" != 3 ]; then
 			value=$(uci -q get qmodem_ttl.main.ttl)
 			if [ "$(uci -q get qmodem_ttl.main.enable)" = 1 ] && zbt_ttl_valid "$value"; then
 				# Preserve an explicit legacy global choice on both modems only.
 				enable=1; ttl=$value; mode=manual
 			elif [ "$section" = 4_1 ] && [ -n "$legacy" ]; then
-				# The inherited wwan0 rule was intended for the primary slot.
-				# Keep its value, but make it visible and independently editable.
-				enable=1; ttl=$legacy
+				# Retain the old primary value as an editable recommendation while
+				# archiving its implicit include; leave the policy disabled so
+				# hardware/software flow offload remains available by default.
+				ttl=$legacy
 				if [ "$legacy" != 64 ] && [ "$legacy" != 65 ] ||
 					[ "$(uci -q get qmodem_ttl.main.zbt_auto_ttl)" = 0 ]; then mode=manual; fi
 			fi
@@ -105,7 +120,7 @@ zbt_ttl_migrate() {
 		changed=1
 	fi
 	for key in schema enable zbt_auto_ttl; do
-		value=0; [ "$key" != schema ] || value=2
+		value=0; [ "$key" != schema ] || value=3
 		if [ "$(uci -q get "qmodem_ttl.main.$key")" != "$value" ]; then
 			uci set "qmodem_ttl.main.$key=$value" || return 1
 			changed=1

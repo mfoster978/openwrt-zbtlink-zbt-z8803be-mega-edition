@@ -12,7 +12,7 @@ import urllib.request
 
 import publish_local_release as p
 
-MEGA = next(name for name in p.REPOSITORIES if "mega-edition" in name)
+MEGA = next(name for name in p.REPOSITORIES if p.REPOSITORIES[name][1] == "mega")
 MINIMAL = next(name for name in p.REPOSITORIES if "minimal" in name)
 TAG = "firmware-202609100657.1"
 
@@ -111,7 +111,7 @@ class PublicationTests(unittest.TestCase):
         (folder / "ai-notes.md").write_text(text)
 
     def test_valid_mega_publication(self):
-        self.assertEqual(MEGA, "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition")
+        self.assertEqual(MEGA, "mfoster978/OpenWrt-ZBT-Z8803BE-Mega")
         self.assertEqual(MINIMAL, "mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build")
         api = self.api()
         folder = self.prepare(api)

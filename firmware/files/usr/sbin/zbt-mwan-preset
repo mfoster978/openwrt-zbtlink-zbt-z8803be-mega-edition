@@ -126,6 +126,7 @@ configure_policy() {
 
 	network_exists wan_sfp && configure_tracking wan_sfp 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
 	network_exists wan && configure_tracking wan 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
+	network_exists usb_tether && configure_tracking usb_tether 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
 	configure_tracking 4_1 1.1.1.1 8.8.8.8 "$down_count" "$up_count"
 	configure_tracking 2_1 1.0.0.1 9.9.9.9 "$down_count" "$up_count"
 
@@ -137,8 +138,12 @@ configure_policy() {
 		configure_member failover_wan wan 2 1
 		configure_member balanced_wan wan 1 3
 	fi
-	configure_member failover_4_1 4_1 3 1
-	configure_member failover_2_1 2_1 4 1
+	if network_exists usb_tether; then
+		configure_member failover_usb_tether usb_tether 3 1
+		configure_member balanced_usb_tether usb_tether 1 1
+	fi
+	configure_member failover_4_1 4_1 4 1
+	configure_member failover_2_1 2_1 5 1
 	configure_member balanced_4_1 4_1 1 1
 	configure_member balanced_2_1 2_1 1 1
 
@@ -146,6 +151,7 @@ configure_policy() {
 	uci -q delete mwan3.failover.use_member 2>/dev/null || true
 	network_exists wan_sfp && uci -q add_list mwan3.failover.use_member=failover_wan_sfp
 	network_exists wan && uci -q add_list mwan3.failover.use_member=failover_wan
+	network_exists usb_tether && uci -q add_list mwan3.failover.use_member=failover_usb_tether
 	uci -q add_list mwan3.failover.use_member=failover_4_1
 	uci -q add_list mwan3.failover.use_member=failover_2_1
 	uci -q set mwan3.failover.last_resort=unreachable
@@ -154,6 +160,7 @@ configure_policy() {
 	uci -q delete mwan3.balanced.use_member 2>/dev/null || true
 	network_exists wan_sfp && uci -q add_list mwan3.balanced.use_member=balanced_wan_sfp
 	network_exists wan && uci -q add_list mwan3.balanced.use_member=balanced_wan
+	network_exists usb_tether && uci -q add_list mwan3.balanced.use_member=balanced_usb_tether
 	uci -q add_list mwan3.balanced.use_member=balanced_4_1
 	uci -q add_list mwan3.balanced.use_member=balanced_2_1
 	uci -q set mwan3.balanced.last_resort=unreachable
@@ -199,10 +206,10 @@ commit_all() {
 case "$mode" in
 	status)
 		printf 'preset=%s\n' "$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || echo priority)"
-		for interface in wan_sfp wan 4_1 2_1; do
+		for interface in wan_sfp wan usb_tether 4_1 2_1; do
 			printf 'network.%s.metric=%s\n' "$interface" "$(uci -q get "network.$interface.metric" 2>/dev/null || echo missing)"
 		done
-		for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
+		for member in failover_wan_sfp failover_wan failover_usb_tether failover_4_1 failover_2_1; do
 			printf 'mwan3.%s=%s:%s\n' "$member" \
 				"$(uci -q get "mwan3.$member.interface" 2>/dev/null || echo missing)" \
 				"$(uci -q get "mwan3.$member.metric" 2>/dev/null || echo missing)"
@@ -225,6 +232,7 @@ ensure_route_metric wan_sfp 9 "$exact"
 ensure_route_metric wan_sfp6 9 "$exact"
 ensure_route_metric wan 10 "$exact"
 ensure_route_metric wan6 10 "$exact"
+ensure_route_metric usb_tether 100 "$exact"
 ensure_route_metric 4_1 200 "$exact"
 ensure_route_metric 2_1 210 "$exact"
 ensure_firewall_membership

@@ -15,6 +15,8 @@ LUCI_URL='https://downloads.speedify.com/luci-app-speedify_noarch.apk'
 LUCI_SHA256='efaa6f7da76e4ad5c6bb407aa503886e6af828100a1263698ec26b4335e14167'
 CORE_DEPS='busybox ca-bundle curl kmod-tun libstdcpp6 iptables-nft libkeyutils1 libatomic1 kmod-nft-tproxy iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra iptables-mod-conntrack-extra'
 UI_DEPS='luci-nginx python3-light'
+LUCI_WRAPPER='/usr/share/zbt/speedify-luci-wrapper.js'
+LUCI_WRAPPER_TARGET='/www/luci-static/resources/view/speedify/speedify.js'
 INSTALL_LUCI="$(uci -q get speedify_bootstrap.main.install_luci 2>/dev/null || echo 1)"
 
 log() {
@@ -35,6 +37,20 @@ packages_complete() {
 
 service_running() {
 	[ -x "/etc/init.d/$1" ] && "/etc/init.d/$1" status >/dev/null 2>&1
+}
+
+install_luci_wrapper() {
+	[ "$INSTALL_LUCI" = '1' ] || return 0
+	[ -s "$LUCI_WRAPPER" ] || {
+		log 'reviewed Speedify LuCI wrapper is missing'
+		return 1
+	}
+	mkdir -p "${LUCI_WRAPPER_TARGET%/*}" || return 1
+	if ! cmp -s "$LUCI_WRAPPER" "$LUCI_WRAPPER_TARGET"; then
+		cp "$LUCI_WRAPPER" "$LUCI_WRAPPER_TARGET" || return 1
+		rm -f /tmp/luci-indexcache /tmp/luci-indexcache.json
+		log 'installed Speedify login-return refresh wrapper'
+	fi
 }
 
 sync_nginx_luci_frontend() {
@@ -103,6 +119,7 @@ activate_services() {
 	/etc/init.d/speedify enable >/dev/null 2>&1 || return 1
 	service_running speedify || /etc/init.d/speedify start >/tmp/speedify-service.log 2>&1
 	if [ "$INSTALL_LUCI" = '1' ]; then
+		install_luci_wrapper || return 1
 		sync_nginx_luci_frontend || return 1
 		# Keep LuCI itself healthy independently of the optional vendor UI.
 		# This also repairs a preserved, incompatible uWSGI configuration once.

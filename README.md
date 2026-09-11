@@ -2,12 +2,13 @@
   <img src="https://raw.githubusercontent.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE/v25.12.021/include/logo.png" alt="OpenWrt" width="420">
 </p>
 
-<h1 align="center">ZBTLink ZBT-Z8803BE Mega Edition</h1>
+<h1 align="center">OpenWrt ZBTLink ZBT-Z8803BE Mega Edition Firmware</h1>
 
 <p align="center">
   Developed and maintained by <a href="https://github.com/mfoster978">Michael Foster · @mfoster978</a>.<br>
-  A full-featured, device-specific OpenWrt firmware with independent dual-modem controls,
-  multi-WAN failover, live speed testing, VPN tools, Speedify integration, and guided firmware updates.
+  A full-featured OpenWrt community firmware for the ZBTLink ZBT-Z8803BE Wi-Fi 7 router,
+  with independent RM551E-GL dual-5G modem controls, multi-WAN failover, live speed testing,
+  integrated Speedify support, USB tethering and sharing, VPN tools, and guided firmware updates.
 </p>
 
 <p align="center">
@@ -16,21 +17,25 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/actions/workflows/build-openwrt-firmware.yml"><img alt="Firmware build" src="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/actions/workflows/build-openwrt-firmware.yml/badge.svg"></a>
+  <a href="https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/actions/workflows/build-openwrt-firmware.yml"><img alt="Firmware build" src="https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/actions/workflows/build-openwrt-firmware.yml/badge.svg"></a>
   <img alt="OpenWrt 25.12.2" src="https://img.shields.io/badge/OpenWrt-25.12.2-00B5E2?logo=openwrt&logoColor=white">
   <img alt="Linux 6.12.74" src="https://img.shields.io/badge/Linux-6.12.74-FCC624?logo=linux&logoColor=black">
   <img alt="Target MediaTek Filogic" src="https://img.shields.io/badge/target-MediaTek%20Filogic-ED1C24">
   <img alt="Architecture AArch64 Cortex-A53" src="https://img.shields.io/badge/arch-AArch64%20Cortex--A53-5C4EE5">
+  <img alt="Speedify integrated" src="https://img.shields.io/badge/Speedify-integrated-00A1DE">
 </p>
 
 <p align="center">
-  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases">Download releases</a> ·
-  <a href="https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/issues">Issues &amp; feature requests</a> ·
+  <a href="https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases">Download releases</a> ·
+  <a href="https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/issues">Issues &amp; feature requests</a> ·
   <a href="mailto:mfoster978@gmail.com">mfoster978@gmail.com</a> · Discord: <strong>mfoster978</strong>
 </p>
 
 > [!CAUTION]
 > This firmware is only for the **ZBTLink ZBT-Z8803BE** device IDs listed below. A successful CI build proves that the source, packages, root filesystem, metadata, and images are internally consistent; it does not replace testing on physical hardware. Back up the router before flashing and keep a recovery method available.
+
+> [!NOTE]
+> **Speedify is supported and integrated in Mega Edition.** Its official packages are automatically downloaded, checksum-verified, installed, and exposed in LuCI after the router first obtains HTTPS connectivity. Users do not need to run a manual `wget | sh` installer. A Speedify account and any applicable subscription remain the user's responsibility.
 
 ## At a glance
 
@@ -43,6 +48,7 @@
 | Kernel | Linux `6.12.74` |
 | Build target | `mediatek/filogic` |
 | Device profile | `zbtlink_zbt-z8803be` |
+| SFP+ interface | 10GBASE-R / in-band status, up to 3 W module power |
 | Baseline | [0xFar5eer/openwrt25.12_ZBT_Z8803BE](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE) tag `v25.12.021` |
 | Pinned baseline commit | `edc738504fe8fae81eb15de967456204699b1830` |
 | Package format | APK |
@@ -62,8 +68,9 @@ The board target, Linux version, Wi-Fi and modem-driver sources remain pinned to
 | Upgrading an existing compatible OpenWrt installation | Read [Download and flash](#download-and-flash), back up the current configuration, verify the SHA256, and use the SquashFS sysupgrade image. |
 | Recovering through U-Boot | Follow [U-Boot recovery](#u-boot-recovery) and use the SquashFS sysupgrade image accepted by the device recovery page. |
 | Running two cellular modems | Review [Dual-modem layout](#dual-modem-layout) and [Default routing behavior](#default-routing-behavior) before inserting or power-cycling modules. |
-| Using wired WAN with cellular backup | The default `mwan3` policy already prioritizes SFP, then copper WAN, then modem 1 and modem 2. |
+| Using wired WAN with cellular backup | The default `mwan3` policy prioritizes SFP, then copper WAN, USB tethering, modem 1, and modem 2. |
 | Looking for connection bonding | Read [Speedify](#speedify) and [OpenMPTCProuter](#openmptcprouter) before choosing an architecture. |
+| Connecting a phone, disk, SMB share, or USB/IP device | Start with [USB tethering, storage and sharing](#usb-tethering-storage-and-sharing), then use the [complete setup and safety guide](firmware/docs/usb-tethering-storage-sharing.md). |
 | Developing or auditing the firmware | Use [Build it yourself](#build-it-yourself), then inspect the resolved config, package manifest, checksums, and runtime verifier. |
 
 ## Your router, your features
@@ -74,16 +81,17 @@ Mega Edition combines a wide selection of add-on packages with custom-developed 
 
 | Feature | Default behavior / your choice |
 |---|---|
-| Core networking and normal `mwan3` failover | Active; wired-first routing is the starting point. |
+| Core networking and normal `mwan3` failover | Active; faster wired-first priority failover is the starting point. |
 | Modem 1 and Modem 2 | Enabled initially in Mega; later per-slot power, dialing and SIM choices are preserved. |
 | Extra watchdog and automated recovery actions | Off until explicitly enabled and configured. |
 | Background speed sampling, minimum-speed switching and prefer-fastest mode | Off until opted in; you control thresholds and intervals. |
 | Live Speed Test Utility | Runs only when you start a test; it does not automatically consume cellular data in the background. |
 | Speedify | Dependencies are baked in and its first-online installer is enabled. Bonding still requires your own account and setup; no credentials are preconfigured. |
 | Tailscale and OpenVPN | Available for your own account/tunnel configuration; no user VPN connection is preconfigured. |
-| Android/iPhone USB tethering | Drivers and Apple pairing tools are ready; the phone and its OpenWrt network interface still require owner setup. |
+| Android/iPhone USB tethering | Drivers and Apple pairing tools are ready; a supported phone binds to `usb_tether` after owner-side tethering/Trust setup. |
 | USB storage, SMB shares, and USB over IP | Storage drivers are ready. Mounts, the KSMBD server, and the USB/IP server are not activated until the owner configures/enables them. |
 | Firmware updates and downgrades | Explicitly requested and confirmed by you; no unattended flashing. |
+| Root administrator password | A clean install starts without a shared factory password and requires root to set one at the first local LuCI login. An upgrade keeps the existing password. |
 
 Installed does not mean every feature is actively controlling traffic. Keep unused optional services off, enable only what suits your setup, and avoid putting multiple routing managers in charge of the same traffic without reviewing their policies.
 
@@ -91,8 +99,8 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 
 ### Mega About and firmware updates
 
-- **About** is a desktop-ready, dark five-tab feature/package guide with illustrations, build information, developer/maintainer Michael Foster's email and Discord contacts, and special thanks to upstream developer [0xFar5eer](https://github.com/0xFar5eer).
-- **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Older versions can be selected for downgrade; keeping settings is off by default for downgrades.
+- **About** is a desktop-ready, dark six-tab guide with dedicated Features, Speedify, USB & Sharing, Packages, installed-build, and project/credits content. It includes illustrations, developer/maintainer Michael Foster's email and Discord contacts, and special thanks to upstream developer [0xFar5eer](https://github.com/0xFar5eer).
+- **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Live download/validation progress scrolls into view immediately, and the final flash dialog shows an indeterminate write/reboot indicator. Older versions can be selected for downgrade; keeping settings is off by default for downgrades.
 - HTTPS, SHA256, local device identity and OpenWrt image checks are required. There is no forced/unattended flash or automatic rollback. Back up settings first. Old firmware without this tool requires the usual LuCI flash page for subsequent updates.
 - These features are **Mega-only**; Minimal retains its original About screen and does not include this updater. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md) for the remaining on-router acceptance checks.
 
@@ -102,7 +110,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - MediaTek Filogic 880 platform with MT7996-family tri-band Wi-Fi 7 support.
 - 2.4 GHz, 5 GHz, and 6 GHz operation, including the upstream opt-in Wi-Fi 7 MLO interface.
 - The pinned hostapd receives focused upstream AP-MLD interoperability fixes: correct partner-profile length accounting, per-link BSS change counters, valid EML capability fields, clean reassociation state, and reliable MLD reload/interface reuse. It also records key-free requested/accepted link bitmaps in `logread` so single-link negotiation can be distinguished from a link lost later in the stack.
-- SFP+, copper Ethernet, USB 3.0, ext4, vfat, exfat, block mounting, and SFTP support inherited from the baseline.
+- 10 Gb/s SFP+ (`10gbase-r`, in-band status), copper Ethernet, USB 3.0, ext4, vfat, exfat, block mounting, and SFTP support inherited from the baseline.
 - ZBT temperature charts, health monitoring, fan information, modem LED services, event history, and device-specific LuCI styling inherited from the baseline.
 - Mainline OpenWrt base without requiring a MediaTek vendor firmware feed.
 
@@ -117,18 +125,21 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - QMI/MBIM paths using `quectel-CM-M -d` use `proto=none`: the connection manager owns addresses and routes, with no competing DHCP client. ECM/RNDIS retain their protocol-specific behavior.
 - Both USB modems use the same startup, APN, protocol, and recovery logic. The connection manager applies the MTU reported for each data connection, rather than copying one carrier's value to everyone.
 - Blank/auto QMI APNs retain modem/network profile negotiation. A directly identified AT&T US `310/410` SIM gets the data-device fallback `broadband`; every manual APN still wins. Both SIM selectors also offer editable presets for AT&T, FirstNet, T-Mobile, Verizon, Google Fi, and U.S. Cellular.
+- SIM information shows the carrier-provided phone number through `AT+CNUM` when one is provisioned, and says explicitly when the SIM/carrier does not provide an MSISDN.
+- Quectel carrier aggregation is reported in LTE, 5G NSA and 5G SA modes with every PCC/SCC, bandwidth, state and active/reported count returned by `AT+QCAINFO`; the router does not impose or advertise a fake two-carrier limit.
 - Band changes require a successful AT response and matching readback. Unknown masks have read-only diagnostics and Retry; reported bands stay separate from pending edits. See [per-modem band readback](firmware/docs/band-readback.md).
-- Existing Far5eer carrier TTL/hop-limit handling and modem NAT detection remain available.
+- Carrier TTL/hop-limit handling and modem NAT detection remain available per modem, but both policies are off on a fresh install so they do not silently disable flow offload.
 
 ### Multi-WAN and recovery
 
 - `mwan3` and `luci-app-mwan3` are installed and enabled with deterministic first-boot defaults.
-- Strict wired-first failover order, while automatically omitting a wired interface that is not present.
+- Strict SFP → copper WAN → USB tether → modem 1 → modem 2 failover order, while automatically omitting an unavailable path.
 - A separate balanced policy is available for deliberate load distribution.
 - Default traffic, including speed-test ports, follows wired-first failover; balancing is an explicit user choice.
 - **Network → MultiWAN Manager → Presets & Recovery** offers one-click priority, fast-failover, and fastest-cellular presets, plus minimum-speed thresholds and per-modem recovery controls.
 - The MultiWAN Interfaces tab owns the persistent route metric for every tracked link. QModem displays the cellular value read-only and cannot erase or override it during redial.
-- The additional watchdog, recovery actions, speed-based preference changes, and “prefer fastest” mode are disabled by default. Normal `mwan3` connectivity failover remains enabled.
+- Priority failover is enabled by default with faster recovery checks: SFP, copper WAN, USB tether, modem 1, then modem 2. When a preferred path becomes healthy again, new connections return to it automatically. Existing established sessions may remain on the backup until they reconnect.
+- The additional modem-reset watchdog, destructive recovery actions, speed-based preference changes, and “prefer fastest” mode remain disabled by default.
 - Recovery choices include log-only, disconnect, redial, or GPIO power-cycle followed by redial.
 - Cooldowns and failure thresholds prevent rapid recovery loops.
 - QModem supervises each physical modem separately. The old configuration-rewriting watchdog, shared restart hooks, and post-flash automatic modem reset have been retired.
@@ -144,11 +155,17 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 
 ### USB tethering, storage and sharing
 
-- Android USB tethering is supported through the RNDIS and CDC Ethernet drivers. Enable USB tethering on the phone, then assign the detected Ethernet device to a DHCP-client interface under **Network → Interfaces**. The firmware does not silently replace an existing WAN policy.
-- iPhone/iPad USB tethering is supported through `ipheth`, `usbmuxd`, and `libimobiledevice` utilities. Trust the router from the Apple device and enable Personal Hotspot before assigning the detected interface. Apple pairing and carrier behavior remain device/account dependent.
-- **Services → USB Storage** opens OpenWrt's standard Mount Points page. USB mass-storage/UAS and ext4, exFAT, and FAT filesystem support are included. Detected media is not automatically exposed as a network share.
-- **Services → Network Shares** configures the in-kernel KSMBD server. A new **Enable server** switch defaults off; set mount paths, users, guest access, and listening interfaces before enabling it.
-- USB-over-IP client and server tools are included for advanced use. The server defaults off in `/etc/config/usbipd`; there is no USB/IP LuCI application in the pinned OpenWrt feed. Binding and exporting a USB device is therefore an intentional command-line action. Do not expose USB/IP to untrusted WAN networks.
+These capabilities are **Mega-only**. Nothing is silently shared. A supported attached phone is assigned the stable `usb_tether` DHCP interface and participates in MultiWAN after wired WAN but before either built-in modem.
+
+| Capability | Where to start | Safe default and important behavior |
+|---|---|---|
+| Android USB tethering | Enable tethering on a data-capable cable; supported RNDIS/CDC Ethernet devices bind to `usb_tether`. | DHCP/MultiWAN is prepared automatically at route metric 100; confirm the device and carrier behavior before relying on it. |
+| iPhone/iPad tethering | Enable Personal Hotspot, accept Trust and pair when required; `ipheth` binds to `usb_tether`. | `usbmuxd` and `libimobiledevice` tools are present; Apple/carrier behavior still depends on the device and account. |
+| USB storage | Open **Services → USB Storage**, which links to OpenWrt's Mount Points page. | Mass-storage/UAS and ext4, exFAT, and FAT support are included. Media is neither auto-mounted into an unsafe guessed path nor automatically shared. |
+| SMB file sharing | Mount the filesystem first, then use **Services → Network Shares**. | KSMBD has an explicit **Enable server** switch that defaults off. Configure paths, users/guest policy, and trusted listening interfaces before enabling it. |
+| USB over IP | Configure `/etc/config/usbipd`, then use the `usbip`/`usbipd` command-line tools to bind, export, list, or attach devices. | The server defaults off. The pinned feeds have no USB/IP LuCI app, and the service must never be exposed directly to an untrusted WAN. |
+
+Storage and exported devices can contain sensitive data. Use adequate USB power, stable mount paths, restrictive firewall rules, and backups. See the [USB tethering, storage, KSMBD and USB/IP guide](firmware/docs/usb-tethering-storage-sharing.md) for setup order, checks, limitations, and rollback steps.
 
 ### Build integrity and safety
 
@@ -185,7 +202,9 @@ All exposed LEDs appear under **System → LED Configuration**. Adding a custom 
 
 QModem menus, dropdowns and dial-log titles show **Modem 1** / **Modem 2**. The editable Modem Alias is stored as a display name, separate from the stable internal `4_1` / `2_1` routing identities. Changing a display name does not restart either modem.
 
-**QModem → TTL** now provides an independent enable switch and automatic/custom TTL for each modem. Use different IPv4 TTL / IPv6 Hop Limit values, or enable modification on only one modem. Rules follow the physical slots, not changing `wwanN` names. Primary automatic behavior is retained; secondary rewriting is opt-in. Enabling either policy disables flow offloading globally. See [TTL controls, migration and tests](firmware/docs/per-modem-ttl.md).
+**QModem → TTL** provides an independent enable switch and automatic/custom TTL for each modem. Use different IPv4 TTL / IPv6 Hop Limit values, or enable modification on only one modem. Rules follow the physical slots, not changing `wwanN` names. Both policies are opt-in because enabling either one disables flow offloading globally. See [TTL controls, migration and tests](firmware/docs/per-modem-ttl.md).
+
+QModem's cell information now reads Quectel `AT+QCAINFO` in LTE, 5G NSA and 5G SA modes. It lists every PCC/SCC the modem reports and distinguishes active secondary carriers from configured-but-idle carriers. This removes the misleading combined “2 CA” label; it does not force an unsupported tower/carrier combination. See [carrier aggregation and throughput diagnosis](firmware/docs/carrier-aggregation-and-throughput.md).
 
 The September 10 follow-up repairs LED startup ordering and trigger restoration without touching modem power or SIM GPIOs. Run `zbt-modem-led-poller status` for read-only LED diagnostics. See the [follow-up notes](firmware/docs/runtime-repair-2026-09.md#september-10-led-and-label-follow-up) for the remaining modem 2 registration check.
 
@@ -200,9 +219,11 @@ SFP WAN        route 9   / MWAN tier 1
   ↓
 Copper WAN     route 10  / MWAN tier 2
   ↓
-Modem 1 (4_1)  route 200 / MWAN tier 3
+USB tether     route 100 / MWAN tier 3
   ↓
-Modem 2 (2_1)  route 210 / MWAN tier 4
+Modem 1 (4_1)  route 200 / MWAN tier 4
+  ↓
+Modem 2 (2_1)  route 210 / MWAN tier 5
 ```
 
 Each available interface is monitored with two public ping targets and `reliability=1`. The default catch-all rule uses the `failover` policy. The `balanced` policy exists for explicit selection, but normal traffic remains wired-first by default. Route-metric changes are made inside MultiWAN Manager and persist in `/etc/config/network`; QModem is responsible only for establishing the cellular data sessions.
@@ -261,9 +282,10 @@ The installer:
 3. downloads the pinned core and LuCI APKs over HTTPS with retries;
 4. rejects either file unless its reviewed SHA256 matches;
 5. installs only the downloaded local APKs with `--no-network`, preventing an ABI-mismatched kernel module from being pulled later;
-6. starts and health-checks Speedify, its web service, nginx, and both the HTTP and HTTPS LuCI routes;
-7. keeps nginx and its authenticated Speedify routes in place if a service health check fails; retries do not reinstall already-present packages or repeatedly run vendor network setup;
-8. records completion only after all selected services pass.
+6. installs a reviewed LuCI wrapper that preserves the vendor application and refreshes it after returning from an external account-login screen;
+7. starts and health-checks Speedify, its web service, nginx, and both the HTTP and HTTPS LuCI routes;
+8. keeps nginx and its authenticated Speedify routes in place if a service health check fails; retries do not reinstall already-present packages or repeatedly run vendor network setup;
+9. records completion only after all selected services pass.
 
 To install the Speedify core without its LuCI application, set this before the first successful installation:
 
@@ -290,7 +312,7 @@ The generic Linux MPTCP capability inherited from the OpenWrt/Far5eer kernel rem
 
 ## Download and flash
 
-Download from [Mega Edition releases](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases). A release may be compiled on the maintainer's local server or in GitHub Actions; its `BUILD-INFO.txt` identifies the exact recipe commit and build provenance. Publication requires validated device-specific images and checksums. Gemini generates evidence-bound release notes using a GitHub repository secret; no API key is included in the firmware.
+Download from [Mega Edition releases](https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases). A release may be compiled on the maintainer's local server or in GitHub Actions; its `BUILD-INFO.txt` identifies the exact recipe commit and build provenance. Publication requires validated device-specific images and checksums. Gemini generates evidence-bound release notes using a GitHub repository secret; no API key is included in the firmware.
 
 ### Which file do I need?
 
@@ -363,11 +385,11 @@ The `-n` option discards existing configuration. Do not use it unless the backup
 4. Upload `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin`.
 5. Do not interrupt power. Allow several minutes for writing, first boot, and overlay initialization.
 
-Baseline first-boot credentials are `root` / `admin` at `192.168.1.1`. Change the password immediately and verify these credentials against the release being installed.
+A clean Mega installation has no shared `admin` password. Open `http://192.168.1.1`, sign in locally as `root` with the initially empty password, and LuCI will require a new root password before exposing the rest of administration. A settings-preserving upgrade keeps the existing root password.
 
 ## First-boot checklist
 
-- Change the root password.
+- Complete the required root-password setup on the first local LuCI login.
 - Wi-Fi defaults to the US regulatory domain on 2.4, 5 and 6 GHz. Transmit power remains automatic so the driver honors the lower of the US limit and the board's calibrated EEPROM limit. The mobile-compatible 6 GHz profile is capped to the FCC very-low-power class (14 dBm EIRP), not indoor 30 dBm or standard-power/AFC operation; use only compliant hardware and antennas.
 - Confirm both installed modems appear under QModem and match sections `4_1` and `2_1`.
 - Configure APN, PIN, PDP, and carrier-specific settings for each modem.
@@ -436,6 +458,7 @@ The same host should have roughly 40–50 GiB available for a clean build. More 
 | `firmware/feeds/zbt-speedtest/` | Pinned speedtest-go measurement engine with live reporting, socket-level modem binding, and cancellation |
 | `firmware/feeds/luci-app-tailscale/` | Tailscale status/sign-in UI and authenticated RPC backend |
 | `firmware/patches/` | Strict patches against pinned QModem and mwan3 userspace sources |
+| `firmware/docs/usb-tethering-storage-sharing.md` | Mega-only phone tethering, storage, KSMBD and USB/IP setup/safety guide |
 | `firmware/tests/` | Mocked runtime regressions, pinned-source patch checks, and isolated nginx/proxy test |
 | `firmware/scripts/check-build-inputs.sh` | Static source, checksum, and input validation |
 | `firmware/scripts/verify-router-runtime.sh` | Post-flash runtime inspection helper |
@@ -448,7 +471,7 @@ A green **firmware build** confirms the following build-time checks (the separat
 - source URL, tag, commit, device target, and required configuration symbols;
 - reviewed Speedify downloads and pinned SHA256 values;
 - successful toolchain, Go bootstrap, package, kernel, and image compilation;
-- required modem, QModem, MHI, mwan3, VPN, custom LuCI, and Speedify dependency packages in that run's final manifest;
+- required modem, QModem, MHI, mwan3, VPN, custom LuCI, Speedify dependency, phone-tethering, storage, KSMBD, and USB/IP packages in that run's final manifest;
 - required first-boot defaults and services in the assembled root filesystem;
 - non-empty initramfs and SquashFS sysupgrade images;
 - artifact-level `sha256sums` verification.
@@ -518,13 +541,15 @@ logread -e speedify-installer
 
 Clicking Speedify from an HTTP LuCI session now returns a Speedify-only **307 redirect to HTTPS**; ordinary LuCI pages remain available over HTTP. Without a login session, the protected HTTPS Speedify index should return **401**, not 404 or 502. This is required because the embedded application uses authenticated WebSockets and browser secure-context features. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
 
+If Speedify sends the browser to an external account-login screen, return to its router tab after completing sign-in. Mega's reviewed wrapper detects that leave/return cycle and refreshes the embedded application so it reads the daemon's new account state. A second router login can still be required when the HTTP-to-HTTPS transition starts a separate secure LuCI session.
+
 ### HTTPS warning on the router's private IP address
 
 Use `http://192.168.1.1` for the default warning-free LAN login. Speedify is the exception: selecting it redirects that page to HTTPS because its embedded application requires a secure context. HTTPS uses a per-router self-signed certificate and will show a warning until you install a trusted local CA or a certificate for a hostname you control. HTTP is restricted to the local router interface but is not encrypted, so use HTTPS with a trusted certificate on untrusted LANs. This setting never disables certificate verification for firmware or package downloads.
 
 ## Support and sponsorship
 
-**Michael Foster / @mfoster978 develops and maintains Mega Edition.** Report Mega-specific issues and feature requests in [this repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/issues), email [mfoster978@gmail.com](mailto:mfoster978@gmail.com), or contact **mfoster978** on Discord. Pull requests, reproducible bug reports, documentation, and hardware-test results are welcome.
+**Michael Foster / @mfoster978 develops and maintains Mega Edition.** Report Mega-specific issues and feature requests in [this repository](https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/issues), email [mfoster978@gmail.com](mailto:mfoster978@gmail.com), or contact **mfoster978** on Discord. Pull requests, reproducible bug reports, documentation, and hardware-test results are welcome.
 
 Credits and support links below acknowledge independent upstream projects; they do not imply sponsorship, endorsement, or responsibility for Mega Edition. Choose the project closest to the work you want to support:
 
@@ -533,7 +558,7 @@ Credits and support links below acknowledge independent upstream projects; they 
 | OpenWrt itself, package infrastructure, and security maintenance | [Donate to the OpenWrt Project](https://openwrt.org/donate) |
 | Upstream ZBT-Z8803BE board support and hardware testing | [Far5eer's ZBT-Z8803BE project](https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE) and its own support information |
 | QModem Next and modem-management UX | [FUjr/QModem](https://github.com/FUjr/QModem) through issues, testing, documentation, or code contributions |
-| Mega Edition development, fixes, user interface, and ongoing releases | [@mfoster978's Mega repository](https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition), Issues and Pull Requests |
+| Mega Edition development, fixes, user interface, and ongoing releases | [@mfoster978's Mega repository](https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega), Issues and Pull Requests |
 
 For upstream donations or sponsorship, follow the relevant project's own current support page. Mega Edition's developer/maintainer contact information is listed above; upstream funding links are not payment details for this edition.
 

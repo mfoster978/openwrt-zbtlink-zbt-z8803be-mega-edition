@@ -4,7 +4,7 @@
 'require poll';
 'require ui';
 
-var repository = 'mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition';
+var repository = 'mfoster978/OpenWrt-ZBT-Z8803BE-Mega';
 var callInfo = rpc.declare({ object: 'zbt.firmware', method: 'info', expect: {} });
 var callCheck = rpc.declare({ object: 'zbt.firmware', method: 'check', params: ['page'], expect: {} });
 var callPrepare = rpc.declare({ object: 'zbt.firmware', method: 'prepare', params: ['release_id'], expect: {} });
@@ -83,7 +83,7 @@ return view.extend({
 		this.checkButton.disabled = !this.info.eligible;
 		this.releaseList = E('div', { 'class': 'zfu-release-list' }, E('p', { 'class': 'zfu-empty' }, _('Check GitHub to see the latest compatible Mega firmware and its release notes. Nothing is downloaded or flashed until you choose it.')));
 		this.moreButton = E('button', { 'class': 'zfu-button', type: 'button', hidden: '', click: function() { return self.check(self.page + 1); } }, _('Load older releases'));
-		this.jobPanel = E('section', { 'class': 'zfu-card zfu-job', 'aria-label': _('Firmware download and validation'), hidden: '' });
+		this.jobPanel = E('section', { 'class': 'zfu-card zfu-job', 'aria-label': _('Firmware download and validation'), role: 'status', 'aria-live': 'polite', tabindex: '-1', hidden: '' });
 		var root = E('div', { 'class': 'zfu' }, [
 			E('link', { rel: 'stylesheet', href: L.resource('view/system/mega-update.css') }),
 			E('section', { 'class': 'zfu-hero' }, [
@@ -124,6 +124,26 @@ return view.extend({
 		this.notice.hidden = !message;
 		this.notice.classList.toggle('zfu-error', !!error);
 		this.notice.textContent = message || '';
+	},
+
+	scrollToJob: function() {
+		var panel = this.jobPanel;
+		window.requestAnimationFrame(function() {
+			if (!panel.hidden && typeof panel.scrollIntoView === 'function')
+				panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		});
+	},
+
+	renderRequestProgress: function(release, error) {
+		this.jobPanel.hidden = false;
+		replace(this.jobPanel, [
+			E('span', { 'class': 'zfu-eyebrow' }, _('VERIFIED UPGRADE PIPELINE')),
+			E('h3', {}, error ? _('Download request failed') : _('Starting secure firmware download…')),
+			E('p', {}, text(release && release.tag)),
+			!error ? E('div', { 'class': 'zfu-progress zfu-request-progress', role: 'progressbar', 'aria-label': _('Starting firmware download'), 'aria-valuetext': _('Contacting the router update service') }, E('span')) : null,
+			E('p', { 'class': error ? 'zfu-warning' : 'zfu-muted' }, error || _('Contacting the router update service and reserving temporary space. Nothing is being flashed.'))
+		].filter(function(x) { return x != null; }));
+		this.scrollToJob();
 	},
 
 	check: function(page) {
@@ -211,13 +231,18 @@ return view.extend({
 		this.busy = true;
 		this.renderSelected();
 		this.message(_('Requesting this release’s exact upgrade image. This does not flash the router.'));
+		this.renderRequestProgress(release);
 		return callPrepare(release.id).then(function(result) {
 			if (!result.ok || typeof result.id !== 'string' || !result.id) throw new Error(result.error || _('Download request was not accepted.'));
 			self.job = { id: result.id, phase: 'downloading', release: release };
 			self.message('');
 			self.renderJob();
+			self.scrollToJob();
 			return self.refreshStatus();
-		}).catch(function(error) { self.message(error.message, true); }).finally(function() { self.busy = false; self.renderSelected(); });
+		}).catch(function(error) {
+			self.message(error.message, true);
+			self.renderRequestProgress(release, error.message);
+		}).finally(function() { self.busy = false; self.renderSelected(); });
 	},
 
 	refreshStatus: function() {
@@ -261,8 +286,13 @@ return view.extend({
 		if (job.flash_started && phase === 'error') labels.error = _('Flash outcome requires attention');
 		var total = Number(job.total) || 0;
 		var bytes = Math.max(0, Number(job.bytes) || 0);
-		var progress = E('progress', { 'aria-label': _('Firmware download progress'), max: total > 0 ? total : 1 });
-		if (total > 0) progress.value = Math.min(bytes, total);
+		var showProgress = phase === 'loading' || phase === 'downloading' || phase === 'validating';
+		var progress = showProgress ? E('progress', { 'aria-label': phase === 'validating' ? _('Firmware validation progress') : _('Firmware download progress') }) : null;
+		var percent = total > 0 ? Math.min(100, Math.round(bytes * 100 / total)) : null;
+		if (progress && phase === 'downloading' && total > 0) {
+			progress.max = total;
+			progress.value = Math.min(bytes, total);
+		}
 		var action = E('button', { 'class': 'zfu-button zfu-danger zfu-review', type: 'button', click: function() { self.confirm(); } }, this.relation(job.release || {}).kind === 'downgrade' ? _('Review downgrade…') : _('Review update…'));
 		action.disabled = !this.writable || phase !== 'ready' || !validConfirmation(job.confirmation) || this.accepted || this.busy;
 		var discard = E('button', { 'class': 'zfu-button zfu-discard', type: 'button', click: function() { return self.discard(); } }, phase === 'downloading' || phase === 'validating' ? _('Cancel download') : _('Discard image'));
@@ -270,8 +300,10 @@ return view.extend({
 		replace(this.jobPanel, [E('span', { 'class': 'zfu-eyebrow' }, _('VERIFIED UPGRADE PIPELINE')),
 			E('h3', {}, labels[phase] || _('Unknown download state')),
 			E('p', {}, text(job.release && job.release.tag)),
-			phase === 'downloading' || phase === 'validating' ? progress : null,
-			phase === 'downloading' ? E('p', { 'class': 'zfu-muted' }, size(bytes) + (total ? ' / ' + size(total) : ' ' + _('downloaded'))) : null,
+			showProgress ? progress : null,
+			phase === 'loading' ? E('p', { 'class': 'zfu-muted' }, _('Reading the current download state from the router…')) : null,
+			phase === 'downloading' ? E('p', { 'class': 'zfu-muted zfu-progress-text' }, (percent != null ? percent + '% · ' : '') + size(bytes) + (total ? ' / ' + size(total) : ' ' + _('downloaded'))) : null,
+			phase === 'validating' ? E('p', { 'class': 'zfu-muted zfu-progress-text' }, _('Download complete. Checking SHA256, image format, board identity and upgrade compatibility…')) : null,
 			phase === 'ready' ? E('p', {}, _('The downloaded image passed server-side checks. Nothing has been flashed. Review the final confirmation to continue.')) : null,
 			phase === 'ready' && !validConfirmation(job.confirmation) ? E('p', { 'class': 'zfu-warning' }, _('A valid confirmation token is missing. Discard this image and try again.')) : null,
 			job.sha256 ? E('div', { 'class': 'zfu-checksum' }, [E('strong', {}, 'SHA256'), E('code', {}, String(job.sha256))]) : null,
@@ -279,6 +311,15 @@ return view.extend({
 			job.flash_started && phase === 'error' ? E('p', { 'class': 'zfu-warning' }, _('The image is retained because flashing may have started. Deleting it or starting another update is blocked. Keep power connected; confirm that no upgrade is running before attempting recovery.')) : null,
 			E('div', { 'class': 'zfu-actions' }, [phase === 'ready' ? action : null, discard].filter(function(x) { return x != null; }))
 		].filter(function(x) { return x != null; }));
+	},
+
+	showFlashProgress: function(title, status, details) {
+		ui.showModal(title, [E('div', { 'class': 'zfu zfu-flash-progress', role: 'status', 'aria-live': 'assertive' }, [
+			E('div', { 'class': 'zfu-progress', role: 'progressbar', 'aria-label': status, 'aria-valuetext': status }, E('span')),
+			E('h3', {}, status),
+			E('p', {}, details),
+			E('p', { 'class': 'zfu-warning' }, _('Keep stable power connected. Never unplug or restart the router while firmware is being written.'))
+		])]);
 	},
 
 	discard: function() {
@@ -310,6 +351,7 @@ return view.extend({
 			cancel.disabled = true;
 			keep.disabled = true;
 			acknowledged.disabled = true;
+			self.showFlashProgress(_('Starting firmware update'), _('Submitting the verified image…'), _('The router is performing final checks before it accepts the flash. No restart has been assumed yet.'));
 			var receivedReply = false;
 			return callFlash(job.id, job.confirmation, job.allow_backup === true && keep.checked).then(function(result) {
 				receivedReply = true;
@@ -317,9 +359,9 @@ return view.extend({
 				self.accepted = true;
 				self.flashKeep = job.allow_backup === true && keep.checked;
 				self.checkButton.disabled = true;
-				ui.showModal(_('Flashing requested — keep power connected'), [E('p', { 'class': 'spinning' }, _('The router accepted the flash request. It will restart and disconnect this page. Do not switch it off.')),
-					E('p', {}, self.flashKeep ? _('After reboot, reconnect to your current router address. Downloaded add-on packages are not automatically restored.') : _('Settings will be reset. After reboot, renew your computer’s network connection and open 192.168.1.1.')),
-					E('p', {}, _('This page will watch for a reported failure or a disconnect, then wait for the router to return. If it cannot reconnect automatically, wait several minutes before checking the router manually.'))]);
+				self.showFlashProgress(_('Flashing requested — keep power connected'), _('Writing firmware and waiting for restart…'),
+					(self.flashKeep ? _('The router accepted the image. After reboot, reconnect to your current router address. Downloaded add-on packages are not automatically restored. ') : _('The router accepted the image. Settings will be reset; after reboot, renew your network connection and open 192.168.1.1. ')) +
+					_('This page will detect the disconnect and wait for the router to return.'));
 				return self.refreshStatus();
 			}).catch(function(error) {
 				ui.hideModal();

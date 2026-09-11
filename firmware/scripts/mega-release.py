@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 
-REPOSITORY = "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition"
+REPOSITORY = "mfoster978/OpenWrt-ZBT-Z8803BE-Mega"
 BOARD = "zbtlink,zbt-z8803be"
 IMAGE = "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
 VERSION = re.compile(r"firmware-[1-9][0-9]*\.[1-9][0-9]*\Z")

@@ -55,7 +55,7 @@ for lamp in mt7530-0:00:green:lan mt7530-0:02:green:lan mt7530-0:03:green:lan md
 	printf '\n'
 done
 printf '\n%s\n' 'Routing and measurement configuration'
-for interface in wan_sfp wan_sfp6 wan wan6 4_1 2_1; do
+for interface in wan_sfp wan_sfp6 wan wan6 usb_tether 4_1 2_1; do
 	uci -q get "network.$interface" >/dev/null 2>&1 || continue
 	printf 'network.%s metric=%s proto=%s device=%s\n' "$interface" \
 		"$(uci -q get "network.$interface.metric")" \
@@ -63,7 +63,7 @@ for interface in wan_sfp wan_sfp6 wan wan6 4_1 2_1; do
 		"$(uci -q get "network.$interface.device")"
 done
 /usr/sbin/zbt-mwan-preset status 2>/dev/null || true
-for member in failover_wan_sfp failover_wan failover_4_1 failover_2_1; do
+for member in failover_wan_sfp failover_wan failover_usb_tether failover_4_1 failover_2_1; do
 	printf '%s=%s:%s\n' "$member" "$(uci -q get "mwan3.$member.interface")" "$(uci -q get "mwan3.$member.metric")"
 done
 uci -q show modem_watchdog

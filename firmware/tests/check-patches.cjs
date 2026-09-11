@@ -12,6 +12,7 @@ const specs = [
   ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', 'qmodem-dual-runtime.patch', ''],
   ['packages', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'mwan3-speed-policy.patch', ''],
   ['mwan3-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-mwan3-route-metric.patch', ''],
+  ['luci-first-login', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-first-login-password.patch', ''],
   ['ksmbd', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'ksmbd-server-disabled.patch', 'net/ksmbd-tools/'],
   ['ksmbd-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-ksmbd-enable-toggle.patch', 'applications/luci-app-ksmbd/'],
   ['mlo', '0xFar5eer/openwrt25.12_ZBT_Z8803BE', 'edc738504fe8fae81eb15de967456204699b1830', 'luci-app-mlo-shared-iface.patch', 'package/luci-app-mlo/']
@@ -51,7 +52,7 @@ function run(command, args, options = {}) {
       const contents = fs.readFileSync(path.join(tree, p), 'utf8');
       if (p.endsWith('.js')) new Function(contents);
       else if (p.endsWith('.json')) JSON.parse(contents);
-      else run('busybox', ['sh', '-n', path.join(tree, p)]);
+      else if (contents.startsWith('#!/bin/sh')) run('busybox', ['sh', '-n', path.join(tree, p)]);
     }
     console.log(`${name}: exact pinned patch, reverse/idempotence check and syntax passed (${commit})`);
   }

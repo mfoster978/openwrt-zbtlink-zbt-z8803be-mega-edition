@@ -24,7 +24,7 @@ import (
 const imageName = "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
 
 func TestMegaEditionRepositoryIdentity(t *testing.T) {
-	if repository != "mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition" {
+	if repository != "mfoster978/OpenWrt-ZBT-Z8803BE-Mega" {
 		t.Fatal("Updater must use the renamed Mega repository")
 	}
 	if apiRoot != "https://api.github.com/repos/"+repository || webRoot != "https://github.com/"+repository {

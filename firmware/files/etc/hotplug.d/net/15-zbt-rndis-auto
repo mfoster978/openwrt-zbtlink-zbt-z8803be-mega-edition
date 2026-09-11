@@ -1,4 +1,48 @@
 #!/bin/sh
-# QModem already manages ECM/RNDIS compositions. The inherited single
-# cellular_rndis interface and global restart cannot handle two modems.
+# Bind supported phone-tether netdevs to one stable Mega interface. Embedded
+# QMI/MHI modems remain under QModem and are never claimed here.
+case "$ACTION" in add|remove) ;; *) exit 0 ;; esac
+case "$(cat /tmp/sysinfo/board_name 2>/dev/null)" in
+	zbtlink,zbt-z8803be|zbtlink,zbt-z8803be,mt7988a-nand) ;;
+	*) exit 0 ;;
+esac
+[ -n "$DEVICENAME" ] || exit 0
+
+net_path="/sys/class/net/$DEVICENAME"
+device_path="$(readlink -f "$net_path/device" 2>/dev/null || true)"
+driver="$(basename "$(readlink -f "$net_path/device/driver" 2>/dev/null || true)")"
+case "$driver" in rndis_host|cdc_ether|cdc_ncm|ipheth) ;; *) exit 0 ;; esac
+[ ! -d "$net_path/qmi" ] && [ ! -d "$net_path/mhi" ] || exit 0
+case "$device_path" in */usb4/4-1/*|*/usb2/2-1/*) exit 0 ;; esac
+
+current="$(uci -q get network.usb_tether.device 2>/dev/null || true)"
+case "$ACTION" in
+	add)
+		if [ -n "$current" ] && [ "$current" != "$DEVICENAME" ] &&
+		   [ -d "/sys/class/net/$current" ]; then
+			logger -t zbt-usb-tether "ignoring $DEVICENAME ($driver); usb_tether is already bound to $current"
+			exit 0
+		fi
+		uci -q set network.usb_tether=interface
+		uci -q set network.usb_tether.proto=dhcp
+		uci -q set network.usb_tether.auto=0
+		uci -q set network.usb_tether.device="$DEVICENAME"
+		uci -q set network.usb_tether.metric=100
+		uci -q set network.usb_tether.defaultroute=1
+		uci -q set network.usb_tether.peerdns=1
+		uci -q commit network
+		logger -t zbt-usb-tether "bound $DEVICENAME ($driver) to usb_tether at priority before Modem 1"
+		ubus call network reload >/dev/null 2>&1 || true
+		ifup usb_tether >/dev/null 2>&1 || true
+		;;
+	remove)
+		[ "$current" = "$DEVICENAME" ] || exit 0
+		ifdown usb_tether >/dev/null 2>&1 || true
+		uci -q delete network.usb_tether.device 2>/dev/null || true
+		uci -q commit network
+		logger -t zbt-usb-tether "unbound removed device $DEVICENAME from usb_tether"
+		ubus call network reload >/dev/null 2>&1 || true
+		;;
+esac
+
 exit 0

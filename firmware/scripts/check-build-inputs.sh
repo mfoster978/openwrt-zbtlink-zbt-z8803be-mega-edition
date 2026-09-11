@@ -10,11 +10,13 @@ for script in \
   firmware/files/etc/init.d/speedify-installer \
   firmware/files/etc/init.d/zbt-luci-backend \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery \
+  firmware/files/etc/uci-defaults/40-zbt-usb-tether-defaults \
   firmware/files/etc/uci-defaults/73-zbt-us-wifi-defaults \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
   firmware/files/etc/uci-defaults/99-zbt-route-priority-repair \
   firmware/files/etc/uci-defaults/99-speedify-bootstrap \
   firmware/files/etc/uci-defaults/99-cellular-multiwan-defaults \
+  firmware/files/etc/hotplug.d/net/15-zbt-rndis-auto \
   firmware/files/etc/hotplug.d/usb/40-zbt-qmodem-autoenable \
   firmware/files/usr/sbin/speedify-installer-loop \
   firmware/files/usr/sbin/zbt-luci-backend-check \
@@ -108,17 +110,29 @@ grep -Fq 'Keep the stable 4_1/2_1 record that MWAN3 tracks' \
   firmware/patches/qmodem-dual-runtime.patch
 grep -Fq "form.DummyValue, '_route_metric'" firmware/patches/qmodem-dual-runtime.patch
 grep -Fq "uci.load('network')" firmware/patches/qmodem-dual-runtime.patch
+grep -Fq "Phone Number (MSISDN)" firmware/patches/qmodem-dual-runtime.patch
+grep -Fq "Not provided by SIM or carrier" firmware/patches/qmodem-dual-runtime.patch
+grep -Fq 'add_quectel_ca_report "$ca_response"' firmware/patches/qmodem-dual-runtime.patch
+grep -Fq '"Carrier Aggregation" "$active active / $total reported"' firmware/patches/qmodem-dual-runtime.patch
+if grep -Fq '[ "$section" != 4_1 ] || enable=1' firmware/files/usr/lib/zbt/ttl.sh; then
+  echo 'Per-modem TTL must remain opt-in so fresh installs retain flow offload' >&2
+  exit 1
+fi
 grep -Fq 'ensure_route_metric wan_sfp 9' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric wan 10' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'ensure_route_metric usb_tether 100' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric 4_1 200' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric 2_1 210' firmware/files/usr/sbin/zbt-mwan-preset
-grep -Fq 'DEFAULTS_VERSION=2' firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq 'DEFAULTS_VERSION=3' firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq "''|priority) preset=failover" firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq 'rndis_host|cdc_ether|cdc_ncm|ipheth' firmware/files/etc/hotplug.d/net/15-zbt-rndis-auto
+grep -Fq 'network.usb_tether.metric=100' firmware/files/etc/uci-defaults/40-zbt-usb-tether-defaults
 grep -Fq 'ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset "$preset"' \
   firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
 grep -Fq 'if [ "${ZBT_MWAN_NO_RELOAD:-0}" != 1 ]; then' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'option routing_preset' firmware/feeds/luci-app-modem-watchdog/root/etc/config/modem_watchdog
 grep -Fq 'ZBT-Z8803BE Mega Edition' firmware/files/etc/banner
-grep -Fq 'github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition' firmware/files/etc/banner
+grep -Fq 'github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega' firmware/files/etc/banner
 grep -Fq 'Developer: Michael Foster / GitHub @mfoster978' firmware/files/etc/banner
 grep -Fq 'Contact  : mfoster978@gmail.com - Discord: mfoster978' firmware/files/etc/banner
 if rg -n -i 'donate|ERC20|BEP20|TRC20|0xfar5eer@gmail\.com|0xFar5eer#6504' \
@@ -142,6 +156,10 @@ grep -Fq 'KSMBD LuCI enable-toggle patch does not match pinned LuCI feed' \
 grep -Fq "option enable '0'" firmware/files/etc/config/usbipd
 python3 -m json.tool firmware/files/usr/share/luci/menu.d/zbt-usb-services.json >/dev/null
 grep -Fq 'admin/system/mounts' firmware/files/usr/share/luci/menu.d/zbt-usb-services.json
+test -s firmware/docs/usb-tethering-storage-sharing.md
+grep -Fq "['usb', _('USB & Sharing')" firmware/files/www/luci-static/resources/view/zbt8803be/about.js
+grep -Fq 'Safe starting point: nothing is silently shared.' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
+grep -Fq 'KSMBD has an explicit **Enable server** switch that defaults off.' README.md
 
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config
@@ -183,6 +201,7 @@ for component in \
   firmware/feeds/zbt-firmware-updater/LICENSE \
   firmware/feeds/zbt-firmware-updater/src/go.mod \
   firmware/files/www/luci-static/resources/view/speedify/speedify.js \
+  firmware/files/usr/share/zbt/speedify-luci-wrapper.js \
   firmware/files/www/luci-static/resources/view/zbt8803be/about.js \
   firmware/files/www/luci-static/resources/view/zbt8803be/mega-about.css \
   firmware/files/www/luci-static/resources/view/system/mega-update.js \
@@ -202,12 +221,24 @@ grep -Fq '"path": "speedify/launcher"' firmware/files/usr/share/luci/menu.d/zbt-
 grep -Fq '"path": "speedify/speedify"' firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json
 grep -Fq "target.protocol = 'https:'" firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq 'window.location.replace(target.href)' firmware/files/www/luci-static/resources/view/speedify/launcher.js
+grep -Fq "install_luci_wrapper || return 1" firmware/files/usr/sbin/speedify-installer-loop
+grep -Fq "window.addEventListener('focus', scheduleRefresh)" firmware/files/usr/share/zbt/speedify-luci-wrapper.js
+grep -Fq 'speedifyuiframe.contentWindow.location.reload()' firmware/files/usr/share/zbt/speedify-luci-wrapper.js
 
 grep -q "OPENWRT_GIT_REF:-v25.12.021" firmware/docker/build-openwrt.sh
 grep -q "OPENWRT_GIT_URL:-https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git" \
   firmware/docker/build-openwrt.sh
 grep -q "EXPECTED_OPENWRT_COMMIT:-edc738504fe8fae81eb15de967456204699b1830" \
   firmware/docker/build-openwrt.sh
+grep -Fq 'luci-first-login-password.patch' firmware/docker/build-openwrt.sh
+grep -Fq "root_password_is_unset()" firmware/patches/luci-first-login-password.patch
+grep -Fq "admin/system/admin/password" firmware/patches/luci-first-login-password.patch
+grep -Fq 'does not ship the shared vendor password "admin"' \
+  firmware/files/etc/uci-defaults/80-zbt-z8803be-admin-password
+if grep -Eq 'passwd[[:space:]]+root|admin\\nadmin' firmware/files/etc/uci-defaults/80-zbt-z8803be-admin-password; then
+  echo 'Mega must not restore the shared vendor root password' >&2
+  exit 1
+fi
 grep -q "EXPECTED_ARCH='aarch64_cortex-a53'" firmware/files/usr/sbin/speedify-installer-loop
 grep -q "SPEEDIFY_SHA256='876ec301cee1a2bb9136ccef6c050762456525b15ac645581b44f0c16630947d'" \
   firmware/files/usr/sbin/speedify-installer-loop

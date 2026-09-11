@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '../..');
 const directory = path.join(root, 'firmware/files/www/luci-static/resources/view/zbt8803be');
 const js = fs.readFileSync(path.join(directory, 'about.js'), 'utf8');
 const css = fs.readFileSync(path.join(directory, 'mega-about.css'), 'utf8');
-const repo = 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition';
+const repo = 'https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega';
 const fixture = `
 window.calls = [];
 window._ = s => s;
@@ -72,7 +72,7 @@ renderAbout();
     assert.match(await page.locator('.zma-hero-description').innerText(), /workhorse[\s\S]*custom-built features[\s\S]*optional features off/);
     assert.match(await page.locator('.zma-maintainer').innerText(), /DEVELOPER & MAINTAINER[\s\S]*Michael Foster/);
     assert.equal(await page.locator('a[href*="openwrt-zbtlink-zbt-z8803be-dual-modem-build"]').count(), 0);
-    assert.equal(await page.getByRole('tab').count(), 5);
+    assert.equal(await page.getByRole('tab').count(), 6);
     assert.equal(await page.getByRole('tabpanel').count(), 1, 'only the active tab is exposed');
     assert.equal(await page.getByRole('tab', { name: 'Overview', exact: true }).getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('.zma-page').evaluate(element => getComputedStyle(element).getPropertyValue('--zma-bg').trim()), '#111316', 'dark default even when browser prefers light');
@@ -88,12 +88,20 @@ renderAbout();
     assert.equal(await page.getByRole('img', { name: /Illustration/ }).count(), 1);
     assert.match(await page.locator('.zma-thanks').innerText(), /putting the pieces together[\s\S]*working OpenWrt/);
     assert.match(await page.locator('#zma-speedify').textContent(), /Installed after Internet is ready/);
-    assert.match(await page.locator('#zma-speedify').textContent(), /does not assert it is installed/);
+    assert.match(await page.locator('#zma-speedify').textContent(), /return to the router tab[\s\S]*refreshes the embedded app/);
     await page.getByRole('tab', { name: 'Speedify', exact: true }).click();
     assert.equal(await page.locator('.zma-speedify-video img[loading="lazy"][referrerpolicy="no-referrer"]').count(), 1);
     assert.equal(await page.getByRole('link', { name: 'Pair & Share | Peer-to-Peer Cellular Bonding | Speedify', exact: true }).getAttribute('href'), 'https://speedify.com/enterprise/pair-and-share-cellular-connection-pooling/?wvideo=lrxei2q3dw');
+    await page.getByRole('tab', { name: 'USB & Sharing', exact: true }).click();
+    assert.match(await page.locator('#zma-usb').innerText(), /nothing is silently shared[\s\S]*Android & iPhone tethering[\s\S]*KSMBD network shares[\s\S]*USB over IP/i);
+    assert.equal(await page.getByRole('link', { name: 'Open Network Interfaces', exact: true }).getAttribute('href'), '/cgi-bin/luci/admin/network/network');
+    assert.equal(await page.getByRole('link', { name: 'Open USB Storage', exact: true }).getAttribute('href'), '/cgi-bin/luci/admin/services/usb-storage');
+    assert.equal(await page.getByRole('link', { name: 'Open Network Shares', exact: true }).getAttribute('href'), '/cgi-bin/luci/admin/services/ksmbd');
     await page.getByRole('tab', { name: 'Overview', exact: true }).click();
     assert.match(await page.locator('#zma-features').textContent(), /Modem 1[\s\S]*Modem 2[\s\S]*IPv4 TTL \/ IPv6 Hop Limit/);
+    assert.match(await page.locator('#zma-features').textContent(), /AT\+CNUM[\s\S]*AT\+QCAINFO/);
+    assert.match(await page.locator('#zma-features').textContent(), /USB phone tether[\s\S]*faster failover preset is active by default/);
+    assert.match(await page.locator('#zma-features').textContent(), /clean installation requires root to choose a new password/);
     assert.match(await page.locator('#zma-features').textContent(), /not the official Ookla application/);
     assert.match(await page.locator('#zma-features').textContent(), /watchdog actions and speed-based preferences are off by default/);
     assert.equal(await page.getByText('Save & Apply', { exact: true }).count(), 0);
@@ -129,7 +137,7 @@ renderAbout();
 
     for (const width of [780, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
-      for (const name of ['Overview', 'Features', 'Speedify', 'Packages', 'Project & Credits']) {
+      for (const name of ['Overview', 'Features', 'Speedify', 'USB & Sharing', 'Packages', 'Project & Credits']) {
         await page.getByRole('tab', { name, exact: true }).click();
         assert.equal(await page.getByRole('tabpanel').count(), 1);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, name + ' horizontal overflow at ' + width);

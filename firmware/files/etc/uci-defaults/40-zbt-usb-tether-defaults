@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+# One stable logical interface is reserved for an owner-connected Android or
+# Apple USB tether. A net hotplug rule supplies the transient kernel netdev.
+[ -n "$(uci -q get network.usb_tether 2>/dev/null || true)" ] ||
+	uci -q set network.usb_tether=interface
+uci -q set network.usb_tether.proto=dhcp
+uci -q set network.usb_tether.auto=0
+uci -q set network.usb_tether.metric=100
+uci -q set network.usb_tether.defaultroute=1
+uci -q set network.usb_tether.peerdns=1
+uci -q commit network
+
+wan_zone="$(uci -q show firewall 2>/dev/null | sed -nE 's/^firewall\.(@zone\[[0-9]+\])=zone$/\1/p' | while read -r section; do
+	[ "$(uci -q get "firewall.$section.name" 2>/dev/null || true)" = wan ] && {
+		echo "$section"
+		break
+	}
+done)"
+if [ -n "$wan_zone" ]; then
+	case " $(uci -q get "firewall.$wan_zone.network" 2>/dev/null || true) " in
+		*" usb_tether "*) ;;
+		*) uci -q add_list "firewall.$wan_zone.network=usb_tether" ;;
+	esac
+	uci -q commit firewall
+fi
+
+exit 0

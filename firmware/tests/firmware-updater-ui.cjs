@@ -17,7 +17,10 @@ const fixture = `
 window.calls = [];
 window.reconnectCalls = [];
 window.polls = [];
+window.scrollTargets = [];
 window.errorsByMethod = {};
+window.prepareDelay = 0;
+Element.prototype.scrollIntoView = function(options) { scrollTargets.push({className:this.className,options}); };
 const params = new URLSearchParams(location.search);
 window.releases = [{ id: 22, tag: 'firmware-22.1', name: 'New Mega build', published_at: '2026-09-10T00:00:00Z',
  body: '# New features\\n<script>window.evil=1<\\/script><img src=x onerror="window.evil=1">\\n[bad](javascript:alert(1))',
@@ -48,7 +51,7 @@ window.rpc = {declare: spec => async (...args) => {
   active_id:params.has('active')?'job-1':undefined,
   installed:{schema:1,variant:'mega',version:params.has('unknown')?'custom-build':'firmware-21.1',dirty:params.has('dirty'),source_sha:'123456789abcdef',built_at:'2026-09-09T22:00:00Z'}};
  if (spec.method === 'check') return {ok:true,page:args[0],has_more:args[0]===1,latest_tag:args[0]===1?'firmware-22.1':undefined,releases:args[0]===1?releases:[{...releases[2],id:17,tag:'firmware-17.1',name:'Archive release'}]};
- if (spec.method === 'prepare') { snapshot={...snapshot,phase:'downloading',release:releases.find(x=>x.id===args[0])}; return {ok:true,id:'job-1'}; }
+ if (spec.method === 'prepare') { if (prepareDelay) await new Promise(resolve=>setTimeout(resolve,prepareDelay)); snapshot={...snapshot,phase:'downloading',release:releases.find(x=>x.id===args[0])}; return {ok:true,id:'job-1'}; }
  if (spec.method === 'status') return snapshot;
  if (spec.method === 'flash') { if(flashResponse.ok) snapshot={...snapshot,phase:'flashing'}; return flashResponse; }
  if (spec.method === 'discard') { snapshot={...snapshot,phase:'discarded'}; return {ok:true}; }
@@ -96,7 +99,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     assert.match(await page.locator('.zfu-notes').innerText(), /<script>/, 'release notes remain text');
     assert.equal(await page.evaluate(() => window.evil), undefined, 'untrusted notes cannot execute');
     assert.equal(await page.locator('.zfu-notes img, .zfu-notes script, .zfu-notes a').count(), 0);
-    assert.equal(await page.getByRole('link', {name:'Read on GitHub ↗',exact:true}).getAttribute('href'), 'https://github.com/mfoster978/openwrt-zbtlink-zbt-z8803be-mega-edition/releases', 'unsafe release link rejected');
+    assert.equal(await page.getByRole('link', {name:'Read on GitHub ↗',exact:true}).getAttribute('href'), 'https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases', 'unsafe release link rejected');
     if (process.env.ZBT_UI_SCREENSHOTS) await page.screenshot({path:path.join(process.env.ZBT_UI_SCREENSHOTS,'firmware-update-desktop.png'),fullPage:true});
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile overflow');
@@ -112,9 +115,17 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     await page.locator('#zfu-release').selectOption('18');
     assert.equal(await page.locator('.zfu-download').isDisabled(), true, 'incompatible release cannot download');
     await page.locator('#zfu-release').selectOption('22');
+	await page.evaluate(() => { prepareDelay=150; });
     await page.locator('.zfu-download').click();
+	await page.waitForSelector('.zfu-request-progress');
+	assert.match(await page.locator('.zfu-job').innerText(), /Starting secure firmware download/);
+	await page.waitForFunction(() => scrollTargets.length > 0);
+	assert.match(await page.evaluate(() => scrollTargets.at(-1).className), /zfu-job/, 'download state scrolls into view');
+	await page.waitForFunction(() => dashboard.job && dashboard.job.phase === 'downloading');
+	await page.evaluate(() => { prepareDelay=0; });
     assert.deepEqual(await page.evaluate(() => calls.find(c=>c.method==='prepare').args), [22]);
     assert.equal(await page.locator('progress').getAttribute('max'), '67108864');
+	assert.equal(await page.locator('.zfu-progress-text').innerText(), '2% · 1.0 MiB / 64.0 MiB');
     assert.equal(await page.evaluate(() => calls.filter(c=>c.method==='flash').length), 0, 'download never flashes');
     await ready();
     await page.locator('.zfu-review').click();
@@ -182,6 +193,8 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     await page.locator('#zfu-ack').check();
     await page.locator('.zfu-install').click();
     await page.waitForFunction(() => dashboard.accepted === true);
+	assert.equal(await page.locator('#modal [role="progressbar"]').getAttribute('aria-label'), 'Writing firmware and waiting for restart…');
+	assert.match(await page.locator('#modal').innerText(), /Writing firmware and waiting for restart/);
     assert.deepEqual(await page.evaluate(() => calls.filter(c=>c.method==='flash').at(-1).args), ['job-1','a'.repeat(32),true]);
     assert.deepEqual(await page.evaluate(() => reconnectCalls), [], 'accepted request monitors failures before disconnect');
     await page.evaluate(async () => {snapshot={...snapshot,id:'wrong-id'};await pollOnce();});
