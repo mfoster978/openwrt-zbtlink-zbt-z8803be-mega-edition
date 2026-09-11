@@ -73,6 +73,7 @@ jobs:
       - name: Check Mega About and guarded firmware update screens
         run: |
           NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/mega-about-ui.cjs
+          NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/mega-mobile-theme-ui.cjs
           NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/firmware-updater-ui.cjs
   firmware-updater:
     runs-on: ubuntu-latest

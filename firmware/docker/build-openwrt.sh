@@ -59,6 +59,15 @@ fi
 [[ "$(git -C feeds/luci rev-parse HEAD)" = a611522a2bfc24ca2625e8cd2fcc9404288532a6 ]] || {
   echo 'Unexpected LuCI revision; review mwan3 route-metric patch before building' >&2; exit 3;
 }
+# Load Mega's responsive form layer from the pinned Argon header. The CSS is a
+# separate overlay file so this one-line integration remains easy to audit.
+argon_mobile_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/luci-theme-argon-mega-mobile.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/iwrt_luci < "$argon_mobile_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/iwrt_luci < "$argon_mobile_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/iwrt_luci < "$argon_mobile_patch" >/dev/null; then
+  echo 'Mega mobile theme patch does not match pinned Argon; refusing an unstyled build' >&2
+  exit 3
+fi
 # Fresh Mega installs must replace the shared vendor-label password on their
 # first local LuCI login. Keep the enforcement as a narrow patch against the
 # exact pinned dispatcher instead of carrying an unreviewed LuCI fork.
@@ -251,6 +260,7 @@ make package/feeds/luci/luci-app-mwan3/clean
 make package/firmware/wireless-regdb/clean
 make package/feeds/packages/ksmbd-tools/clean
 make package/feeds/luci/luci-app-ksmbd/clean
+make package/feeds/iwrt_luci/luci-theme-argon/clean
 make package/feeds/custom_local/zbt-speedtest/clean
 make package/feeds/custom_local/luci-app-speedtest-lite/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
@@ -390,6 +400,7 @@ for overlay_file in \
   www/luci-static/resources/view/zbt8803be/mega-about.css \
   www/luci-static/resources/view/system/mega-update.js \
   www/luci-static/resources/view/system/mega-update.css \
+  www/luci-static/resources/zbt-mega-mobile.css \
   usr/libexec/rpcd/zbt.firmware \
   usr/share/rpcd/acl.d/zbt-firmware.json \
   usr/share/rpcd/acl.d/luci-app-zbt-about.json \
@@ -398,6 +409,10 @@ for overlay_file in \
     echo "Mega About/update component missing or overwritten: ${overlay_file}" >&2; exit 4;
   }
 done
+grep -Fq 'zbt-mega-mobile.css' \
+  "${rootfs_dir}/usr/share/ucode/luci/template/themes/argon/header.ut" || {
+  echo 'Mega mobile stylesheet is not loaded by the installed Argon header' >&2; exit 4;
+}
 cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/config.js" \
   "${rootfs_dir}/www/luci-static/resources/view/speedtest-lite/config.js"
 cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/style.css" \

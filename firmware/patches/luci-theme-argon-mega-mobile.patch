@@ -1,0 +1,12 @@
+diff --git a/themes/luci-theme-argon/ucode/template/themes/argon/header.ut b/themes/luci-theme-argon/ucode/template/themes/argon/header.ut
+index 0637eb0..9d6fe43 100644
+--- a/themes/luci-theme-argon/ucode/template/themes/argon/header.ut
++++ b/themes/luci-theme-argon/ucode/template/themes/argon/header.ut
+@@ -115,6 +115,7 @@
+ 	{% if (node?.css): %}
+ 	<link rel="stylesheet" href="{{ resource }}/{{ node.css}}">
+ 	{% endif -%}
++	<link rel="stylesheet" href="{{ resource }}/zbt-mega-mobile.css?v={{ version.luciversion }}">
+ 	{% if (css): %}
+ 	<style title="text/css">
+ 		{{ css }}

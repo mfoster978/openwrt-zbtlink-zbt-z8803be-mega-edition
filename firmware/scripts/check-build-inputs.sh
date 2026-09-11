@@ -52,6 +52,17 @@ grep -Fq '"network"' firmware/patches/luci-app-mwan3-route-metric.patch
 grep -Fq "uci -q add_list \"wireless.\${first}.device=\${device}\"" \
   firmware/files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair
 
+# The default Argon theme loads a Mega-only responsive layer for ordinary CBI
+# pages. Keep it mobile-scoped and preserve the independently scoped About UI.
+test -s firmware/patches/luci-theme-argon-mega-mobile.patch
+test -s firmware/files/www/luci-static/resources/zbt-mega-mobile.css
+grep -Fq 'zbt-mega-mobile.css?v={{ version.luciversion }}' \
+  firmware/patches/luci-theme-argon-mega-mobile.patch
+grep -Fq 'luci-theme-argon-mega-mobile.patch' firmware/docker/build-openwrt.sh
+grep -Fq '@media screen and (max-width:768px)' \
+  firmware/files/www/luci-static/resources/zbt-mega-mobile.css
+grep -Fq '.td[data-title]' firmware/files/www/luci-static/resources/zbt-mega-mobile.css
+
 # US is the factory regulatory domain on every MT7996 radio. Numeric UCI
 # txpower overrides are forbidden: the driver must retain its regulatory and
 # EEPROM minimum. The mobile-safe 6 GHz profile is VLP at 14 dBm EIRP.
@@ -209,6 +220,7 @@ for component in \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js \
   firmware/files/www/luci-static/resources/view/zbt8803be/about.js \
   firmware/files/www/luci-static/resources/view/zbt8803be/mega-about.css \
+  firmware/files/www/luci-static/resources/zbt-mega-mobile.css \
   firmware/files/www/luci-static/resources/view/system/mega-update.js \
   firmware/files/www/luci-static/resources/view/system/mega-update.css; do
   test -s "$component" || { echo "Missing Mega component: $component" >&2; exit 1; }
