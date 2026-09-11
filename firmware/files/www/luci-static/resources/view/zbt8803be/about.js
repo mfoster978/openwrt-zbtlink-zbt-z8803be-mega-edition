@@ -241,8 +241,8 @@ return view.extend({
 					]),
 					feature('gauge', 'Real tests. Live feedback.', 'Speed Test Utility', 'A live gauge, download/upload graph, ping and jitter make it easier to see what a connection is actually doing.', [
 						'Uses real Speedtest.net servers through the pinned open-source speedtest-go client. It is not the official Ookla application and results can differ between test clients.',
-						'Choose the default route, a wired WAN or either physical modem; choose a server automatically or enter a server ID. Stop a test when you need to.',
-						'Interactive tests need explicit data-use consent: a run can consume hundreds of MB or more than 1 GB. Background recovery samples are separate, optional measurements—not the same test engine.'
+						'Choose the default route, a wired WAN, USB phone tether or either physical modem. Automatic mode skips directory servers that cannot accept upload traffic; you can still choose a listed server or enter its ID.',
+						'First-time GO asks you to accept the terms/data-use warning, then runs automatic server selection. A run can consume hundreds of MB or more than 1 GB. Background recovery samples are separate, optional measurements—not the same test engine.'
 					]),
 					feature('shield', 'Your remote-access toolkit.', 'VPN ready', 'Use the right tunnel for the job: private device access, a conventional VPN or a bonding service.', [
 						'Tailscale includes a local status/sign-in page. Connect your own account; advanced subnet-route and exit-node settings are CLI-managed.',

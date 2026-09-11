@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"net"
@@ -22,7 +21,7 @@ import (
 )
 
 func TestValidation(t *testing.T) {
-	for _, iface := range []string{"default", "wan", "wan_sfp", "4_1", "2_1"} {
+	for _, iface := range []string{"default", "wan", "wan_sfp", "usb_tether", "4_1", "2_1"} {
 		q := request{Interface: iface, Consent: true, Server: "12345"}
 		if err := validate(&q); err != nil {
 			t.Fatal(err)
@@ -203,7 +202,6 @@ func TestBindingCannotSilentlyFallBack(t *testing.T) {
 }
 
 func TestRedirectsAndUploadAcknowledgement(t *testing.T) {
-	var wrong atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/redirect" {
 			http.Redirect(w, r, "/speedtest/upload.php", http.StatusTemporaryRedirect)
@@ -211,11 +209,12 @@ func TestRedirectsAndUploadAcknowledgement(t *testing.T) {
 		}
 		io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "text/plain")
-		if wrong.Load() {
-			io.WriteString(w, "size=0")
-		} else {
-			fmt.Fprintf(w, "size=%d", r.ContentLength)
+		// Empty and non-standard short plain-text acknowledgements are both
+		// used by otherwise compatible public servers.
+		if strings.Contains(r.URL.RawQuery, "empty") {
+			return
 		}
+		io.WriteString(w, "upload accepted")
 	}))
 	defer srv.Close()
 	checked := &checkedTransport{base: http.DefaultTransport}
@@ -228,9 +227,43 @@ func TestRedirectsAndUploadAcknowledgement(t *testing.T) {
 	if checked.posts.Load() != 1 || checked.bad.Load() != 0 {
 		t.Fatal("legitimate redirect was rejected")
 	}
-	wrong.Store(true)
-	if _, err := c.Post(srv.URL+"/redirect", "application/octet-stream", strings.NewReader("real data")); err == nil {
-		t.Fatal("zero-byte server ack accepted as a measured upload")
+	if _, err := c.Post(srv.URL+"/speedtest/upload.php?empty=1", "application/octet-stream", strings.NewReader("real data")); err != nil {
+		t.Fatal("valid empty acknowledgement was rejected", err)
+	}
+	if checked.posts.Load() != 2 || checked.bad.Load() != 0 {
+		t.Fatal("valid upload acknowledgements were not counted")
+	}
+}
+
+func TestAutomaticServerSkipsUploadIncompatibleCandidate(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, "<html>upload blocked</html>")
+	}))
+	defer bad.Close()
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "text/plain")
+		io.WriteString(w, "ok")
+	}))
+	defer good.Close()
+
+	checked := &checkedTransport{base: http.DefaultTransport}
+	client := &http.Client{Transport: checked}
+	badServer, _ := speedtest.New().CustomServer(bad.URL)
+	goodServer, _ := speedtest.New().CustomServer(good.URL)
+	selected, err := selectUploadServer(context.Background(), client, checked, speedtest.Servers{badServer, goodServer}, true)
+	if err != nil || selected != goodServer {
+		t.Fatal("automatic selection did not skip incompatible server", selected, err)
+	}
+	if checked.posts.Load() != 0 || checked.bad.Load() != 0 {
+		t.Fatal("probe state leaked into the actual test")
+	}
+	if _, err := selectUploadServer(context.Background(), client, checked, speedtest.Servers{badServer}, false); err == nil || !strings.Contains(err.Error(), "choose Automatic") {
+		t.Fatal("manual incompatible server should fail with a useful action", err)
 	}
 }
 

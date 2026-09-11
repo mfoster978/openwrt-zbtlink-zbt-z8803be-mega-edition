@@ -34,8 +34,16 @@ window.rpc = { declare: spec => (...args) => {
     interface: args[0], server: args[1], mode: args[2], device: 'wwan3' };
   return Promise.resolve(snapshot);
 } };
+window.ui = {
+  showModal: (title, nodes) => {
+    const modal = document.createElement('div'); modal.className = 'modal';
+    modal.appendChild(document.createTextNode(title));
+    nodes.forEach(n => modal.appendChild(n)); document.body.appendChild(modal);
+  },
+  hideModal: () => { const modal = document.querySelector('.modal'); if (modal) modal.remove(); }
+};
 const view = { extend: v => v };
-const dashboard = new Function('view', 'rpc', 'E', '_', 'L', ${JSON.stringify(js)})(view, rpc, E, _, { resource: () => '/style.css' });
+const dashboard = new Function('view', 'rpc', 'ui', 'E', '_', 'L', ${JSON.stringify(js)})(view, rpc, ui, E, _, { resource: () => '/style.css' });
 document.body.appendChild(dashboard.render());
 `;
 
@@ -56,12 +64,15 @@ document.body.appendChild(dashboard.render());
     await page.waitForFunction(() => calls.filter(c => c.method === 'status').length >= 3);
     const statusTimes = await page.evaluate(() => calls.filter(c => c.method === 'status').slice(0, 3).map(c => c.at));
     assert.ok(statusTimes[2] - statusTimes[0] < 850, 'status snapshots should update substantially faster than once per second');
-    assert.equal(await page.locator('.zst-go').isDisabled(), true, 'consent is required');
+    assert.equal(await page.locator('.zst-go').isDisabled(), false, 'GO must open first-run confirmation');
     assert.equal(await page.getByText('Save & Apply', { exact: true }).count(), 0);
+    assert.equal(await page.getByRole('combobox', { name: 'Connection to test' }).locator('option[value="usb_tether"]').count(), 1, 'USB tether is selectable');
     await page.getByRole('combobox', { name: 'Connection to test' }).selectOption('2_1');
-    await page.locator('.zst-consent input').check();
     await page.locator('.zst-go').click();
+    assert.match(await page.locator('.modal').innerText(), /Confirm speed-test terms and data use/);
+    await page.getByRole('button', { name: 'Agree & run automatic test' }).click();
     assert.deepEqual(await page.evaluate(() => calls.find(c => c.method === 'start').args), ['2_1', '', 'test', true]);
+    assert.equal(await page.evaluate(() => localStorage.getItem('zbt-speedtest-consent-v1')), 'accepted');
     assert.equal(await page.locator('.zst-go').isDisabled(), true);
     assert.equal(await page.locator('.zst-stop').isDisabled(), false);
     await page.evaluate(() => {

@@ -1,6 +1,7 @@
 'use strict';
 'require view';
 'require rpc';
+'require ui';
 
 var start = rpc.declare({ object: 'zbt.speedtest', method: 'start', params: ['interface', 'server', 'mode', 'consent'] });
 var status = rpc.declare({ object: 'zbt.speedtest', method: 'status' });
@@ -49,6 +50,7 @@ return view.extend({
 			E('option', { value: 'default' }, _('Current connection (including VPN)')),
 			E('option', { value: 'wan' }, _('Wired WAN')),
 			E('option', { value: 'wan_sfp' }, _('SFP WAN')),
+			E('option', { value: 'usb_tether' }, _('USB phone tether')),
 			E('option', { value: '4_1' }, _('Modem 1 / 5G1')),
 			E('option', { value: '2_1' }, _('Modem 2 / 5G2'))
 		]);
@@ -63,8 +65,46 @@ return view.extend({
 			while (server.options.length > 2) server.remove(2);
 			server.value = ''; serverInput.hidden = true; lastServers = '';
 		});
-		var consent = E('input', { type: 'checkbox', change: function() { buttons(); } });
-		var run = E('button', { 'class': 'zst-go', click: function() { begin('test'); }, disabled: '' }, _('GO'));
+		var consentKey = 'zbt-speedtest-consent-v1';
+		var rememberedConsent = false;
+		try { rememberedConsent = window.localStorage.getItem(consentKey) === 'accepted'; } catch (e) {}
+		var consent = E('input', { type: 'checkbox', change: function() {
+			try {
+				if (consent.checked) window.localStorage.setItem(consentKey, 'accepted');
+				else window.localStorage.removeItem(consentKey);
+			} catch (e) {}
+			buttons();
+		} });
+		consent.checked = rememberedConsent;
+		function requestTest() {
+			if (consent.checked) {
+				begin('test');
+				return;
+			}
+			ui.showModal(_('Confirm speed-test terms and data use'), [
+				E('p', {}, _('A complete test downloads and uploads real data. It can use hundreds of MB or more than 1 GB and temporarily saturate the selected connection.')),
+				E('p', {}, [
+					_('The test uses Speedtest.net-compatible public servers through an independent open-source client. By continuing, you confirm you are authorized to use this connection and agree to the '),
+					E('a', { href: 'https://www.speedtest.net/about/terms', target: '_blank', rel: 'noreferrer noopener' }, _('Speedtest Terms of Use')),
+					'.'
+				]),
+				E('div', { 'class': 'right' }, [
+					E('button', { 'class': 'btn', click: function() { ui.hideModal(); } }, _('Cancel')),
+					' ',
+					E('button', { 'class': 'btn cbi-button-positive important', click: function() {
+						consent.checked = true;
+						try { window.localStorage.setItem(consentKey, 'accepted'); } catch (e) {}
+						// The first-run path intentionally uses automatic server selection.
+						// Users can choose a specific server on later runs.
+						server.value = '';
+						serverInput.hidden = true;
+						ui.hideModal();
+						begin('test');
+					} }, _('Agree & run automatic test'))
+				])
+			]);
+		}
+		var run = E('button', { 'class': 'zst-go', click: requestTest, disabled: '' }, _('GO'));
 		var stop = E('button', { 'class': 'zst-stop', disabled: '', click: function() {
 			if (!latest.running || !latest.id) return;
 			stop.disabled = true;
@@ -118,7 +158,7 @@ return view.extend({
 		}
 		function buttons() {
 			var busy = pending || !!latest.running;
-			run.disabled = busy || !consent.checked;
+			run.disabled = busy;
 			stop.disabled = !latest.running;
 			find.disabled = busy;
 			connection.disabled = server.disabled = serverInput.disabled = busy;
@@ -223,7 +263,7 @@ return view.extend({
 				E('label', {}, [E('span', {}, _('Test server')), server, serverInput]), find
 			]),
 			E('label', { 'class': 'zst-consent' }, [consent,
-				E('span', {}, _('I understand a full test can use hundreds of MB or more than 1 GB of data and temporarily saturate this connection.'))]),
+				E('span', {}, _('Remember that I accept the speed-test terms and understand a full test can use hundreds of MB or more than 1 GB of data. If unchecked, GO asks before running.'))]),
 			notice,
 			E('div', { 'class': 'zst-details' }, [
 				E('div', {}, [E('span', {}, _('SERVER')), serverLabel]),

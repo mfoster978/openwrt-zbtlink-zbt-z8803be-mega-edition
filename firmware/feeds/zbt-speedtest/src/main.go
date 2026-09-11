@@ -35,6 +35,9 @@ const (
 	maxConnections     = 16
 	transferTime       = 20 * time.Second
 	liveSampleInterval = 250 * time.Millisecond
+	uploadProbeBytes   = 32 * 1024
+	uploadProbeTimeout = 4 * time.Second
+	serverProbeLimit   = 8
 )
 
 var runID = regexp.MustCompile(`^[a-f0-9]{24}$`)
@@ -203,7 +206,7 @@ func validate(q *request) error {
 		q.Interface = "default"
 	}
 	switch q.Interface {
-	case "default", "wan", "wan_sfp", "4_1", "2_1":
+	case "default", "wan", "wan_sfp", "usb_tether", "4_1", "2_1":
 	default:
 		return errors.New("Unsupported interface")
 	}
@@ -385,7 +388,7 @@ func (t *checkedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return resp, nil
 	}
 	transfer := req.Method == "POST" || strings.Contains(req.URL.Path, "/random")
-	if resp.StatusCode != http.StatusOK || (transfer && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html")) {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices || (transfer && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html")) {
 		resp.Body.Close()
 		if transfer {
 			t.bad.Add(1)
@@ -395,14 +398,81 @@ func (t *checkedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	if req.Method == "POST" {
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		resp.Body.Close()
-		if readErr != nil || strings.TrimSpace(string(body)) != fmt.Sprintf("size=%d", req.ContentLength) {
+		if readErr != nil {
 			t.bad.Add(1)
-			return nil, errors.New("Speedtest server did not acknowledge the complete upload")
+			return nil, errors.New("Speedtest server upload response could not be read")
 		}
+		// Speedtest.net-compatible upload.php implementations do not share one
+		// response body: common valid responses include size=N, an empty body,
+		// or another short plain-text acknowledgement. A completed POST followed
+		// by a non-HTML 2xx response is the interoperable success condition.
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		t.posts.Add(1)
 	}
 	return resp, nil
+}
+
+// Check upload capability before a full automatic test. Some entries in the
+// public Speedtest.net directory answer latency/download requests but reject
+// upload.php. Skipping those servers prevents a 20-second download from ending
+// with a missing upload result. This probe sends only 32 KiB and uses the same
+// interface-bound, TLS-validating client as the real measurement.
+func probeUpload(ctx context.Context, client *http.Client, checked *checkedTransport, server *speedtest.Server) error {
+	probeCtx, cancel := context.WithTimeout(ctx, uploadProbeTimeout)
+	defer cancel()
+
+	resolved := server.URL
+	head, err := http.NewRequestWithContext(probeCtx, http.MethodHead, resolved, nil)
+	if err == nil {
+		if resp, headErr := client.Do(head); headErr == nil {
+			if resp.Request != nil && resp.Request.URL != nil {
+				resolved = resp.Request.URL.String()
+			}
+			resp.Body.Close()
+		}
+	}
+
+	before := checked.posts.Load()
+	payload := bytes.Repeat([]byte{0x5a}, uploadProbeBytes)
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodPost, resolved, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if checked.posts.Load() == before {
+		return errors.New("server did not accept an upload probe")
+	}
+	return nil
+}
+
+func selectUploadServer(ctx context.Context, client *http.Client, checked *checkedTransport, candidates speedtest.Servers, automatic bool) (*speedtest.Server, error) {
+	limit := len(candidates)
+	if !automatic && limit > 1 {
+		limit = 1
+	}
+	if limit > serverProbeLimit {
+		limit = serverProbeLimit
+	}
+	for i := 0; i < limit; i++ {
+		if err := probeUpload(ctx, client, checked, candidates[i]); err == nil {
+			// Probe traffic must not satisfy final-result validation or pollute a
+			// later server's error state.
+			checked.posts.Store(0)
+			checked.bad.Store(0)
+			return candidates[i], nil
+		}
+		checked.posts.Store(0)
+		checked.bad.Store(0)
+	}
+	if automatic {
+		return nil, errors.New("No automatic Speedtest.net server accepted both download and upload traffic; choose a server manually")
+	}
+	return nil, errors.New("Selected Speedtest.net server does not accept upload traffic; choose Automatic or another server")
 }
 
 type reporter struct {
@@ -458,7 +528,8 @@ func runTest(ctx context.Context, p *reporter) error {
 	// an explicitly selected modem test through an application proxy.
 	uc.T.Proxy = nil
 	checked := &checkedTransport{base: uc.T}
-	speedtest.WithDoer(&http.Client{Transport: checked, Timeout: 25 * time.Second})(client)
+	httpClient := &http.Client{Transport: checked, Timeout: 25 * time.Second}
+	speedtest.WithDoer(httpClient)(client)
 	client.SetRateCaptureFrequency(liveSampleInterval).SetCaptureTime(transferTime)
 	var candidates speedtest.Servers
 	var err error
@@ -493,7 +564,10 @@ func runTest(ctx context.Context, p *reporter) error {
 	if q.Mode == "servers" {
 		return nil
 	}
-	server := candidates[0]
+	server, err := selectUploadServer(ctx, httpClient, checked, candidates, q.Server == "")
+	if err != nil {
+		return err
+	}
 	p.update(func(r *result) { v := info(server); r.Selected = &v; r.Phase = "ping" })
 	err = server.PingTestContext(ctx, func(v time.Duration) {
 		p.update(func(r *result) { f := float64(v) / 1e6; r.Ping = &f })
