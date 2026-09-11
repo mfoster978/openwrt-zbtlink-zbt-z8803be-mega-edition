@@ -10,6 +10,7 @@ for script in \
   firmware/files/etc/init.d/speedify-installer \
   firmware/files/etc/init.d/zbt-luci-backend \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery \
+  firmware/files/etc/uci-defaults/53-zbt-modem-display-labels-v2 \
   firmware/files/etc/uci-defaults/40-zbt-usb-tether-defaults \
   firmware/files/etc/uci-defaults/73-zbt-us-wifi-defaults \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
@@ -62,6 +63,17 @@ grep -Fq 'luci-theme-argon-mega-mobile.patch' firmware/docker/build-openwrt.sh
 grep -Fq '@media screen and (max-width:768px)' \
   firmware/files/www/luci-static/resources/zbt-mega-mobile.css
 grep -Fq '.td[data-title]' firmware/files/www/luci-static/resources/zbt-mega-mobile.css
+grep -Fq 'grid-template-columns:repeat(2,minmax(0,1fr))' \
+  firmware/files/www/luci-static/resources/zbt-mega-mobile.css
+
+# Every LuCI resource uses the release identity from the immutable image as
+# its cache version. Reproducible package database timestamps are only a
+# fallback for non-Mega installations.
+test -s firmware/patches/luci-mega-resource-version.patch
+grep -Fq "readfile('/rom/etc/zbt-mega-build.json')" \
+  firmware/patches/luci-mega-resource-version.patch
+grep -Fq 'luci-mega-resource-version.patch' firmware/docker/build-openwrt.sh
+grep -Fq 'make package/feeds/luci/luci-base/clean' firmware/docker/build-openwrt.sh
 
 # US is the factory regulatory domain on every MT7996 radio. Numeric UCI
 # txpower overrides are forbidden: the driver must retain its regulatory and
@@ -103,6 +115,14 @@ grep -Fq "system.zbt_luci_http.nginx_migrated" \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
 grep -Fq "nginx._lan.include='conf.d/*.locations'" \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq '/etc/init.d/uwsgi status' \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+grep -Fq '/etc/init.d/nginx status' \
+  firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery
+if grep -Fq '( sleep 5;' firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery; then
+  echo 'LuCI first-boot recovery must not race normal service startup' >&2
+  exit 1
+fi
 grep -Fq "http://127.0.0.1/luci-app-speedify/view/index.html" \
   firmware/files/usr/sbin/speedify-installer-loop
 grep -Fq "https://127.0.0.1/luci-app-speedify/view/index.html" \
@@ -127,9 +147,11 @@ grep -Fq "Phone Number (MSISDN)" firmware/patches/qmodem-dual-runtime.patch
 grep -Fq "Not provided by SIM or carrier" firmware/patches/qmodem-dual-runtime.patch
 test -s firmware/patches/qmodem-cell-discovery.patch
 test -s firmware/patches/qmodem-5g-deployment.patch
+test -s firmware/patches/qmodem-performance-ui.patch
 test -s firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
 grep -Fq 'qmodem-cell-discovery.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-5g-deployment.patch' firmware/docker/build-openwrt.sh
+grep -Fq 'qmodem-performance-ui.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'zbt_quectel_sim_number "$at_port"' firmware/patches/qmodem-cell-discovery.patch
 grep -Fq 'zbt_quectel_get_cells "$at_port"' firmware/patches/qmodem-cell-discovery.patch
 grep -Fq "'AT+QSCAN=3,1'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
@@ -138,6 +160,10 @@ grep -Fq "'AT+CPBS=\"ON\"'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
 grep -Fq 'AT+QNWPREFCFG="nr5g_disable_mode"' firmware/patches/qmodem-5g-deployment.patch
 grep -Fq 'Automatic (recommended)' firmware/patches/qmodem-5g-deployment.patch
 grep -Fq "[ \"\$current\" = \"\$desired\" ]" firmware/patches/qmodem-5g-deployment.patch
+grep -Fq 'NSA only — LTE-anchored 5G speed comparison' firmware/patches/qmodem-performance-ui.patch
+grep -Fq "name: _('Preferred Bands')" firmware/patches/qmodem-performance-ui.patch
+grep -Fq "''|4_1|2_1|modem1|modem2)" firmware/files/usr/sbin/zbt-qmodem-profile
+test -s firmware/files/etc/uci-defaults/53-zbt-modem-display-labels-v2
 grep -Fq 'add_quectel_ca_report "$ca_response"' firmware/patches/qmodem-dual-runtime.patch
 grep -Fq '"Carrier Aggregation" "$active active / $total reported"' firmware/patches/qmodem-dual-runtime.patch
 if grep -Fq '[ "$section" != 4_1 ] || enable=1' firmware/files/usr/lib/zbt/ttl.sh; then

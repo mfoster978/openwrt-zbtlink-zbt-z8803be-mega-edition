@@ -1,0 +1,7 @@
+#!/bin/sh
+# Upgrade-only label repair. It changes UCI presentation metadata but never
+# sends AT commands, reconnects a data session, or toggles modem power.
+for section in 4_1 2_1; do
+	/usr/sbin/zbt-qmodem-profile "$section"
+done
+exit 0

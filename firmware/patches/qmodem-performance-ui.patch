@@ -1,0 +1,132 @@
+diff --git a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+@@ -91,25 +91,25 @@ return view.extend({
+ 		
+ 		// Define all available features
+ 		var features = {
+-			'DialMode': {
+-				name: _('Dial Mode'),
+-				handler: function() { return self.createDialModeTab(modem); }
+-			},
+ 			'RatPrefer': {
+-				name: _('Network Preference'),
++				name: _('5G & Network Mode'),
+ 				handler: function() { return self.createRatPreferTab(modem); }
+ 			},
+-			'IMEI': {
+-				name: _('Set IMEI'),
+-				handler: function() { return self.createImeiTab(modem); }
++			'LockBand': {
++				name: _('Preferred Bands'),
++				handler: function() { return self.createLockBandTab(modem); }
+ 			},
+ 			'NeighborCell': {
+ 				name: _('Neighbor Cell'),
+ 				handler: function() { return self.createNeighborCellTab(modem); }
+ 			},
+-			'LockBand': {
+-				name: _('Lock Band'),
+-				handler: function() { return self.createLockBandTab(modem); }
++			'DialMode': {
++				name: _('Dial Mode'),
++				handler: function() { return self.createDialModeTab(modem); }
++			},
++			'IMEI': {
++				name: _('Set IMEI'),
++				handler: function() { return self.createImeiTab(modem); }
+ 			},
+ 			'RebootModem': {
+ 				name: _('Reboot Modem'),
+@@ -341,12 +341,14 @@ return view.extend({
+ 	createRatPreferTab: function(modem) {
+ 		var self = this;
+ 		var container = E('fieldset', { 'class': 'cbi-section' });
+-		var legend = E('legend', {}, _('Network Preference Configuration'));
++		var legend = E('legend', {}, _('5G & Network Mode'));
+ 		container.appendChild(legend);
+ 
+ 		var description = E('div', { 'class': 'cbi-section-descr' }, 
+-			_('Configure network preference (5G/4G/3G priority). Changes may require modem restart.'));
++			_('View the active 5G connection type and network priority. Opening this page is read-only; the modem changes only after you press Apply.'));
+ 		container.appendChild(description);
++		container.appendChild(E('div', { 'class': 'alert-message info', 'style': 'margin: 12px;' },
++			_('Automatic keeps both standalone 5G (SA) and LTE-anchored 5G (NSA) available. If SA is unusually slow, select NSA only, apply it, reconnect, and compare. Preferred Bands is a separate tab and its band masks are not changed here.')));
+ 
+ 		// Quectel exposes SA/NSA availability separately from its band masks.
+ 		// Reading this control never changes the modem, and Apply is a no-op
+@@ -361,9 +363,9 @@ return view.extend({
+ 			'id': 'deployment_select_' + modem.id,
+ 			'disabled': true
+ 		}, [
+-			E('option', { 'value': 'auto' }, _('Automatic (recommended)')),
+-			E('option', { 'value': 'nsa' }, _('NSA only (LTE + 5G)')),
+-			E('option', { 'value': 'sa' }, _('SA only (standalone 5G)'))
++			E('option', { 'value': 'auto' }, _('Automatic — SA + NSA (recommended default)')),
++			E('option', { 'value': 'nsa' }, _('NSA only — LTE-anchored 5G speed comparison')),
++			E('option', { 'value': 'sa' }, _('SA only — standalone 5G'))
+ 		]);
+ 		var deploymentApply = E('button', {
+ 			'class': 'btn cbi-button-action',
+@@ -390,7 +392,7 @@ return view.extend({
+ 		deploymentField.appendChild(deploymentCurrent);
+ 		deploymentField.appendChild(E('div', { 'style': 'margin-top: 8px;' }, [deploymentSelect, ' ', deploymentApply]));
+ 		deploymentField.appendChild(E('div', { 'class': 'cbi-value-description' },
+-			_('Automatic leaves SA and NSA available. NSA only is a reversible test for LTE-anchored carrier aggregation; this control never rewrites band lists. A reconnect may take up to one minute.')));
++			_('Recommended default: Automatic. NSA only is a reversible comparison for LTE plus 5G carrier aggregation. This control never rewrites band lists and skips the modem write when the requested choice is already active. A reconnect may take up to one minute.')));
+ 		deploymentSection.appendChild(deploymentField);
+ 		container.appendChild(deploymentSection);
+ 		self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
+@@ -406,7 +408,7 @@ return view.extend({
+ 
+ 		// Network selection section
+ 		var prefSelectionSection = E('div', { 'class': 'cbi-value' });
+-		prefSelectionSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Select Networks')));
++		prefSelectionSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Allowed Network Types')));
+ 		var prefSelectionField = E('div', { 
+ 			'class': 'cbi-value-field',
+ 			'id': 'pref_selection_' + modem.id
+@@ -512,8 +514,8 @@ return view.extend({
+ 	load5gDeployment: function(modem, currentValue, select, applyButton) {
+ 		var labels = {
+-			auto: _('Automatic (recommended)'),
+-			nsa: _('NSA only (LTE + 5G)'),
+-			sa: _('SA only (standalone 5G)')
++			auto: _('Automatic — SA + NSA'),
++			nsa: _('NSA only — LTE-anchored 5G'),
++			sa: _('SA only — standalone 5G')
+ 		};
+ 		return qmodem.get5gDeployment(modem.id).then(function(result) {
+ 			var deployment = result && result.deployment;
+@@ -1164,11 +1166,11 @@ return view.extend({
+ 	createLockBandTab: function(modem) {
+ 		var self = this;
+ 		var container = E('fieldset', { 'class': 'cbi-section' });
+-		var legend = E('legend', {}, _('Lock Band Configuration'));
++		var legend = E('legend', {}, _('Preferred Bands'));
+ 		container.appendChild(legend);
+ 
+ 		var description = E('div', { 'class': 'cbi-section-descr' }, 
+-			_('Lock modem to specific frequency bands. Select bands for each network type (UMTS/LTE/NR).'));
++			_('Automatic is safest and lets the modem and carrier choose among every enabled band. To restrict a network type, select its allowed bands and press Apply; band masks are persistent modem settings.'));
+ 		container.appendChild(description);
+ 
+ 		// Lock band content area
+@@ -1256,7 +1258,7 @@ return view.extend({
+ 						E('h3', {}, bandClass),
+ 						E('p', { 'class': 'alert-message info' },
+ 							bandData.read_error || _('This band family is disabled by the selected 5G connection type.')),
+-						E('p', {}, _('No band-mask error occurred. Change 5G Connection Type under Network Preference if you want to enable this family.')),
++						E('p', {}, _('No band-mask error occurred. Change 5G Connection Type under 5G & Network Mode if you want to enable this family.')),
+ 						retryButton()
+ 					]));
+ 					return;
+@@ -1336,7 +1338,7 @@ return view.extend({
+ 
+ 				// Band selection area
+ 				var selectionSection = E('div', { 'class': 'cbi-value' });
+-				selectionSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Select Bands')));
++				selectionSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Allowed / Preferred Bands')));
+ 				var selectionField = E('div', { 
+ 					'class': 'cbi-value-field',
+ 					'style': 'display: flex; flex-wrap: wrap;'

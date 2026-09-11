@@ -25,6 +25,7 @@ header{background:#5e72e4}.fill>.container{padding:12px}.main{min-height:100vh}.
 <div id="maincontent"><div class="container"><div id="view"><div class="cbi-map">
 <h2>Network configuration</h2><div class="cbi-map-descr">Manage physical modem slots and their connection settings.</div>
 <div class="cbi-section"><h3>Dial Configuration</h3><div class="cbi-section-node">
+<ul class="cbi-tabmenu"><li class="cbi-tab">5G &amp; Network Mode</li><li class="cbi-tab-disabled">Preferred Bands</li><li class="cbi-tab-disabled">Neighbor Cell</li><li class="cbi-tab-disabled">Dial Mode</li><li class="cbi-tab-disabled">Set IMEI</li><li class="cbi-tab-disabled">Reboot Modem</li></ul>
 <div class="tr cbi-section-table-row" data-title="Modem 1">
 <div class="td cbi-section-table-cell" data-title="Status"><span class="status">Connected</span></div>
 <div class="td cbi-section-table-cell" data-title="Enable Dial"><input type="checkbox" checked></div>
@@ -53,6 +54,9 @@ header{background:#5e72e4}.fill>.container{padding:12px}.main{min-height:100vh}.
 		assert.equal(await page.locator('.cbi-section-table-row').evaluate(element => getComputedStyle(element).display), 'block', 'modem records become separate cards');
 		assert.equal(await page.locator('.td[data-title]').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(/\s+/).length), 1, 'phone fields use one readable column');
 		assert.equal(await page.locator('.cbi-value').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(/\s+/).length), 1, 'form labels and controls stack');
+		assert.equal(await page.locator('.cbi-tabmenu').evaluate(element => getComputedStyle(element).display), 'grid', 'QModem tabs use a discoverable grid');
+		assert.equal(await page.locator('.cbi-tabmenu').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(/\s+/).length), 2, 'QModem tabs use two phone-width columns');
+		assert.ok(await page.locator('.cbi-tabmenu>li').first().evaluate(element => element.getBoundingClientRect().height) >= 44, 'plain QModem tab items are touch sized');
 		assert.ok(await page.locator('.cbi-button-apply').evaluate(element => element.getBoundingClientRect().height) >= 44, 'touch target is at least 44px');
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no mobile horizontal overflow');
 		assert.equal(await page.locator('.cbi-value-field input').evaluate(element => element.getBoundingClientRect().right <= innerWidth), true, 'inputs stay inside the viewport');

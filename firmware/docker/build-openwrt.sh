@@ -78,6 +78,16 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci < "$first_lo
   echo 'First-login password patch does not match pinned LuCI; refusing an insecure build' >&2
   exit 3
 fi
+# Reproducible package timestamps do not distinguish successive firmware
+# images. Put the immutable Mega release identity in LuCI's resource query so
+# browsers cannot retain stale QModem, About, updater, or utility JavaScript.
+resource_version_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/luci-mega-resource-version.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/luci < "$resource_version_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/luci < "$resource_version_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci < "$resource_version_patch" >/dev/null; then
+  echo 'Mega LuCI resource-version patch does not match pinned LuCI; refusing a cache-stale build' >&2
+  exit 3
+fi
 # Strict userspace-only patch against the pinned QModem feed. No kernel,
 # modem driver or wireless firmware revision changes.
 runtime_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-dual-runtime.patch"
@@ -102,6 +112,15 @@ if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$deployment
   patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$deployment_patch"
 elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$deployment_patch" >/dev/null; then
   echo 'Pinned QModem 5G deployment patch no longer matches; refusing an incomplete modem UI build' >&2
+  exit 3
+fi
+# Keep performance controls first and readable on a phone after adding the
+# read-backed connection-type selector above.
+performance_ui_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-performance-ui.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$performance_ui_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$performance_ui_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$performance_ui_patch" >/dev/null; then
+  echo 'Pinned QModem performance UI patch no longer matches; refusing a hidden-control build' >&2
   exit 3
 fi
 for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
@@ -269,6 +288,7 @@ make defconfig
 # Source patches are not guaranteed to invalidate package stamps in a reused
 # OpenWrt tree. Rebuild every directly patched package so an incremental build
 # cannot ship an older dialer, QModem UI, MLO writer, or MWAN metric editor.
+make package/feeds/luci/luci-base/clean
 make package/feeds/qmodem/qmodem/clean
 make package/feeds/qmodem/luci-app-qmodem-next/clean
 make package/luci-app-mlo/clean
@@ -461,6 +481,7 @@ required_overlay_files=(
   etc/init.d/zbt-modem-leds
   etc/uci-defaults/48-zbt-modem-led-dark-repair
   etc/uci-defaults/49-zbt-modem-labels-leds
+  etc/uci-defaults/53-zbt-modem-display-labels-v2
   etc/uci-defaults/73-zbt-us-wifi-defaults
   etc/uci-defaults/74-zbt-mlo-shared-iface-repair
   etc/uci-defaults/50-zbt-luci-web-recovery
@@ -506,7 +527,7 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/lib/zbt/qmodem-cell-discovery.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/lib/zbt/qmodem-cell-discovery.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/53-zbt-modem-display-labels-v2 etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
@@ -621,9 +642,17 @@ grep -Fq 'take up to three minutes' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
   echo 'Nearby-cell scan timing guidance is missing from LuCI' >&2; exit 4;
 }
-grep -Fq 'Automatic (recommended)' \
+grep -Fq 'Automatic — SA + NSA (recommended default)' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
   echo 'Quectel SA/NSA connection-type control is missing from LuCI' >&2; exit 4;
+}
+grep -Fq 'NSA only — LTE-anchored 5G speed comparison' \
+  "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
+  echo 'Prominent NSA performance comparison is missing from LuCI' >&2; exit 4;
+}
+grep -Fq "readfile('/rom/etc/zbt-mega-build.json')" \
+  "${rootfs_dir}/usr/share/ucode/luci/runtime.uc" || {
+  echo 'Firmware-specific LuCI resource cache version is missing from the image' >&2; exit 4;
 }
 grep -Fq 'zbt_5g_deployment_query()' \
   "${rootfs_dir}/usr/libexec/rpcd/qmodem" || {

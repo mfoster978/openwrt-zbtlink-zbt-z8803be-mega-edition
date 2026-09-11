@@ -5,7 +5,9 @@ zbt_slot "$1" || exit 0
 # Friendly names are UI-only; QModem's alias is also its netifd identity.
 # Preserve a previous custom alias as the display name before normalizing it.
 changed=0
-if [ -z "$(uci -q get "qmodem.$1.display_name")" ]; then
+display_name=$(uci -q get "qmodem.$1.display_name")
+case "$display_name" in
+	''|4_1|2_1|modem1|modem2)
 	label=$(uci -q get "qmodem.$1.alias")
 	case "$label" in
 		''|4_1|2_1|modem1|modem2)
@@ -16,7 +18,8 @@ if [ -z "$(uci -q get "qmodem.$1.display_name")" ]; then
 	esac
 	uci set "qmodem.$1.display_name=$label"
 	changed=1
-fi
+	;;
+esac
 if [ "$(uci -q get "qmodem.$1.alias")" != "$1" ]; then
 	uci set "qmodem.$1.alias=$1"
 	changed=1

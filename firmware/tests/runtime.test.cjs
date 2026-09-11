@@ -475,7 +475,11 @@ test('LuCI recovery makes nginx the only frontend and repairs a 502 backend once
   assert.match(migration, /nginx enable/);
   assert.match(migration, /nginx\._lan\.include='conf\.d\/\*\.locations'/);
   assert.match(migration, /nginx_migrated='2'/);
-  assert.match(migration, /zbt-luci-backend start/);
+  assert.match(migration, /\/etc\/init\.d\/uwsgi status/);
+  assert.match(migration, /\/etc\/init\.d\/nginx status/);
+  assert.match(migration, /attempts.*-lt 60/);
+  assert.match(migration, /zbt-luci-backend-check/);
+  assert.doesNotMatch(migration, /\( sleep 5;/);
   assert.match(checker, /\[ -S "\$SOCKET" \]/);
   assert.match(checker, /\[ "\$http_status" = 502 \]/);
   assert.match(checker, /restart_uwsgi/);

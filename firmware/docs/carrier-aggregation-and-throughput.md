@@ -18,7 +18,9 @@ Both per-modem TTL policies now default off. TTL rewriting remains available for
 
 QoSmate, background speed switching, recovery actions and Speedify are also off until enabled in Mega. Minimal omits those optional components. No build forces a cell, PCC, band set, carrier MBN profile or undocumented EFS setting. A cell lock can prevent additional cells from attaching on this modem family, so public defaults stay unlocked and carrier-neutral.
 
-Advanced Network Preference provides a read-backed 5G connection type for supported Quectel modules. **Automatic (recommended)** leaves SA and NSA enabled, **NSA only** disables SA, and **SA only** disables NSA. The control changes only `AT+QNWPREFCFG="nr5g_disable_mode"`; it does not replace either band mask, it performs no write for an already-active choice, and simply opening the page is read-only. NSA-only can be useful for comparing LTE-anchored aggregation with SA, but it cannot force a particular tower or unsupported carrier combination.
+Advanced opens on **5G & Network Mode** and provides a read-backed 5G connection type for supported Quectel modules. **Automatic — SA + NSA (recommended default)** leaves both deployment types enabled, **NSA only** disables SA, and **SA only** disables NSA. The control changes only `AT+QNWPREFCFG="nr5g_disable_mode"`; it does not replace either band mask, it performs no write for an already-active choice, and simply opening the page is read-only. **Preferred Bands** is a separate tab because applying a band selection persistently changes the modem's allowed-band mask.
+
+For the reported 30.9 Mbps case, the screenshot shows **NR5G-SA Mode**, with one serving carrier and three configured-but-idle secondary carriers. The faster comparison screenshot shows NSA using LTE B2/B66 anchors plus n41. That evidence makes **NSA only** the useful first comparison: select it, press Apply, allow the modem to reconnect, run a wired speed test, and inspect Cell Information while traffic is active. It is a controlled comparison rather than a promised speed increase; carrier policy may still select a different tower or carrier combination.
 
 ## Reproducible comparison
 

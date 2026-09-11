@@ -36,8 +36,22 @@ if [ -x /etc/init.d/uwsgi ] && [ -x /etc/init.d/nginx ]; then
 	/etc/init.d/uwsgi enable >/dev/null 2>&1 || true
 	/etc/init.d/nginx enable >/dev/null 2>&1 || true
 	/etc/init.d/zbt-luci-backend enable >/dev/null 2>&1 || true
-	# rcS expands its service list before uci-defaults creates the S81 link,
-	# so start the one-shot repair explicitly on this first upgraded boot.
-	( sleep 5; /etc/init.d/zbt-luci-backend start >/dev/null 2>&1 || true ) &
+	# rcS expands its service list before uci-defaults creates the S81 link.
+	# Wait for the normal S79/S80 services instead of racing them with a fixed
+	# delay; the checker may restart uWSGI only after initial startup settles.
+	(
+		attempts=0
+		while [ "$attempts" -lt 60 ]; do
+			if /etc/init.d/uwsgi status >/dev/null 2>&1 &&
+			   /etc/init.d/nginx status >/dev/null 2>&1; then
+				sleep 2
+				/usr/sbin/zbt-luci-backend-check >/dev/null 2>&1 || true
+				exit 0
+			fi
+			attempts=$((attempts + 1))
+			sleep 1
+		done
+		logger -t zbt-luci-backend 'initial LuCI services did not settle within 60 seconds; normal S81 check will run on subsequent boots'
+	) &
 fi
 exit 0

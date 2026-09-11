@@ -61,6 +61,10 @@ function fixture(rpc = {}) {
   const qmodem = {
     getLockBand: async id => { calls.push(['read', id]); return response([41]); },
     setLockBand: async (id, params) => { calls.push(['write', id, params]); return { set_lockband: 'OK (readback verified)' }; },
+    get5gDeployment: async () => ({ deployment: { supported: '1', mode: 'auto' } }),
+    set5gDeployment: async () => ({ result: { status: '1', changed: '0' } }),
+    getNetworkPrefer: async () => ({ network_prefer: { AUTO: '1', LTE: '0', NR5G: '0' } }),
+    setNetworkPrefer: async () => ({}),
     ...rpc
   };
   const view = new Function('view', 'ui', 'dom', 'qmodem', 'E', '_', source)(
@@ -81,6 +85,26 @@ const byId = (node, id) => node.descendants().find(el => el.attrs.id === id);
 const button = (node, text) => node.querySelectorAll('button').find(el => el.textContent === text);
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('performance choices are first, visible, read-backed, and read-only on open', { skip: !tree }, async () => {
+  let deploymentReads = 0, deploymentWrites = 0;
+  const f = fixture({
+    get5gDeployment: async id => {
+      assert.equal(id, '2_1'); deploymentReads++;
+      return { deployment: { supported: '1', mode: 'auto' } };
+    },
+    set5gDeployment: async () => { deploymentWrites++; return { result: { status: '1' } }; }
+  });
+  const tabs = f.view.createTabInterface(modem, []);
+  await settle();
+  const menu = tabs.children[0];
+  assert.deepEqual(menu.children.slice(0, 3).map(el => el.textContent),
+    ['5G & Network Mode', 'Preferred Bands', 'Neighbor Cell']);
+  assert.match(tabs.textContent, /Automatic — SA \+ NSA \(recommended default\)/);
+  assert.match(tabs.textContent, /opening this page is read-only/i);
+  assert.equal(deploymentReads, 1);
+  assert.equal(deploymentWrites, 0, 'rendering the page must never write to the modem');
+});
 
 test('unknown bands have diagnostics/retry, never actionable all-off checkboxes', { skip: !tree }, async () => {
   let reads = 0;

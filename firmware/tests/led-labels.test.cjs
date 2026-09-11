@@ -348,6 +348,10 @@ uci() {
   }
   assert.equal(fs.readFileSync(path.join(db, 'qmodem.4_1.display_name'), 'utf8').trim(), 'Modem 1');
   assert.equal(fs.readFileSync(path.join(db, 'qmodem.2_1.display_name'), 'utf8').trim(), 'Modem 2');
+  fs.writeFileSync(path.join(db, 'qmodem.4_1.display_name'), '4_1');
+  run(uci + profile, env, ['4_1']);
+  assert.equal(fs.readFileSync(path.join(db, 'qmodem.4_1.display_name'), 'utf8').trim(), 'Modem 1',
+    'an internal ID saved by an older image must be repaired');
   const fingerprints = () => run(uci + source('firmware/files/usr/lib/zbt/dual-modem.sh') + '\nzbt_dial_fingerprint 4_1; zbt_dial_fingerprint 2_1', env);
   const before = fingerprints();
   fs.writeFileSync(path.join(db, 'qmodem.2_1.display_name'), 'Travel SIM');
