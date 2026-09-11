@@ -25,7 +25,7 @@ const params = new URLSearchParams(location.search);
 const ago = milliseconds => new Date(Date.now() - milliseconds).toISOString();
 window.releases = [{ id: 22, tag: 'firmware-22.1', name: 'New Mega build', published_at: ago(3 * 3600000),
  body: '# New features\\n<script>window.evil=1<\\/script><img src=x onerror="window.evil=1">\\n[bad](javascript:alert(1))',
- compatible: true, image: {name:'OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin',size:67108864},
+ compatible: true, image: {name:'OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-firmware-22.1.bin',size:67108864},
  html_url:'javascript:alert(1)' },
  { id: 21, tag: 'firmware-21.1', name: 'Current Mega build', published_at:ago(2 * 86400000),compatible:true, body:'Current notes',image:{name:'current.bin',size:33554432}},
  { id: 20, tag: 'firmware-20.2', name: 'Older Mega build', published_at:ago(8 * 86400000),compatible:true, body:'Older notes',image:{name:'older.bin',size:33554432}},

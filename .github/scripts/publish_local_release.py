@@ -33,26 +33,33 @@ DEVICE = "zbtlink_zbt-z8803be"
 BOARD = "zbtlink,zbt-z8803be"
 OPENWRT_PREFIX = "openwrt-mediatek-filogic-" + DEVICE
 MEGA_PREFIX = "OpenWrt-Mega-Edition-ZBT-Z8803BE"
-SYSUPGRADE = MEGA_PREFIX + "-sysupgrade.bin"
-INITRAMFS = MEGA_PREFIX + "-initramfs.bin"
-PACKAGE_MANIFEST = MEGA_PREFIX + "-packages.manifest"
+MEGA_COMPAT_SYSUPGRADE = MEGA_PREFIX + "-sysupgrade.bin"
+LEGACY_COMPAT_SYSUPGRADE = OPENWRT_PREFIX + "-squashfs-sysupgrade.bin"
+MEGA_MANIFEST = "mega-release-v2.json"
 RUNTIME = "verify-router-runtime.sh"
 NOTES = "RELEASE_NOTES.md"
 BASE_SHA = "edc738504fe8fae81eb15de967456204699b1830"
 
 
-def release_files(repository):
+def release_files(repository, tag):
     if REPOSITORIES[repository][1] == "mega":
-        return SYSUPGRADE, INITRAMFS, PACKAGE_MANIFEST
+        return (f"{MEGA_PREFIX}-sysupgrade-{tag}.bin",
+                f"{MEGA_PREFIX}-initramfs-{tag}.bin",
+                f"{MEGA_PREFIX}-packages-{tag}.manifest")
     return (OPENWRT_PREFIX + "-squashfs-sysupgrade.bin",
             OPENWRT_PREFIX + "-initramfs-kernel.bin", OPENWRT_PREFIX + ".manifest")
 
 
-def asset_limits(repository):
-    sysupgrade, initramfs, package_manifest = release_files(repository)
-    return {sysupgrade: 128 << 20, initramfs: 128 << 20,
-            package_manifest: 4 << 20, "SHA256SUMS": 16384,
-            "BUILD-INFO.txt": 16384, RUNTIME: 1 << 20, "mega-release.json": 65536}
+def asset_limits(repository, tag):
+    sysupgrade, initramfs, package_manifest = release_files(repository, tag)
+    limits = {sysupgrade: 128 << 20, initramfs: 128 << 20,
+              package_manifest: 4 << 20, "SHA256SUMS": 16384,
+              "BUILD-INFO.txt": 16384, RUNTIME: 1 << 20}
+    if REPOSITORIES[repository][1] == "mega":
+        limits.update({MEGA_COMPAT_SYSUPGRADE: 128 << 20,
+                       LEGACY_COMPAT_SYSUPGRADE: 128 << 20,
+                       MEGA_MANIFEST: 65536})
+    return limits
 
 
 def git(root, *args, check=True):
@@ -209,9 +216,9 @@ def selected_assets(release, repository, tag, source_sha):
             release.get("tag_name") != tag or release.get("target_commitish") != source_sha or
             type(release.get("id")) is not int or release["id"] < 1):
         raise ValueError("An existing non-prerelease draft targeting exactly the build SHA is required")
-    limits = asset_limits(repository)
-    sysupgrade, initramfs, _ = release_files(repository)
-    required = set(limits) - ({"mega-release.json"} if REPOSITORIES[repository][1] == "minimal" else set())
+    limits = asset_limits(repository, tag)
+    sysupgrade, initramfs, _ = release_files(repository, tag)
+    required = set(limits)
     assets = release.get("assets")
     if not isinstance(assets, list) or len(assets) > len(required) + 1:
         raise ValueError("Unexpected draft release assets")
@@ -230,7 +237,10 @@ def selected_assets(release, repository, tag, source_sha):
         if ident in ids:
             raise ValueError("Duplicate numeric release asset ID")
         ids.add(ident)
-        if name in {sysupgrade, initramfs} and size < 1 << 20:
+        firmware_images = {sysupgrade, initramfs}
+        if REPOSITORIES[repository][1] == "mega":
+            firmware_images |= {MEGA_COMPAT_SYSUPGRADE, LEGACY_COMPAT_SYSUPGRADE}
+        if name in firmware_images and size < 1 << 20:
             raise ValueError("Firmware image is unexpectedly small")
         if name != NOTES:
             selected[name] = asset
@@ -244,24 +254,27 @@ def fingerprint(assets):
             for name, asset in assets.items()}
 
 
-def checksums(text, repository="mfoster978/OpenWrt-ZBT-Z8803BE-Mega"):
-    sysupgrade, initramfs, _ = release_files(repository)
+def checksums(text, repository, tag):
+    sysupgrade, initramfs, _ = release_files(repository, tag)
+    expected_names = {sysupgrade, initramfs}
+    if REPOSITORIES[repository][1] == "mega":
+        expected_names |= {MEGA_COMPAT_SYSUPGRADE, LEGACY_COMPAT_SYSUPGRADE}
     result = {}
     for line in text.splitlines():
         if not line:
             continue
         match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *]([^\r\n]+)", line)
-        if not match or match[2] not in {sysupgrade, initramfs} or match[2] in result:
-            raise ValueError("SHA256SUMS must contain exactly the two fixed image names, without paths or duplicates")
+        if not match or match[2] not in expected_names or match[2] in result:
+            raise ValueError("SHA256SUMS must contain exactly the expected image names, without paths or duplicates")
         result[match[2]] = match[1].lower()
-    if set(result) != {sysupgrade, initramfs}:
-        raise ValueError("Both firmware image checksums are required")
+    if set(result) != expected_names:
+        raise ValueError("Every firmware image checksum is required")
     return result
 
 
 def validate_files(root, folder, repository, tag, source_sha, hashes):
-    sysupgrade, _, package_manifest = release_files(repository)
-    expected = checksums((folder / "SHA256SUMS").read_text(), repository)
+    sysupgrade, _, package_manifest = release_files(repository, tag)
+    expected = checksums((folder / "SHA256SUMS").read_text(), repository, tag)
     if any(hashes.get(name) != digest for name, digest in expected.items()):
         raise ValueError("Downloaded firmware SHA-256 verification failed")
     info = {}
@@ -286,7 +299,9 @@ def validate_files(root, folder, repository, tag, source_sha, hashes):
     if "\x00" in (folder / package_manifest).read_text():
         raise ValueError("Invalid package manifest")
     if REPOSITORIES[repository][1] == "mega":
-        data = json.loads((folder / "mega-release.json").read_text())
+        if not (hashes[sysupgrade] == hashes[MEGA_COMPAT_SYSUPGRADE] == hashes[LEGACY_COMPAT_SYSUPGRADE]):
+            raise ValueError("Compatibility sysupgrade copies differ from the versioned firmware image")
+        data = json.loads((folder / MEGA_MANIFEST).read_text())
         required = {"schema": 1, "variant": "mega", "repository": repository,
                     "board": BOARD, "version": tag, "source_sha": source_sha,
                     "base_version": "v25.12.021", "dirty": False}

@@ -15,7 +15,7 @@ class MetadataTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.image = Path(self.temp.name) / release.IMAGE
+        self.image = Path(self.temp.name) / (release.IMAGE_PREFIX + "firmware-42.1.bin")
         self.image.write_bytes(b"test-image" * 110000)
         self.sha = "a" * 40
         with patch.object(release, "git", side_effect=[self.sha, ""]):
@@ -55,7 +55,9 @@ class MetadataTests(unittest.TestCase):
         version = "firmware-202609100700.1"
         with patch.object(release, "git", side_effect=[self.sha, ""]):
             build = release.identity(Path("/fixture"), version)
-        self.assertEqual(self.create(build=build, version=version)["version"], version)
+        image = self.image.with_name(release.IMAGE_PREFIX + version + ".bin")
+        image.write_bytes(self.image.read_bytes())
+        self.assertEqual(self.create(build=build, image=image, version=version)["version"], version)
 
     def test_wrong_variant_board_repo_or_identity_rejected(self):
         for field, value in (("variant", "minimal"), ("repository", "other/repo"),

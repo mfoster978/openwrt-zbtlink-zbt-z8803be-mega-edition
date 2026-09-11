@@ -1,0 +1,13 @@
+{
+	"admin/about": {
+		"title": "About",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "zbt8803be/mega-about-v2"
+		},
+		"depends": {
+			"acl": [ "luci-app-zbt-about" ]
+		}
+	}
+}

@@ -414,14 +414,15 @@ cmp files/etc/zbt-mega-build.json "${rootfs_dir}/etc/zbt-mega-build.json"
 cp "${rootfs_dir}/etc/zbt-mega-build.json" "bin/targets/${target_main}/${SUBTARGET}/zbt-mega-build.json"
 # Fail the build if an upstream package overwrites the Mega experience.
 for overlay_file in \
-  www/luci-static/resources/view/zbt8803be/about.js \
-  www/luci-static/resources/view/zbt8803be/mega-about.css \
+  www/luci-static/resources/view/zbt8803be/mega-about-v2.js \
+  www/luci-static/resources/view/zbt8803be/mega-about-v2.css \
   www/luci-static/resources/view/system/mega-update.js \
   www/luci-static/resources/view/system/mega-update.css \
   www/luci-static/resources/zbt-mega-mobile.css \
   usr/libexec/rpcd/zbt.firmware \
   usr/share/rpcd/acl.d/zbt-firmware.json \
   usr/share/rpcd/acl.d/luci-app-zbt-about.json \
+  usr/share/luci/menu.d/luci-app-zbt-about.json \
   usr/share/luci/menu.d/zbt-firmware.json; do
   cmp "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Mega About/update component missing or overwritten: ${overlay_file}" >&2; exit 4;

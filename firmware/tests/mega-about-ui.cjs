@@ -7,8 +7,8 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '../..');
 const directory = path.join(root, 'firmware/files/www/luci-static/resources/view/zbt8803be');
-const js = fs.readFileSync(path.join(directory, 'about.js'), 'utf8');
-const css = fs.readFileSync(path.join(directory, 'mega-about.css'), 'utf8');
+const js = fs.readFileSync(path.join(directory, 'mega-about-v2.js'), 'utf8');
+const css = fs.readFileSync(path.join(directory, 'mega-about-v2.css'), 'utf8');
 const repo = 'https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega';
 const fixture = `
 window.calls = [];
@@ -46,7 +46,7 @@ renderAbout();
 
 (async () => {
   const server = http.createServer((request, response) => {
-    if (request.url === '/view/zbt8803be/mega-about.css') {
+    if (request.url === '/view/zbt8803be/mega-about-v2.css') {
       response.setHeader('Content-Type', 'text/css'); response.end(css); return;
     }
     response.setHeader('Content-Type', 'text/html');
@@ -172,7 +172,7 @@ renderAbout();
     assert.equal(await page.locator('.zma-installed-version').innerText(), '<img src=x onerror="window.injected=true">');
     await page.evaluate(async () => { rejectRpc = true; await renderAbout(); });
     assert.equal(await page.locator('.zma-installed-version').innerText(), 'Build metadata unavailable');
-    assert.equal(await page.locator('#zbt-mega-about-style').count(), 1, 'stylesheet should not be injected repeatedly');
+    assert.equal(await page.locator('#zbt-mega-about-style-v2').count(), 1, 'stylesheet should not be injected repeatedly');
     assert.equal(await page.locator('a[href="mailto:mfoster978@gmail.com"]').count(), 1, 'RPC failure does not hide static content');
     assert.equal(requests.every(url => {
       const parsed = new URL(url);

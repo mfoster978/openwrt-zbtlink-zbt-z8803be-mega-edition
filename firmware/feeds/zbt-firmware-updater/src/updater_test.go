@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const imageName = "OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin"
+func imageName(tag string) string { return versionedImageName(tag) }
 
 func TestMegaEditionRepositoryIdentity(t *testing.T) {
 	if repository != "mfoster978/OpenWrt-ZBT-Z8803BE-Mega" {
@@ -43,11 +43,11 @@ func releaseFixture(tag string, id int64, body []byte, legacy bool) Release {
 	asset := func(name string, size int64) Asset {
 		return Asset{Name: name, Size: size, State: "uploaded", URL: webRoot + "/releases/download/" + tag + "/" + name}
 	}
-	r.Assets = []Asset{asset(imageName, int64(len(body)))}
+	r.Assets = []Asset{asset(imageName(tag), int64(len(body)))}
 	if legacy {
 		r.Assets = append(r.Assets, asset("SHA256SUMS", 128))
 	} else {
-		r.Assets = append(r.Assets, asset("mega-release.json", 1024))
+		r.Assets = append(r.Assets, asset(manifestName, 1024))
 	}
 	return r
 }
@@ -88,7 +88,7 @@ func newFixture(t *testing.T, legacy bool) *fixture {
 	f := &fixture{image: []byte("Test firmware data: no real flash commands run in these tests."), replies: map[string][]byte{}, status: map[string]int{}}
 	f.release = releaseFixture("firmware-101.1", 101, f.image, legacy)
 	hash := sha256.Sum256(f.image)
-	f.manifest = Manifest{Identity: identityFixture(f.release.Tag), Image: Image{Name: imageName, Size: int64(len(f.image)), SHA256: hex.EncodeToString(hash[:])}}
+	f.manifest = Manifest{Identity: identityFixture(f.release.Tag), Image: Image{Name: imageName(f.release.Tag), Size: int64(len(f.image)), SHA256: hex.EncodeToString(hash[:])}}
 	f.refresh()
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -149,10 +149,10 @@ func (f *fixture) refresh() {
 	b, _ = json.Marshal([]Release{f.release})
 	f.replies["/repos/"+repository+"/releases"] = b
 	b, _ = json.Marshal(f.manifest)
-	f.replies["/"+repository+"/releases/download/"+f.release.Tag+"/mega-release.json"] = b
+	f.replies["/"+repository+"/releases/download/"+f.release.Tag+"/"+manifestName] = b
 	sum := sha256.Sum256(f.image)
-	f.replies["/"+repository+"/releases/download/"+f.release.Tag+"/SHA256SUMS"] = []byte(hex.EncodeToString(sum[:]) + "  " + imageName + "\n")
-	f.replies["/"+repository+"/releases/download/"+f.release.Tag+"/"+imageName] = f.image
+	f.replies["/"+repository+"/releases/download/"+f.release.Tag+"/SHA256SUMS"] = []byte(hex.EncodeToString(sum[:]) + "  " + imageName(f.release.Tag) + "\n")
+	f.replies["/"+repository+"/releases/download/"+f.release.Tag+"/"+imageName(f.release.Tag)] = f.image
 }
 func (f *fixture) prepare(t *testing.T) State {
 	t.Helper()
@@ -273,7 +273,7 @@ func TestCatalogRejectsWrongRepositoryAndUnsafeAssets(t *testing.T) {
 		"duplicate manifest": func(r *Release) { r.Assets = append(r.Assets, r.Assets[1]) },
 		"oversize":           func(r *Release) { r.Assets[0].Size = maxImage + 1 }, "unuploaded": func(r *Release) { r.Assets[0].State = "new" },
 		"initramfs": func(r *Release) {
-			r.Assets[0].Name = "OpenWrt-Mega-Edition-ZBT-Z8803BE-initramfs.bin"
+			r.Assets[0].Name = "OpenWrt-Mega-Edition-ZBT-Z8803BE-initramfs-" + r.Tag + ".bin"
 		},
 		"source only":  func(r *Release) { r.Assets[0].Name = "source.tar.gz" },
 		"other device": func(r *Release) { r.Assets[0].Name = "openwrt-mediatek-filogic-openwrt_one-squashfs-sysupgrade.bin" },
@@ -286,6 +286,35 @@ func TestCatalogRejectsWrongRepositoryAndUnsafeAssets(t *testing.T) {
 				t.Fatal("unsafe release accepted")
 			}
 		})
+	}
+}
+
+func TestVersionedImagePreferredWithUpdaterCompatibilityFallbacks(t *testing.T) {
+	tag := "firmware-101.1"
+	r := releaseFixture(tag, 101, []byte("firmware"), false)
+	asset := func(name string) Asset {
+		return Asset{Name: name, Size: 8, State: "uploaded", URL: webRoot + "/releases/download/" + tag + "/" + name}
+	}
+	legacy := "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
+	r.Assets = append(r.Assets, asset(compatibilityImage), asset(legacy))
+	selected, _, _, e := selectAssets(r)
+	if e != nil || selected.Name != imageName(tag) {
+		t.Fatal(selected, e)
+	}
+	manifest := r.Assets[1]
+	r.Assets = []Asset{asset(compatibilityImage), asset(legacy), manifest}
+	selected, _, _, e = selectAssets(r)
+	if e != nil || selected.Name != compatibilityImage {
+		t.Fatal(selected, e)
+	}
+	r.Assets = []Asset{asset(legacy), manifest}
+	selected, _, _, e = selectAssets(r)
+	if e != nil || selected.Name != legacy {
+		t.Fatal(selected, e)
+	}
+	r.Assets[0] = asset(megaImagePrefix + "-sysupgrade-firmware-100.1.bin")
+	if _, _, _, e = selectAssets(r); e == nil {
+		t.Fatal("versioned image for a different release tag was accepted")
 	}
 }
 func TestRedirectHostAllowlist(t *testing.T) {
@@ -382,13 +411,14 @@ func TestManifestFailuresNeverFallbackToLegacy(t *testing.T) {
 }
 func TestChecksumParserRejectsDuplicatesWrongNamesAndCorruption(t *testing.T) {
 	good := strings.Repeat("a", 64)
-	for _, s := range []string{good + "  wrong.bin\n", good + "  " + imageName + "\n" + good + "  " + imageName + "\n", strings.Repeat("x", 64) + "  " + imageName + "\n", "<html>error</html>", good + "  ./" + imageName + "\n"} {
-		if _, e := checksumLine([]byte(s), imageName); e == nil {
+	name := imageName("firmware-101.1")
+	for _, s := range []string{good + "  wrong.bin\n", good + "  " + name + "\n" + good + "  " + name + "\n", strings.Repeat("x", 64) + "  " + name + "\n", "<html>error</html>", good + "  ./" + name + "\n"} {
+		if _, e := checksumLine([]byte(s), name); e == nil {
 			t.Fatal("bad sums accepted", s)
 		}
 	}
 	for _, sep := range []string{"  ", " *"} {
-		v, e := checksumLine([]byte(good+sep+imageName+"\r\n"), imageName)
+		v, e := checksumLine([]byte(good+sep+name+"\r\n"), name)
 		if e != nil || v != good {
 			t.Fatal(v, e)
 		}
@@ -419,11 +449,11 @@ func TestDownloadAndHTTPFailures(t *testing.T) {
 			case "api html":
 				f.replies["/repos/"+repository+"/releases/101"] = []byte("<html>Error</html>")
 			case "manifest html":
-				f.replies[base+"mega-release.json"] = []byte("<html>Error</html>")
+				f.replies[base+manifestName] = []byte("<html>Error</html>")
 			case "image html":
-				f.replies[base+imageName] = []byte("<html>Error</html>")
+				f.replies[base+imageName(f.release.Tag)] = []byte("<html>Error</html>")
 			case "truncated image":
-				f.replies[base+imageName] = f.image[:5]
+				f.replies[base+imageName(f.release.Tag)] = f.image[:5]
 			case "legacy duplicate":
 				f.replies[base+"SHA256SUMS"] = append(f.replies[base+"SHA256SUMS"], f.replies[base+"SHA256SUMS"]...)
 			}
@@ -614,7 +644,7 @@ func TestCurrentLocalDevelopmentIdentityIsNotPublishedRelease(t *testing.T) {
 
 func TestMetadataAndImageReadersAreBounded(t *testing.T) {
 	f := newFixture(t, false)
-	path := "/" + repository + "/releases/download/" + f.release.Tag + "/mega-release.json"
+	path := "/" + repository + "/releases/download/" + f.release.Tag + "/" + manifestName
 	f.replies[path] = []byte(strings.Repeat("x", (64<<10)+1))
 	st := f.prepare(t)
 	if st.Phase != "error" {

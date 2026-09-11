@@ -22,11 +22,15 @@ const repositoryID = "1362525334"
 const boardName = "zbtlink,zbt-z8803be"
 const apiRoot = "https://api.github.com/repos/" + repository
 const webRoot = "https://github.com/" + repository
+const megaImagePrefix = "OpenWrt-Mega-Edition-ZBT-Z8803BE"
+const compatibilityImage = megaImagePrefix + "-sysupgrade.bin"
+const manifestName = "mega-release-v2.json"
+const legacyManifestName = "mega-release.json"
 const maxImage = 128 << 20
 const maxJSON = 4 << 20
 
 var tagPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$`)
-var imagePattern = regexp.MustCompile(`^OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade\.bin$`)
+var legacyImagePattern = regexp.MustCompile(`^openwrt-(?:[A-Za-z0-9._-]+-)?mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade\.bin$`)
 var shaPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var sourcePattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var versionPattern = regexp.MustCompile(`^firmware-([0-9]{1,12})\.([0-9]{1,6})$`)
@@ -82,6 +86,10 @@ type ReleaseView struct {
 	Legacy      bool   `json:"legacy"`
 }
 type Catalog struct{ Client *http.Client }
+
+func versionedImageName(tag string) string {
+	return megaImagePrefix + "-sysupgrade-" + tag + ".bin"
+}
 
 func githubClient() *http.Client {
 	return &http.Client{
@@ -247,19 +255,27 @@ func selectAssets(r Release) (image Asset, manifest Asset, sums Asset, err error
 		err = errors.New("Invalid release publication date")
 		return
 	}
+	var versioned, compatibility, legacy, currentManifest, legacyManifest Asset
+	seen := map[string]bool{}
 	for _, a := range r.Assets {
 		var dst *Asset
 		switch {
-		case imagePattern.MatchString(a.Name):
-			dst = &image
-		case a.Name == "mega-release.json":
-			dst = &manifest
+		case a.Name == versionedImageName(r.Tag):
+			dst = &versioned
+		case a.Name == compatibilityImage:
+			dst = &compatibility
+		case legacyImagePattern.MatchString(a.Name):
+			dst = &legacy
+		case a.Name == manifestName:
+			dst = &currentManifest
+		case a.Name == legacyManifestName:
+			dst = &legacyManifest
 		case a.Name == "SHA256SUMS":
 			dst = &sums
 		default:
 			continue
 		}
-		if dst.Name != "" {
+		if dst.Name != "" || seen[a.Name] {
 			err = errors.New("Ambiguous duplicate firmware or verification asset")
 			return
 		}
@@ -267,7 +283,25 @@ func selectAssets(r Release) (image Asset, manifest Asset, sums Asset, err error
 			err = errors.New("Invalid release asset URL or upload state")
 			return
 		}
+		seen[a.Name] = true
 		*dst = a
+	}
+	switch {
+	case versioned.Name != "":
+		image = versioned
+	case compatibility.Name != "":
+		image = compatibility
+	default:
+		image = legacy
+	}
+	if currentManifest.Name != "" {
+		manifest = currentManifest
+	} else {
+		manifest = legacyManifest
+	}
+	if currentManifest.Name != "" && legacyManifest.Name != "" {
+		err = errors.New("Ambiguous duplicate firmware or verification asset")
+		return
 	}
 	if image.Name == "" || image.Size > maxImage {
 		err = errors.New("Release has no supported device SquashFS sysupgrade image, or exceeds 128 MiB")

@@ -52,6 +52,10 @@ the page does not contact GitHub, download firmware, or flash it.
 
 Only the device-specific **SquashFS sysupgrade `.bin`** is selected, never an
 initramfs kernel, source archive, package, arbitrary URL, or Minimal image.
+Canonical release files end with the full `firmware-YYYYMMDDHHMM.ATTEMPT`
+version before their extension. A transition release can carry byte-identical
+legacy-name aliases so updater versions already installed on routers can reach
+the canonical versioned image safely.
 
 ## Downgrades and settings
 
@@ -78,7 +82,7 @@ password and requires the user to set a new one in LuCI before other admin pages
   redirects limited to GitHub release storage.
 - The updater checks the local board and reads immutable build identity from
   `/rom/etc/zbt-mega-build.json`, avoiding stale restored `/etc` metadata.
-- New releases contain `mega-release.json`: edition, repository, device,
+- New versioned releases contain `mega-release-v2.json`: edition, repository, device,
   version, source commit, date, filename, size and SHA256. Publishing refuses
   mismatched embedded version/commit or a dirty recipe identity.
 - Legacy same-repository releases can use their exact `SHA256SUMS` entry. This

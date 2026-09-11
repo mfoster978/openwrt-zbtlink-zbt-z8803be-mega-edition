@@ -326,13 +326,15 @@ Download from [Mega Edition releases](https://github.com/mfoster978/OpenWrt-ZBT-
 
 | Release asset | Purpose |
 |---|---|
-| `OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin` | Normal firmware upgrade for the supported router. This is the image selected by the Mega updater. |
-| `OpenWrt-Mega-Edition-ZBT-Z8803BE-initramfs.bin` | Temporary boot / advanced recovery, not a normal persistent upgrade. |
-| `OpenWrt-Mega-Edition-ZBT-Z8803BE-packages.manifest` | Exact package inventory for that image. |
-| `SHA256SUMS`, `BUILD-INFO.txt`, `mega-release.json` | Download integrity, build provenance, and machine-readable Mega identity. |
+| `OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-firmware-YYYYMMDDHHMM.N.bin` | Normal firmware upgrade for the supported router. The filename ends with the same firmware version shown by the release and Mega updater. |
+| `OpenWrt-Mega-Edition-ZBT-Z8803BE-initramfs-firmware-YYYYMMDDHHMM.N.bin` | Temporary boot / advanced recovery, not a normal persistent upgrade. |
+| `OpenWrt-Mega-Edition-ZBT-Z8803BE-packages-firmware-YYYYMMDDHHMM.N.manifest` | Exact package inventory for that versioned image. |
+| `SHA256SUMS`, `BUILD-INFO.txt`, `mega-release-v2.json` | Download integrity, build provenance, and machine-readable Mega identity. |
 | `RELEASE_NOTES.md`, `verify-router-runtime.sh` | Changes, upgrade caveats, and a read-only diagnostic helper. |
 
 Use the checksums attached to the **same release** as your download; hashes from an older build are not interchangeable. The publication workflows do not upload a full OpenWrt source/build tree or package archive. GitHub still displays its automatically generated “Source code” links for release tags; those are not firmware images.
+
+A corrective transition release can also contain byte-identical unversioned sysupgrade aliases for updater compatibility. They are not different builds. Manual downloads should use the versioned `OpenWrt-Mega-Edition-...` file; the updater automatically chooses the safest compatible name for the firmware generation currently installed.
 
 After the repository's Mega Edition rename, development images whose updater still references the former repository name may require a one-time manual upgrade through **System → Backup / Flash Firmware**. The new image's updater and embedded identity use the new repository; their safety checks are not bypassed to follow an arbitrary redirect.
 
@@ -374,13 +376,13 @@ sha256sum -c sha256sums
 Upload the SquashFS sysupgrade image through LuCI, or copy it to the router and run:
 
 ```sh
-sysupgrade OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin
+sysupgrade OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-firmware-YYYYMMDDHHMM.N.bin
 ```
 
 For the cleanest first installation of this customized build:
 
 ```sh
-sysupgrade -n OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin
+sysupgrade -n OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-firmware-YYYYMMDDHHMM.N.bin
 ```
 
 The `-n` option discards existing configuration. Do not use it unless the backup is complete and a clean configuration is intended.
@@ -390,7 +392,7 @@ The `-n` option discards existing configuration. Do not use it unless the backup
 1. Disconnect unnecessary USB devices and connect a computer to Ethernet.
 2. Hold **Reset** while applying power until the recovery interface starts.
 3. Open `http://192.168.1.1`.
-4. Upload `OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin`.
+4. Upload the versioned `OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-firmware-YYYYMMDDHHMM.N.bin` file.
 5. Do not interrupt power. Allow several minutes for writing, first boot, and overlay initialization.
 
 A clean Mega installation has no shared `admin` password. Open `http://192.168.1.1`, sign in locally as `root` with the initially empty password, and LuCI will require a new root password before exposing the rest of administration. A settings-preserving upgrade keeps the existing root password.

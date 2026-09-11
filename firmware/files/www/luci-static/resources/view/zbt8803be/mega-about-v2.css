@@ -1,4 +1,5 @@
-/* Deliberately scoped: do not restyle LuCI navigation or other applications. */
+/* Versioned to bypass stale pre-Mega About CSS after an upgrade. Deliberately
+ * scoped: do not restyle LuCI navigation or other applications. */
 .zma-page{--zma-bg:#111316;--zma-card:#1a1c20;--zma-text:#e8edf4;--zma-muted:#a9b3c4;--zma-border:#34383f;--zma-accent:#6fd6e4;--zma-tint:#23272e;--zma-shadow:0 8px 25px #00000018;color-scheme:dark;color:var(--zma-text);background:var(--zma-bg);border:1px solid var(--zma-border);border-radius:24px;overflow:hidden;font:14px/1.65 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1440px;margin:12px auto 32px;isolation:isolate}
 .zma-page *{box-sizing:border-box}
 .zma-page h1,.zma-page h2,.zma-page h3,.zma-page p,.zma-page dl,.zma-page figure{margin:0;padding:0;color:inherit;background:none;border:0;text-shadow:none}

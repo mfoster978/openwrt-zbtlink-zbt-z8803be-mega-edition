@@ -2,7 +2,9 @@
 'require view';
 'require rpc';
 
-/* Mega edition only. This replaces the pinned luci-app-zbt-about view, keeping
+/* Mega edition only. The versioned asset path prevents an upgraded router from
+ * reusing the legacy About view from a browser cache. This replaces the pinned
+ * luci-app-zbt-about view while keeping
  * its route and read-only ACL. The sole remote image is the user-requested
  * Speedify video poster; it is lazy-loaded without a referrer. Runtime values
  * are always inserted as text. */
@@ -190,8 +192,8 @@ return view.extend({
 	handleReset: null,
 
 	load: function() {
-		if (!document.getElementById('zbt-mega-about-style')) document.head.appendChild(E('link', {
-			id: 'zbt-mega-about-style', rel: 'stylesheet', href: L.resource('view/zbt8803be/mega-about.css')
+		if (!document.getElementById('zbt-mega-about-style-v2')) document.head.appendChild(E('link', {
+			id: 'zbt-mega-about-style-v2', rel: 'stylesheet', href: L.resource('view/zbt8803be/mega-about-v2.css')
 		}));
 		return Promise.all([callBoard().catch(function() { return {}; }), callInfo().catch(function() { return {}; }), callBuild().catch(function() { return {}; })]);
 	},

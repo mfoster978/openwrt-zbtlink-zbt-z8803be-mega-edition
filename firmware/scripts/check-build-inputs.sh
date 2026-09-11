@@ -183,10 +183,10 @@ grep -Fq "option enable '0'" firmware/files/etc/config/usbipd
 python3 -m json.tool firmware/files/usr/share/luci/menu.d/zbt-usb-services.json >/dev/null
 grep -Fq 'admin/system/mounts' firmware/files/usr/share/luci/menu.d/zbt-usb-services.json
 test -s firmware/docs/usb-tethering-storage-sharing.md
-grep -Fq "['usb', _('USB & Sharing')" firmware/files/www/luci-static/resources/view/zbt8803be/about.js
-grep -Fq 'Safe starting point: nothing is silently shared.' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
-grep -Fq 'Expand OpenWrt with extroot' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
-grep -Fq 'AdGuard Home' firmware/files/www/luci-static/resources/view/zbt8803be/about.js
+grep -Fq "['usb', _('USB & Sharing')" firmware/files/www/luci-static/resources/view/zbt8803be/mega-about-v2.js
+grep -Fq 'Safe starting point: nothing is silently shared.' firmware/files/www/luci-static/resources/view/zbt8803be/mega-about-v2.js
+grep -Fq 'Expand OpenWrt with extroot' firmware/files/www/luci-static/resources/view/zbt8803be/mega-about-v2.js
+grep -Fq 'AdGuard Home' firmware/files/www/luci-static/resources/view/zbt8803be/mega-about-v2.js
 grep -Fq 'Expand writable storage with extroot' README.md
 grep -Fq 'KSMBD has an explicit **Enable server** switch that defaults off.' README.md
 
@@ -231,8 +231,8 @@ for component in \
   firmware/feeds/zbt-firmware-updater/src/go.mod \
   firmware/files/www/luci-static/resources/view/speedify/speedify.js \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js \
-  firmware/files/www/luci-static/resources/view/zbt8803be/about.js \
-  firmware/files/www/luci-static/resources/view/zbt8803be/mega-about.css \
+  firmware/files/www/luci-static/resources/view/zbt8803be/mega-about-v2.js \
+  firmware/files/www/luci-static/resources/view/zbt8803be/mega-about-v2.css \
   firmware/files/www/luci-static/resources/zbt-mega-mobile.css \
   firmware/files/www/luci-static/resources/view/system/mega-update.js \
   firmware/files/www/luci-static/resources/view/system/mega-update.css; do
@@ -240,6 +240,7 @@ for component in \
 done
 test -x firmware/files/usr/libexec/rpcd/zbt.firmware
 for metadata in \
+  firmware/files/usr/share/luci/menu.d/luci-app-zbt-about.json \
   firmware/files/usr/share/luci/menu.d/zbt-firmware.json \
   firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json \
   firmware/files/usr/share/rpcd/acl.d/luci-app-speedify.json \
@@ -247,6 +248,7 @@ for metadata in \
   firmware/files/usr/share/rpcd/acl.d/luci-app-zbt-about.json; do
   python3 -m json.tool "$metadata" >/dev/null
 done
+grep -Fq '"path": "zbt8803be/mega-about-v2"' firmware/files/usr/share/luci/menu.d/luci-app-zbt-about.json
 grep -Fq '"path": "speedify/launcher"' firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json
 grep -Fq '"path": "speedify/speedify"' firmware/files/usr/share/luci/menu.d/zbt-speedify-launcher.json
 grep -Fq "target.protocol = 'https:'" firmware/files/www/luci-static/resources/view/speedify/launcher.js

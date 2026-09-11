@@ -151,6 +151,9 @@ jobs:
           release_dir=artifacts/release-assets
           target_dir=openwrt/bin/targets/mediatek/filogic
           asset_prefix=OpenWrt-Mega-Edition-ZBT-Z8803BE
+          versioned_sysupgrade="${asset_prefix}-sysupgrade-${MEGA_RELEASE_VERSION}.bin"
+          versioned_initramfs="${asset_prefix}-initramfs-${MEGA_RELEASE_VERSION}.bin"
+          versioned_packages="${asset_prefix}-packages-${MEGA_RELEASE_VERSION}.manifest"
           mkdir -p "$release_dir"
           initramfs="$(find "$target_dir" -maxdepth 1 -type f -name '*zbt-z8803be-initramfs-kernel.bin' -print -quit)"
           sysupgrade="$(find "$target_dir" -maxdepth 1 -type f -name '*zbt-z8803be-squashfs-sysupgrade.bin' -print -quit)"
@@ -158,15 +161,19 @@ jobs:
           for file in "$initramfs" "$sysupgrade" "$package_manifest"; do
             if [ -z "$file" ]; then echo "Missing required ZBT-Z8803BE build output" >&2; exit 1; fi
           done
-          cp "$initramfs" "$release_dir/${asset_prefix}-initramfs.bin"
+          cp "$initramfs" "$release_dir/$versioned_initramfs"
+          cp "$sysupgrade" "$release_dir/$versioned_sysupgrade"
+          cp "$package_manifest" "$release_dir/$versioned_packages"
+          # Transitional byte-identical aliases let already-installed updater
+          # generations reach this release. The versioned image is canonical.
           cp "$sysupgrade" "$release_dir/${asset_prefix}-sysupgrade.bin"
-          cp "$package_manifest" "$release_dir/${asset_prefix}-packages.manifest"
+          cp "$sysupgrade" "$release_dir/openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
           cp firmware/scripts/verify-router-runtime.sh "$release_dir/"
           python3 firmware/scripts/mega-release.py manifest \
             --identity "$target_dir/zbt-mega-build.json" \
-            --image "$release_dir/${asset_prefix}-sysupgrade.bin" \
+            --image "$release_dir/$versioned_sysupgrade" \
             --version "$MEGA_RELEASE_VERSION" --source-sha "$GITHUB_SHA" \
-            --output "$release_dir/mega-release.json"
+            --output "$release_dir/mega-release-v2.json"
           {
             echo "Recipe commit: $GITHUB_SHA"
             echo "OpenWrt source: $OPENWRT_GIT_URL"

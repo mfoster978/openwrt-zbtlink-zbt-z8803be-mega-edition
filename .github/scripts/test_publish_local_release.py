@@ -83,8 +83,11 @@ class PublicationTests(unittest.TestCase):
         return self.command("rev-parse", "HEAD")
 
     def api(self, repository=MEGA):
-        sysupgrade, initramfs, package_manifest = p.release_files(repository)
+        sysupgrade, initramfs, package_manifest = p.release_files(repository, TAG)
         images = {sysupgrade: b"s" * (1 << 20), initramfs: b"i" * (1 << 20)}
+        if repository == MEGA:
+            images[p.MEGA_COMPAT_SYSUPGRADE] = images[sysupgrade]
+            images[p.LEGACY_COMPAT_SYSUPGRADE] = images[sysupgrade]
         content = {**images, package_manifest: b"base-files - fixture\n", p.RUNTIME: self.runtime}
         content["SHA256SUMS"] = "".join(hashlib.sha256(data).hexdigest() + "  " + name + "\n" for name, data in images.items()).encode()
         fields = {"Recipe commit": self.source, "Target": "mediatek/filogic", "Device": p.DEVICE,
@@ -93,7 +96,7 @@ class PublicationTests(unittest.TestCase):
                   "OpenWrt ref": "v25.12.021", "OpenWrt commit": p.BASE_SHA}
         content["BUILD-INFO.txt"] = "".join(k + ": " + v + "\n" for k, v in fields.items()).encode()
         if repository == MEGA:
-            content["mega-release.json"] = json.dumps({"schema": 1, "variant": "mega", "repository": repository,
+            content[p.MEGA_MANIFEST] = json.dumps({"schema": 1, "variant": "mega", "repository": repository,
                                                         "board": p.BOARD, "version": TAG, "source_sha": self.source,
                                                         "base_version": "v25.12.021", "dirty": False,
                                                         "built_at": "2026-09-10T06:57:00Z",
@@ -114,6 +117,8 @@ class PublicationTests(unittest.TestCase):
     def test_valid_mega_publication(self):
         self.assertEqual(MEGA, "mfoster978/OpenWrt-ZBT-Z8803BE-Mega")
         self.assertEqual(MINIMAL, "mfoster978/openwrt-zbtlink-zbt-z8803be-speedify-minimal-build")
+        self.assertEqual(p.release_files(MEGA, TAG)[0],
+                         "OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-" + TAG + ".bin")
         api = self.api()
         folder = self.prepare(api)
         self.notes(folder)
@@ -132,7 +137,7 @@ class PublicationTests(unittest.TestCase):
         self.notes(folder)
         p.finalize(api, self.root, folder, MINIMAL, TAG, self.source)
         self.assertEqual(api.published["make_latest"], "true")
-        self.assertNotIn("mega-release.json", api.content)
+        self.assertNotIn(p.MEGA_MANIFEST, api.content)
 
     def test_rejects_inputs_and_shell_strings(self):
         for tag in ["main", "../../tmp", "firmware-1.1; touch /tmp/pwned", "$(id)", "-v", "firmware-0.1"]:
@@ -184,12 +189,14 @@ class PublicationTests(unittest.TestCase):
                 p.selected_assets(api.release, MEGA, TAG, self.source)
 
     def test_checksum_names_never_become_shell_paths(self):
-        good = "a" * 64 + "  " + p.SYSUPGRADE + "\n" + "b" * 64 + " *" + p.INITRAMFS + "\n"
-        self.assertEqual(set(p.checksums(good)), {p.SYSUPGRADE, p.INITRAMFS})
-        for bad in [good + good, good.replace(p.INITRAMFS, "../" + p.INITRAMFS),
-                    good.replace(p.INITRAMFS, "/etc/passwd"), good.replace("a" * 64, "x" * 64), ""]:
+        sysupgrade, initramfs, _ = p.release_files(MEGA, TAG)
+        names = [sysupgrade, initramfs, p.MEGA_COMPAT_SYSUPGRADE, p.LEGACY_COMPAT_SYSUPGRADE]
+        good = "".join((chr(97 + index) * 64) + "  " + name + "\n" for index, name in enumerate(names))
+        self.assertEqual(set(p.checksums(good, MEGA, TAG)), set(names))
+        for bad in [good + good, good.replace(initramfs, "../" + initramfs),
+                    good.replace(initramfs, "/etc/passwd"), good.replace("a" * 64, "x" * 64), ""]:
             with self.subTest(bad=bad[:90]), self.assertRaises(ValueError):
-                p.checksums(bad)
+                p.checksums(bad, MEGA, TAG)
 
     def test_mega_manifest_board_variant_source_hash_and_size(self):
         for key, value in [("board", "wrong,board"), ("variant", "minimal"), ("dirty", True),
@@ -197,9 +204,9 @@ class PublicationTests(unittest.TestCase):
                            ("repository", MINIMAL), ("built_at", "not a date")]:
             with self.subTest(key=key):
                 api = self.api()
-                data = json.loads(api.content["mega-release.json"])
+                data = json.loads(api.content[p.MEGA_MANIFEST])
                 data[key] = value
-                api.content["mega-release.json"] = json.dumps(data).encode()
+                api.content[p.MEGA_MANIFEST] = json.dumps(data).encode()
                 folder = Path(self.temp.name) / ("invalid-" + key)
                 folder.mkdir()
                 hashes = {}
@@ -216,8 +223,17 @@ class PublicationTests(unittest.TestCase):
         hashes[p.RUNTIME] = "0" * 64
         with self.assertRaises(ValueError):
             p.validate_files(self.root, folder, MEGA, TAG, self.source, hashes)
+        hashes[p.RUNTIME] = hashlib.sha256(self.runtime).hexdigest()
         text = (folder / "BUILD-INFO.txt").read_text().replace("Build host: local server", "Build host: GitHub")
         (folder / "BUILD-INFO.txt").write_text(text)
+        with self.assertRaises(ValueError):
+            p.validate_files(self.root, folder, MEGA, TAG, self.source, hashes)
+
+    def test_compatibility_images_must_be_identical_to_versioned_sysupgrade(self):
+        api = self.api()
+        folder = self.prepare(api)
+        hashes = json.loads((folder / "validation.json").read_text())["hashes"]
+        hashes[p.MEGA_COMPAT_SYSUPGRADE] = "0" * 64
         with self.assertRaises(ValueError):
             p.validate_files(self.root, folder, MEGA, TAG, self.source, hashes)
 
@@ -234,7 +250,8 @@ class PublicationTests(unittest.TestCase):
         api = self.api()
         folder = self.prepare(api)
         self.notes(folder)
-        (folder / p.SYSUPGRADE).write_bytes(b"changed")
+        sysupgrade, _, _ = p.release_files(MEGA, TAG)
+        (folder / sysupgrade).write_bytes(b"changed")
         with self.assertRaises(ValueError):
             p.finalize(api, self.root, folder, MEGA, TAG, self.source)
         self.assertIsNone(api.published)

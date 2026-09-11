@@ -14,7 +14,7 @@ import subprocess
 
 REPOSITORY = "mfoster978/OpenWrt-ZBT-Z8803BE-Mega"
 BOARD = "zbtlink,zbt-z8803be"
-IMAGE = "OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin"
+IMAGE_PREFIX = "OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade-"
 VERSION = re.compile(r"firmware-[1-9][0-9]*\.[1-9][0-9]*\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -61,7 +61,8 @@ def manifest(build, image, expected_version, expected_sha):
         raise ValueError("Release requires a clean recipe identity")
     if not isinstance(build.get("built_at"), str) or not build["built_at"]:
         raise ValueError("Missing build date")
-    if image.is_symlink() or image.name != IMAGE or not image.is_file():
+    expected_image = IMAGE_PREFIX + expected_version + ".bin"
+    if image.is_symlink() or image.name != expected_image or not image.is_file():
         raise ValueError("Expected the device-specific SquashFS sysupgrade image")
     size = image.stat().st_size
     if size < 1024 * 1024 or size > 128 * 1024 * 1024:
