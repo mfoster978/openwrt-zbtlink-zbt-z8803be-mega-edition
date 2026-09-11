@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zbt-pinned-patches-'));
 const specs = [
-  ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', 'qmodem-dual-runtime.patch', ''],
+  ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', ['qmodem-dual-runtime.patch', 'qmodem-cell-discovery.patch', 'qmodem-5g-deployment.patch'], ''],
   ['packages', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'mwan3-speed-policy.patch', ''],
   ['mwan3-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-mwan3-route-metric.patch', ''],
   ['luci-first-login', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-first-login-password.patch', ''],
@@ -34,10 +34,11 @@ function run(command, args, options = {}) {
   assert.match(dts, /function-enumerator = <1>;\s*gpios = <&pio 61 GPIO_ACTIVE_LOW>/);
   assert.match(dts, /function-enumerator = <2>;\s*gpios = <&pio 53 GPIO_ACTIVE_LOW>/);
   console.log('Pinned board modem power and LED GPIO definitions verified (unchanged)');
-  for (const [name, repo, commit, patchName, prefix] of specs) {
-    const patch = fs.readFileSync(path.join(root, 'firmware/patches', patchName), 'utf8');
+  for (const [name, repo, commit, patchSpec, prefix] of specs) {
+    const patchNames = Array.isArray(patchSpec) ? patchSpec : [patchSpec];
+    const patches = patchNames.map(patchName => fs.readFileSync(path.join(root, 'firmware/patches', patchName), 'utf8'));
     const tree = path.join(tmp, name);
-    const files = [...patch.matchAll(/^--- a\/(.+)$/gm)].map(m => m[1]);
+    const files = [...new Set(patches.flatMap(patch => [...patch.matchAll(/^--- a\/(.+)$/gm)].map(m => m[1])))];
     await Promise.all(files.map(async p => {
       assert.ok(!p.includes('..') && /^[a-zA-Z0-9_/.+-]+$/.test(p));
       const response = await fetch(`https://raw.githubusercontent.com/${repo}/${commit}/${prefix}${p}`, { signal: AbortSignal.timeout(20000) });
@@ -45,14 +46,60 @@ function run(command, args, options = {}) {
       fs.mkdirSync(path.dirname(path.join(tree, p)), { recursive: true });
       fs.writeFileSync(path.join(tree, p), await response.text());
     }));
-    run('patch', ['--dry-run', '--batch', '--fuzz=0', '--forward', '-p1', '-d', tree], { input: patch });
-    run('patch', ['--batch', '--fuzz=0', '--forward', '-p1', '-d', tree], { input: patch });
-    run('patch', ['--dry-run', '--batch', '--fuzz=0', '--reverse', '-p1', '-d', tree], { input: patch });
+    for (const patch of patches) {
+      run('patch', ['--dry-run', '--batch', '--fuzz=0', '--forward', '-p1', '-d', tree], { input: patch });
+      run('patch', ['--batch', '--fuzz=0', '--forward', '-p1', '-d', tree], { input: patch });
+    }
+    for (const patch of patches)
+      run('patch', ['--dry-run', '--batch', '--fuzz=0', '--reverse', '-p1', '-d', tree], { input: patch });
     for (const p of files) {
       const contents = fs.readFileSync(path.join(tree, p), 'utf8');
       if (p.endsWith('.js')) new Function(contents);
       else if (p.endsWith('.json')) JSON.parse(contents);
       else if (contents.startsWith('#!/bin/sh')) run('busybox', ['sh', '-n', path.join(tree, p)]);
+    }
+    if (name === 'luci-first-login') {
+      const dispatcher = fs.readFileSync(path.join(tree, 'modules/luci-base/ucode/dispatcher.uc'), 'utf8');
+      const password = fs.readFileSync(path.join(tree, 'modules/luci-mod-system/htdocs/luci-static/resources/view/system/password.js'), 'utf8');
+      assert.match(dispatcher, /password'\) \+ '\?first=1'/, 'forced setup route carries a one-time completion marker');
+
+      let formData;
+      let replacement = '';
+      let renderCalls = 0;
+      function Value() {}
+      Value.prototype.renderWidget = function() {};
+      const form = {
+        NamedSection: function() {}, Value,
+        JSONMap: function(data) {
+          formData = data;
+          this.section = () => ({ option: () => ({}) });
+          this.render = () => Promise.resolve();
+        }
+      };
+      const dom = { callClassMethod: (node, method) => {
+        if (method === 'render') renderCalls++;
+        return Promise.resolve();
+      } };
+      const ui = { addNotification: () => {} };
+      const rpc = { declare: () => (username, value) => Promise.resolve(username === 'root' && value === 'Good-password-1!') };
+      const location = { search: '?first=1', replace: target => { replacement = target; } };
+      const passwordView = new Function('view', 'dom', 'ui', 'form', 'rpc', 'E', '_', 'L', 'window', 'document', password)(
+        { extend: value => value }, dom, ui, form, rpc, () => ({}), value => value,
+        { hasViewPermission: () => true, url: (...parts) => '/cgi-bin/luci/' + parts.join('/') },
+        { location }, { querySelector: () => ({}) }
+      );
+      passwordView.render();
+      formData.password.pw1 = formData.password.pw2 = 'Good-password-1!';
+      await passwordView.handleSave();
+      assert.equal(replacement, '/cgi-bin/luci/admin/about', 'successful required password continues to About');
+      assert.equal(renderCalls, 0, 'completed setup is not rendered again before navigation');
+
+      replacement = '';
+      location.search = '';
+      formData.password.pw1 = formData.password.pw2 = 'Good-password-1!';
+      await passwordView.handleSave();
+      assert.equal(replacement, '', 'ordinary later password changes stay on the password page');
+      assert.equal(renderCalls, 1);
     }
     console.log(`${name}: exact pinned patch, reverse/idempotence check and syntax passed (${commit})`);
   }

@@ -49,7 +49,7 @@ install_luci_wrapper() {
 	if ! cmp -s "$LUCI_WRAPPER" "$LUCI_WRAPPER_TARGET"; then
 		cp "$LUCI_WRAPPER" "$LUCI_WRAPPER_TARGET" || return 1
 		rm -f /tmp/luci-indexcache /tmp/luci-indexcache.json
-		log 'installed Speedify login-return refresh wrapper'
+		log 'installed Speedify session-preserving LuCI wrapper'
 	fi
 }
 

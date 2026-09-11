@@ -87,6 +87,23 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$runtim
   echo 'Pinned QModem runtime patch no longer matches; refusing an unpatched build' >&2
   exit 3
 fi
+# Use Quectel's actual long-running LTE/NR QSCAN path and robust subscriber
+# number parsing while keeping the changes pinned to the reviewed QModem tree.
+cell_discovery_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-cell-discovery.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$cell_discovery_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$cell_discovery_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$cell_discovery_patch" >/dev/null; then
+  echo 'Pinned QModem cell-discovery patch no longer matches; refusing a broken modem UI build' >&2
+  exit 3
+fi
+# Expose Quectel's reversible SA/NSA selector without touching its band masks.
+deployment_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-5g-deployment.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$deployment_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$deployment_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$deployment_patch" >/dev/null; then
+  echo 'Pinned QModem 5G deployment patch no longer matches; refusing an incomplete modem UI build' >&2
+  exit 3
+fi
 for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
   [ "$(grep -Fo "o.value('$apn'" feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js | wc -l)" -eq 2 ] || {
     echo "US APN preset is not present for both QModem SIM selectors: $apn" >&2; exit 3;
@@ -437,6 +454,7 @@ required_overlay_files=(
   usr/libexec/rpcd/zbt.speedtest
   usr/libexec/rpcd/zbt.tailscale
   usr/lib/zbt/dual-modem.sh
+  usr/lib/zbt/qmodem-cell-discovery.sh
   usr/lib/zbt/modem-leds.sh
   etc/init.d/zbt-modem-leds
   etc/uci-defaults/48-zbt-modem-led-dark-repair
@@ -486,7 +504,7 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/lib/zbt/qmodem-cell-discovery.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
@@ -585,6 +603,30 @@ grep -Fq 'Phone Number (MSISDN)' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/overview.js" || {
   echo 'Per-modem SIM phone-number field is missing from built LuCI' >&2; exit 4;
 }
+grep -Fq 'zbt_quectel_sim_number "$at_port"' \
+  "${rootfs_dir}/usr/share/qmodem/vendor/quectel.sh" || {
+  echo 'Robust Quectel subscriber-number lookup is missing from the image' >&2; exit 4;
+}
+grep -Fq 'zbt_quectel_get_cells "$at_port"' \
+  "${rootfs_dir}/usr/share/qmodem/vendor/quectel.sh" || {
+  echo 'Quectel nearby-cell discovery is missing from the image' >&2; exit 4;
+}
+grep -Fq "'AT+QSCAN=3,1'" \
+  "${rootfs_dir}/usr/lib/zbt/qmodem-cell-discovery.sh" || {
+  echo 'Quectel LTE/NR full-scan command is missing from the image' >&2; exit 4;
+}
+grep -Fq 'take up to three minutes' \
+  "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
+  echo 'Nearby-cell scan timing guidance is missing from LuCI' >&2; exit 4;
+}
+grep -Fq 'Automatic (recommended)' \
+  "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
+  echo 'Quectel SA/NSA connection-type control is missing from LuCI' >&2; exit 4;
+}
+grep -Fq 'zbt_5g_deployment_query()' \
+  "${rootfs_dir}/usr/libexec/rpcd/qmodem" || {
+  echo 'Quectel SA/NSA readback backend is missing from the image' >&2; exit 4;
+}
 grep -Fq 'add_quectel_ca_report "$ca_response"' \
   "${rootfs_dir}/usr/share/qmodem/vendor/quectel.sh" || {
   echo 'Full Quectel carrier-aggregation report is missing from the image' >&2; exit 4;
@@ -592,6 +634,14 @@ grep -Fq 'add_quectel_ca_report "$ca_response"' \
 grep -Fq 'root_password_is_unset()' \
   "${rootfs_dir}/usr/share/ucode/luci/dispatcher.uc" || {
   echo 'First-login root-password enforcement is missing from built LuCI' >&2; exit 4;
+}
+grep -Fq "password') + '?first=1'" \
+  "${rootfs_dir}/usr/share/ucode/luci/dispatcher.uc" || {
+  echo 'First-login password route is missing its completion marker' >&2; exit 4;
+}
+grep -Fq "window.location.replace(L.url('admin', 'about'))" \
+  "${rootfs_dir}/www/luci-static/resources/view/system/password.js" || {
+  echo 'Successful first-login password setup does not continue to About' >&2; exit 4;
 }
 
 for image_pattern in '*zbt-z8803be-initramfs-kernel.bin' '*zbt-z8803be-squashfs-sysupgrade.bin'; do

@@ -5,8 +5,10 @@ The router does not configure a two-carrier ceiling. Carrier aggregation is nego
 QModem now runs the read-only Quectel `AT+QCAINFO` query in LTE, 5G NSA and 5G SA modes. **Cell Information** shows:
 
 - the number of active and reported component carriers;
-- every reported PCC and SCC, including band, channel, bandwidth and state;
+- every reported PCC and SCC, including band, channel, bandwidth, PCI and state;
 - `configured, idle` for an SCC state of 1 and `active` for state 2.
+
+Newer NR PCC replies that place PCI in the fifth field are identified defensively instead of being displayed as values such as `state 436`.
 
 An idle radio may report fewer active SCCs. Check during a sustained download: the network commonly activates secondary carriers only when traffic needs them. A four-carrier report means one PCC plus three SCCs, not four SCCs. `AT+QCAINFO` observes carrier aggregation; it does not enable or force it.
 
@@ -15,6 +17,8 @@ An idle radio may report fewer active SCCs. Check during a sustained download: t
 Both per-modem TTL policies now default off. TTL rewriting remains available for plans that need it, but enabling either policy must disable software and hardware flow offload so packets reach the rewrite rule. That can reduce routed throughput. A settings-preserving upgrade keeps an explicitly enabled TTL policy; a fresh installation and an old implicit `wwan0` include do not silently opt the router into that tradeoff.
 
 QoSmate, background speed switching, recovery actions and Speedify are also off until enabled in Mega. Minimal omits those optional components. No build forces a cell, PCC, band set, carrier MBN profile or undocumented EFS setting. A cell lock can prevent additional cells from attaching on this modem family, so public defaults stay unlocked and carrier-neutral.
+
+Advanced Network Preference provides a read-backed 5G connection type for supported Quectel modules. **Automatic (recommended)** leaves SA and NSA enabled, **NSA only** disables SA, and **SA only** disables NSA. The control changes only `AT+QNWPREFCFG="nr5g_disable_mode"`; it does not replace either band mask, it performs no write for an already-active choice, and simply opening the page is read-only. NSA-only can be useful for comparing LTE-anchored aggregation with SA, but it cannot force a particular tower or unsupported carrier combination.
 
 ## Reproducible comparison
 

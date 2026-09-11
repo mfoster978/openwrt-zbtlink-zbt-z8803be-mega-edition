@@ -1,0 +1,43 @@
+diff --git a/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh b/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
+--- a/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
++++ b/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
+@@ -6,5 +6,6 @@ _Author="Siriling,Fujr"
+ _Maintainer="Fujr <fjrcn@outlook.com>"
+ source /usr/share/qmodem/generic.sh
++source /usr/lib/zbt/qmodem-cell-discovery.sh
+ debug_subject="quectel_ctrl"
+ #return raw data
+ get_imei(){
+@@ -403,8 +404,7 @@ sim_info()
+     # fi
+ 
+     #SIM Number（SIM卡号码，手机号）
+-    at_command="AT+CNUM"
+-	sim_number=$(at $at_port $at_command | sed -n '2p' | awk -F'"' '{print $4}')
++	sim_number=$(zbt_quectel_sim_number "$at_port")
+ 
+     #IMSI（国际移动用户识别码）
+     at_command="AT+CIMI"
+@@ -1101,1 +1101,1 @@
+-            get_neighborcell_qualcomm
++            zbt_quectel_get_cells "$at_port"
+diff --git a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+@@ -640,7 +640,7 @@ return view.extend({
+ 		container.appendChild(legend);
+ 
+ 		var description = E('div', { 'class': 'cbi-section-descr' }, 
+-			_('Scan neighboring cell towers and lock modem to specific cell. You can scan for nearby cells and then lock to a specific cell by copying its parameters.'));
++			_('Run the modem\'s full nearby LTE/5G scan, then copy a reported cell into the lock settings. A network-dependent scan can take up to three minutes; the registered serving cell is also shown.'));
+ 		container.appendChild(description);
+ 
+ 		// Create three sections: Neighbor Cell List, Lock Cell Status, Lock Cell Settings
+@@ -1009,6 +1009,7 @@ return view.extend({
+ 				inputs.pci.value = cellInfo.pci || '';
+ 				inputs.arfcn.value = cellInfo.arfcn || '';
+ 				inputs.band.value = cellInfo.band || '';
++				inputs.scs.value = cellInfo.scs || '0';
+ 				
+ 				// Show/hide NR fields based on RAT
+ 				if (ratValue === 1) {

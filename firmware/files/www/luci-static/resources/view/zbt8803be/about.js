@@ -230,7 +230,8 @@ return view.extend({
 						'QModem Next brings modem status, signal/cell information, SMS, AT Debug, SIM information and dial controls into LuCI. Friendly aliases remain separate from stable routing identities.',
 						'QMI, MBIM, NCM, USB serial and compatible PCIe MHI support are included. Quectel connection-manager paths own their own addresses and routes without a competing DHCP client.',
 						'Each slot has its own opt-in IPv4 TTL / IPv6 Hop Limit switch and automatic or custom value. Both start off so flow offload remains available. Band controls verify AT-command results and show readback diagnostics instead of pretending an unknown band mask is empty.',
-						'SIM information shows a carrier-provided phone number when AT+CNUM returns one. Carrier Aggregation lists every PCC/SCC, state and bandwidth reported by AT+QCAINFO in LTE, 5G NSA and 5G SA modes.',
+						'SIM information checks the full AT+CNUM response and the SIM own-numbers phonebook. Nearby-cell discovery uses Quectel QSCAN for LTE/5G with QENG and the serving cell as fallbacks. Carrier Aggregation lists every PCC/SCC, PCI, state and bandwidth reported by AT+QCAINFO without mislabelling newer NR fields.',
+						'Advanced Network Preference reads the modem before showing Automatic (recommended), NSA only or SA only. Applying the active choice makes no write; changing it preserves both SA and NSA band lists, and opening the page never changes modem settings.',
 						'Blank/auto APN keeps modem/network profile negotiation; manual APNs and SIM choices are preserved. Carrier coverage, activation, device support and plan requirements still apply—automatic connection is not guaranteed on every carrier.'
 					]),
 					feature('route', 'Wired first. Cellular when needed.', 'Multi-WAN', 'mwan3 handles connection monitoring and failover. A balanced policy is available when you deliberately choose to distribute connections.', [
@@ -275,7 +276,7 @@ return view.extend({
 				E('div', { 'class': 'zma-speedify-steps' }, [
 					E('article', {}, [E('span', {}, '1'), E('div', {}, [E('h3', {}, _('Dependencies baked in')), E('p', {}, _('Matching TUN, crypto/network support, TLS certificates, C++/atomic/keyutils runtime libraries, nginx and the Python support needed by the LuCI integration are built with the firmware.'))])]),
 					E('article', {}, [E('span', {}, '2'), E('div', {}, [E('h3', {}, _('Installed after Internet is ready')), E('p', {}, _('A guarded first-boot installer fetches the pinned Speedify core and optional LuCI APKs over HTTPS, checks their SHA256 and installs them without fetching replacement kernel modules. It waits and retries if connectivity or service health is not ready.'))])]),
-					E('article', {}, [E('span', {}, '3'), E('div', {}, [E('h3', {}, _('You choose the account and policy')), E('p', {}, _('Complete your own Speedify sign-in and connection settings. After an external account-login screen, return to the router tab; Mega refreshes the embedded app so it reads the new daemon state. The proprietary service remains separately licensed, and this page does not assert it is signed in or bonding.'))])])
+					E('article', {}, [E('span', {}, '3'), E('div', {}, [E('h3', {}, _('You choose the account and policy')), E('p', {}, _('Complete your own Speedify sign-in and connection settings. After an external account-login screen, return to the same router tab; Mega preserves the embedded session so it can receive the new daemon state without restarting login. The proprietary service remains separately licensed, and this page does not assert it is signed in or bonding.'))])])
 				])
 			]),
 			E('section', { id: 'zma-usb', 'class': 'zma-section zma-usb' }, [

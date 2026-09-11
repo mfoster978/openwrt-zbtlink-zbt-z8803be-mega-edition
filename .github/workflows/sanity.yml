@@ -69,7 +69,9 @@ jobs:
       - name: Install pinned browser test library
         run: npm install --prefix "$RUNNER_TEMP/zbt-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
       - name: Check desktop and mobile live speed-test view
-        run: NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/speedtest-ui.cjs
+        run: |
+          NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/speedtest-ui.cjs
+          NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/speedify-wrapper-ui.cjs
       - name: Check Mega About and guarded firmware update screens
         run: |
           NODE_PATH="$RUNNER_TEMP/zbt-ui/node_modules" node firmware/tests/mega-about-ui.cjs

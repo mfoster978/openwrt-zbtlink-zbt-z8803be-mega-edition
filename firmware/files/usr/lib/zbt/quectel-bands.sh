@@ -48,6 +48,21 @@ zbt_band_values() {
 		END { if (bad || !complete) exit 1; print previous }') || return 1
 	printf '%s\n' "$values" | tr ':' '\n' | sort -nu
 }
+zbt_band_zero() {
+	# A literal zero is meaningful only when the complete response names the
+	# requested key. It can represent the inactive SA/NSA list on some RM5xx
+	# firmware, but is never converted into an editable empty selection.
+	zbt_band_ok "$1" || return 1
+	[ "$(printf '%s\n' "$1" | sed -n "s/^[[:space:]]*+QNWPREFCFG:[[:space:]]*\"$2\",[[:space:]]*0[[:space:]\\r]*$/zero/p" | wc -l | tr -d ' ')" = 1 ]
+}
+zbt_5g_disable_value() {
+	local response value
+	response=$(at "$1" 'AT+QNWPREFCFG="nr5g_disable_mode"') || return 1
+	zbt_band_ok "$response" || return 1
+	value=$(printf '%s\n' "$response" | sed -n 's/^[[:space:]]*+QNWPREFCFG:[[:space:]]*"nr5g_disable_mode",[[:space:]]*\([012]\)[[:space:]\r]*$/\1/p' | sed -n '1p')
+	[ -n "$value" ] || return 1
+	printf '%s\n' "$value"
+}
 zbt_band_diagnostic() {
 	# Only band replies and AT status; never expose unrelated SIM/identity URCs.
 	printf '%s\n' "$1" | awk '
@@ -73,18 +88,40 @@ zbt_read_band() {
 	fi
 }
 zbt_get_lockband_nr() {
-	local at_port="$1" class available response values band band_key capability read_error
+	local at_port="$1" class available response values band band_key capability read_error read_state deployment_value deployment_mode
+	deployment_value=''
 	for class in UMTS LTE NR NR_NSA; do
 		zbt_band_key "$class"
 		available=$(uci -q get "qmodem.$config_section.$capability" | tr '/' ' ')
-		zbt_read_band || values=''
-		json_add_object "$class"
-		if [ -n "$read_error" ]; then
-			json_add_string read_state unknown
-			json_add_string read_error "$read_error"
-		else
-			json_add_string read_state verified
+		read_state=verified
+		if ! zbt_read_band; then
+			values=''
+			read_state=unknown
+			if zbt_band_zero "$response" "$band_key"; then
+				if [ -z "$deployment_value" ]; then
+					if zbt_port_matches "$config_section" "$at_port"; then
+						deployment_value=$(zbt_5g_disable_value "$at_port") || deployment_value=unknown
+					else
+						deployment_value=unknown
+					fi
+				fi
+				case "$class:$deployment_value" in
+					NR:1)
+						read_state=disabled
+						read_error='Standalone NR is disabled by the 5G connection type. Use the NR_NSA bands below or restore Automatic mode.'
+						;;
+					NR_NSA:2)
+						read_state=disabled
+						read_error='NR NSA is disabled by the 5G connection type. Use the NR bands above or restore Automatic mode.'
+						;;
+				esac
+			fi
 		fi
+		case "$deployment_value" in 0) deployment_mode=auto ;; 1) deployment_mode=nsa ;; 2) deployment_mode=sa ;; *) deployment_mode=unknown ;; esac
+		json_add_object "$class"
+		json_add_string read_state "$read_state"
+		[ -n "$read_error" ] && json_add_string read_error "$read_error"
+		json_add_string deployment_mode "$deployment_mode"
 		json_add_string read_command "AT+QNWPREFCFG=\"$band_key\""
 		json_add_string read_response "$(zbt_band_diagnostic "$response")"
 		json_add_array available_band

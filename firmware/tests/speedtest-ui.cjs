@@ -88,8 +88,17 @@ document.body.appendChild(dashboard.render());
     await page.waitForTimeout(700);
     assert.equal(await page.locator('.zst-reading').innerText(), '145.25');
     if (process.env.ZBT_UI_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.ZBT_UI_SCREENSHOTS, 'speedtest-desktop.png'), fullPage: true });
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile horizontal overflow at ' + width);
+      assert.equal(await page.locator('.zst-results').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(/\s+/).length), 2, 'results use a compact two-column phone grid');
+      assert.equal(await page.locator('.zst-metric').first().evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(32, 40, 62)', 'phone metrics render as readable cards');
+      assert.ok(await page.locator('.zst-go').evaluate(node => node.getBoundingClientRect().height) >= 44, 'phone GO touch target');
+      assert.ok(await page.locator('.zst-stop').evaluate(node => node.getBoundingClientRect().height) >= 44, 'phone Stop touch target');
+      assert.ok(await page.locator('.zst-secondary').evaluate(node => node.getBoundingClientRect().height) >= 44, 'phone server-search touch target');
+      assert.equal(await page.locator('.zst-secondary').evaluate(node => Math.abs(node.getBoundingClientRect().width - node.parentElement.getBoundingClientRect().width) < 2), true, 'phone server search spans the controls card');
+    }
     await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile horizontal overflow');
     if (process.env.ZBT_UI_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.ZBT_UI_SCREENSHOTS, 'speedtest-mobile.png'), fullPage: true });
     await page.evaluate(() => { snapshot.phase = 'upload'; snapshot.live_mbps = 35.61; snapshot.download_mbps = 144.8; });
     await page.waitForFunction(() => document.querySelector('.zst-reading').textContent === '35.61');

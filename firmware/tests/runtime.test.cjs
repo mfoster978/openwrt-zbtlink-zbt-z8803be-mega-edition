@@ -112,10 +112,142 @@ add_quectel_ca_report "$CA_SAMPLE"`, {
       '+QCAINFO: "SCC",520110,12,"NR5G BAND 41",2,13,1,3,135600\r\nOK\r\n'
   });
   assert.match(result, /Carrier Aggregation\|3 active \/ 4 reported\|/);
-  assert.match(result, /Component Carrier 1\|LTE BAND 2; channel 875; bandwidth 20 MHz; registered\|PCC/);
-  assert.match(result, /Component Carrier 2\|LTE BAND 66; channel 66786; bandwidth 20 MHz; active\|SCC/);
-  assert.match(result, /Component Carrier 3\|LTE BAND 12; channel 5035; bandwidth 20 MHz; configured, idle\|SCC/);
-  assert.match(result, /Component Carrier 4\|NR5G BAND 41; channel 520110; bandwidth 100 MHz; active\|SCC/);
+  assert.match(result, /Component Carrier 1\|LTE BAND 2; channel 875; bandwidth 20 MHz; PCI 10; registered\|PCC/);
+  assert.match(result, /Component Carrier 2\|LTE BAND 66; channel 66786; bandwidth 20 MHz; PCI 11; active\|SCC/);
+  assert.match(result, /Component Carrier 3\|LTE BAND 12; channel 5035; bandwidth 20 MHz; PCI 12; configured, idle\|SCC/);
+  assert.match(result, /Component Carrier 4\|NR5G BAND 41; channel 520110; bandwidth 100 MHz; PCI 13; active\|SCC/);
+
+  const modernNr = shell(`
+add_plain_info_entry() { printf '%s|%s|%s\\n' "$1" "$2" "$extra_info"; }
+get_bandwidth() { [ "$2" = 12 ] && printf '100\\n'; }
+${helper}
+add_quectel_ca_report "$CA_SAMPLE"`, {
+    CA_SAMPLE: '+QCAINFO: "PCC",520110,12,"NR5G BAND 41",436,-101,-11,3\r\n' +
+      '+QCAINFO: "SCC",125290,3,"NR5G BAND 71",2,709,-102,-12,2\r\nOK\r\n'
+  });
+  assert.match(modernNr, /Carrier Aggregation\|2 active \/ 2 reported/);
+  assert.match(modernNr, /NR5G BAND 41; channel 520110; bandwidth 100 MHz; PCI 436; serving/);
+  assert.doesNotMatch(modernNr, /state 436/);
+});
+
+const cellDiscovery = source('firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh');
+const bandRuntime = source('firmware/files/usr/lib/zbt/quectel-bands.sh');
+
+test('Quectel subscriber number scans the full CNUM response then the Own Numbers phonebook', () => {
+  const log = path.join(sandbox(), 'at.log');
+  const cnum = shell(cellDiscovery + `
+at() {
+  printf '%s\\n' "$2" >> "$CALL_LOG"
+  case "$2" in
+    AT+CNUM) printf 'AT+CNUM\\r\\nnoise\\r\\n+CNUM: "Line 1","+15551234567",145\\r\\nOK\\r\\n' ;;
+  esac
+}
+zbt_quectel_sim_number /dev/ttyTEST`, { CALL_LOG: log });
+  assert.equal(cnum, '+15551234567');
+  assert.equal(fs.readFileSync(log, 'utf8').trim(), 'AT+CNUM');
+
+  fs.writeFileSync(log, '');
+  const fallback = shell(cellDiscovery + `
+at() {
+  printf '%s\\n' "$2" >> "$CALL_LOG"
+  case "$2" in
+    AT+CNUM) printf 'AT+CNUM\\r\\nOK\\r\\n' ;;
+    'AT+CPBS?') printf '+CPBS: "SM",3,100\\r\\nOK\\r\\n' ;;
+    'AT+CPBS="ON"') printf 'OK\\r\\n' ;;
+    'AT+CPBR=?') printf '+CPBR: (1-5),40,20\\r\\nOK\\r\\n' ;;
+    'AT+CPBR=1,5') printf '+CPBR: 1,"+15557654321",145,"Own"\\r\\nOK\\r\\n' ;;
+    'AT+CPBS="SM"') printf 'OK\\r\\n' ;;
+  esac
+}
+zbt_quectel_sim_number /dev/ttyTEST`, { CALL_LOG: log });
+  assert.equal(fallback, '+15557654321');
+  assert.match(fs.readFileSync(log, 'utf8'), /AT\+CPBS="ON"[\s\S]*AT\+CPBR=1,5[\s\S]*AT\+CPBS="SM"/);
+});
+
+test('Quectel nearby-cell parser keeps LTE/NR scan records and the serving cell', () => {
+  const out = shell(cellDiscovery + `
+json_select() { :; }
+json_add_object() { printf 'object=%s\\n' "$1"; }
+json_close_object() { :; }
+json_add_string() { printf '%s=%s\\n' "$1" "$2"; }
+zbt_quectel_cell_count=0
+zbt_quectel_parse_qscan "$QSCAN"
+zbt_quectel_parse_serving_cells "$SERVING"
+printf 'count=%s\\n' "$zbt_quectel_cell_count"`, {
+    QSCAN: '+QSCAN: "LTE",310,260,66786,340,-101,-12\r\n' +
+      '+QSCAN: "NR5G",310,260,520110,436,-98,-10,0,30,0,0,0,41\r\nOK\r\n',
+    SERVING: '+QENG: "LTE","FDD",310,260,ABC,265,875,2,5,5,310,-96,-9,-62,16\r\n' +
+      '+QENG: "NR5G-NSA",310,260,685,-98,-11,18,520110,41,12,30\r\nOK\r\n'
+  });
+  assert.match(out, /source=Nearby scan[\s\S]*arfcn=66786[\s\S]*pci=340/);
+  assert.match(out, /source=Nearby scan[\s\S]*arfcn=520110[\s\S]*pci=436[\s\S]*band=41/);
+  assert.match(out, /source=Serving cell/);
+  assert.match(out, /count=4/);
+});
+
+test('zero SA band reply is informational only when NSA-only mode is verified', () => {
+  const out = shell(bandRuntime + `
+zbt_port_matches() { return 0; }
+uci() {
+  case "$4" in
+    *gw_band) printf '1/2\\n' ;;
+    *lte_band) printf '2/66\\n' ;;
+    *sa_band) printf '41/71\\n' ;;
+    *nsa_band) printf '41/71\\n' ;;
+  esac
+}
+at() {
+  case "$2" in
+    *nr5g_disable_mode*) printf '+QNWPREFCFG: "nr5g_disable_mode",1\\r\\nOK\\r\\n' ;;
+    *nsa_nr5g_band*) printf '+QNWPREFCFG: "nsa_nr5g_band",41:71\\r\\nOK\\r\\n' ;;
+    *nr5g_band*) printf '+QNWPREFCFG: "nr5g_band",0\\r\\nOK\\r\\n' ;;
+    *lte_band*) printf '+QNWPREFCFG: "lte_band",2:66\\r\\nOK\\r\\n' ;;
+    *gw_band*) printf '+QNWPREFCFG: "gw_band",1:2\\r\\nOK\\r\\n' ;;
+  esac
+}
+json_add_object() { printf 'section=%s\\n' "$1"; }
+json_add_array() { :; }
+json_close_array() { :; }
+json_close_object() { :; }
+json_add_string() { printf '%s=%s\\n' "$1" "$2"; }
+add_avalible_band_entry() { :; }
+config_section=2_1
+zbt_get_lockband_nr /dev/ttyTEST`, { ZBT_SYSFS: '/nonexistent' });
+  assert.match(out, /section=NR[\s\S]*read_state=disabled[\s\S]*deployment_mode=nsa/);
+  assert.match(out, /Standalone NR is disabled/);
+  assert.match(out, /section=NR_NSA[\s\S]*read_state=verified/);
+});
+
+test('5G deployment RPC maps modes and avoids redundant modem writes', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  const rpcd = fs.readFileSync(path.join(process.env.QMODEM_TEST_TREE,
+    'application/qmodem/files/usr/libexec/rpcd/qmodem'), 'utf8');
+  const start = rpcd.indexOf('# Quectel separates the 5G deployment selector');
+  const end = rpcd.indexOf('\ncase "$1" in', start);
+  assert.ok(start >= 0 && end > start);
+  const helper = rpcd.slice(start, end);
+  const dir = sandbox(), state = path.join(dir, 'state'), log = path.join(dir, 'at.log');
+  fs.writeFileSync(state, '1\n');
+  const mocks = `
+manufacturer=Quectel
+at_port=/dev/ttyTEST
+at() {
+  printf '%s\\n' "$2" >> "$AT_LOG"
+  case "$2" in
+    *nr5g_disable_mode\\\",*) printf '%s\\n' "\${2##*,}" > "$MODE_STATE"; printf 'OK\\r\\n' ;;
+    *) printf '+QNWPREFCFG: "nr5g_disable_mode",%s\\r\\nOK\\r\\n' "$(sed -n '1p' "$MODE_STATE")" ;;
+  esac
+}
+json_init() { :; }; json_add_object() { :; }; json_close_object() { :; }; json_dump() { :; }
+json_add_string() { printf '%s=%s\\n' "$1" "$2"; }
+`;
+  let out = shell(helper + mocks + '\nzbt_set_5g_deployment nsa', { MODE_STATE: state, AT_LOG: log });
+  assert.match(out, /status=1[\s\S]*changed=0/);
+  assert.equal((fs.readFileSync(log, 'utf8').match(/,[012]$/gm) || []).length, 0, 'same mode must not write');
+  fs.writeFileSync(log, '');
+  out = shell(helper + mocks + '\nzbt_set_5g_deployment auto', { MODE_STATE: state, AT_LOG: log });
+  assert.match(out, /status=1[\s\S]*changed=1/);
+  assert.equal(fs.readFileSync(state, 'utf8').trim(), '0');
+  assert.equal((fs.readFileSync(log, 'utf8').match(/,[012]$/gm) || []).length, 1);
 });
 
 test('fresh slow samples demote after threshold and two good samples recover', () => {
@@ -324,10 +456,11 @@ test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
   assert.match(view, /Finishing Speedify setup/);
   assert.doesNotMatch(view, /handleSaveApply:\s*function|fetch\(/);
   assert.match(installer, /install_luci_wrapper \|\| return 1/);
-  assert.match(wrapper, /window\.addEventListener\('focus', scheduleRefresh\)/);
-  assert.match(wrapper, /document\.addEventListener\('visibilitychange', visibilityChanged\)/);
-  assert.match(wrapper, /speedifyuiframe\.contentWindow\.location\.reload\(\)/);
-  assert.match(wrapper, /now - backgroundedAt < 1500/);
+  assert.doesNotMatch(wrapper, /window\.addEventListener\('(?:blur|focus)'/);
+  assert.doesNotMatch(wrapper, /document\.addEventListener\('visibilitychange'/);
+  assert.doesNotMatch(wrapper, /speedifyuiframe\.contentWindow\.location\.reload\(\)/);
+  assert.doesNotMatch(wrapper, /speedifyuiframe\.src\s*=/);
+  assert.match(wrapper, /speedifyuiframe\.contentWindow\.addEventListener\('hashchange', syncOuterHash\)/);
   assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);
 });
 

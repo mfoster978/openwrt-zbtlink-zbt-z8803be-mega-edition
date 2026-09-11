@@ -5,10 +5,10 @@
 /*
  * Reviewed overlay for the official luci-app-speedify iframe wrapper.
  *
- * Speedify account authentication may open in another browser screen. The
- * vendor wrapper keeps its existing iframe alive when the user returns, so it
- * can continue displaying the signed-out state even though the local daemon
- * has received the login. Refresh the iframe after a real leave/return cycle.
+ * Speedify account authentication may open in another browser screen. Keep
+ * the existing iframe alive when the user returns so its WebSocket and
+ * in-memory authentication flow can observe the daemon's new account state.
+ * Reloading here restarts the vendor login flow and loses that handoff.
  */
 return view.extend({
 	handleSaveApply: null,
@@ -37,9 +37,6 @@ return view.extend({
 			allowfullscreen: 'true',
 			title: _('Speedify management')
 		});
-		var backgroundedAt = 0;
-		var lastRefreshAt = 0;
-		var refreshTimer = null;
 
 		function stripConnectionParams(hash) {
 			return hash.replace(/^#\/?/, '').replace(/[?&](?:wsPort|wsEndpoint|wsToken|updateEndpoint|resetEndpoint|restartEndpoint)=[^&]*/g, '').replace(/[?&]$/, '');
@@ -59,45 +56,6 @@ return view.extend({
 				/* The same-origin frame may not be ready yet. */
 			}
 		}
-
-		function markBackgrounded() {
-			if (!backgroundedAt) backgroundedAt = Date.now();
-		}
-
-		function refreshAfterAccountLogin() {
-			refreshTimer = null;
-			var now = Date.now();
-			if (!backgroundedAt || now - backgroundedAt < 1500 || now - lastRefreshAt < 5000 ||
-				document.visibilityState === 'hidden' || !document.documentElement.contains(speedifyuiframe)) return;
-
-			backgroundedAt = 0;
-			lastRefreshAt = now;
-			try {
-				speedifyuiframe.contentWindow.location.reload();
-			} catch (e) {
-				speedifyuiframe.src = iframeSrc;
-			}
-		}
-
-		function scheduleRefresh() {
-			if (refreshTimer != null) window.clearTimeout(refreshTimer);
-			refreshTimer = window.setTimeout(refreshAfterAccountLogin, 350);
-		}
-
-		function visibilityChanged() {
-			if (document.visibilityState === 'hidden') markBackgrounded();
-			else scheduleRefresh();
-		}
-
-		window.addEventListener('blur', markBackgrounded);
-		window.addEventListener('focus', scheduleRefresh);
-		document.addEventListener('visibilitychange', visibilityChanged);
-		window.addEventListener('pageshow', function(event) {
-			if (event.persisted) {
-				backgroundedAt = Date.now() - 2000;
-				scheduleRefresh();
-			}
-		});
 
 		speedifyuiframe.addEventListener('load', function() {
 			try {

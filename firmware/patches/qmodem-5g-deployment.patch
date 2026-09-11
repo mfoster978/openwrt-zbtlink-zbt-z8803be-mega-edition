@@ -1,0 +1,322 @@
+--- a/application/qmodem/files/usr/libexec/rpcd/qmodem
++++ b/application/qmodem/files/usr/libexec/rpcd/qmodem
+@@ -476,6 +476,98 @@
+     traffic_reset_dump_set_json "true" "$config_section" "$enabled" "$reset_type" "$hour" "$day" "$TRAFFIC_RESET_DEFAULT_MINUTE" "$line"
+ }
+ 
++# Quectel separates the 5G deployment selector from the SA/NSA band masks.
++# Querying is read-only; setting the already-active mode deliberately performs
++# no modem write. This keeps the UI reversible without rewriting band lists.
++zbt_5g_deployment_query()
++{
++    local response value
++
++    case "$(printf '%s' "$manufacturer" | tr '[:upper:]' '[:lower:]')" in
++        *quectel*) ;;
++        *) return 1 ;;
++    esac
++
++    response=$(at "$at_port" 'AT+QNWPREFCFG="nr5g_disable_mode"') || return 1
++    printf '%s\n' "$response" | grep -q '^[[:space:]]*OK[[:space:]]*$' || return 1
++    printf '%s\n' "$response" | grep -Eq '^[[:space:]]*(ERROR|\+CM[ES] ERROR:|NO CARRIER)' && return 1
++    value=$(printf '%s\n' "$response" | sed -n 's/^[[:space:]]*+QNWPREFCFG:[[:space:]]*"nr5g_disable_mode",[[:space:]]*\([012]\)[[:space:]\r]*$/\1/p' | sed -n '1p')
++    [ -n "$value" ] || return 1
++    printf '%s\n' "$value"
++}
++
++zbt_5g_deployment_name()
++{
++    case "$1" in
++        0) printf '%s\n' auto ;;
++        1) printf '%s\n' nsa ;;
++        2) printf '%s\n' sa ;;
++        *) return 1 ;;
++    esac
++}
++
++zbt_5g_deployment_value()
++{
++    case "$1" in
++        auto) printf '%s\n' 0 ;;
++        nsa) printf '%s\n' 1 ;;
++        sa) printf '%s\n' 2 ;;
++        *) return 1 ;;
++    esac
++}
++
++zbt_get_5g_deployment()
++{
++    local value mode
++
++    json_init
++    json_add_object deployment
++    if value=$(zbt_5g_deployment_query) && mode=$(zbt_5g_deployment_name "$value"); then
++        json_add_string supported 1
++        json_add_string mode "$mode"
++        json_add_string value "$value"
++    else
++        json_add_string supported 0
++        json_add_string message 'This modem did not return a supported Quectel 5G deployment setting.'
++    fi
++    json_close_object
++    json_dump
++}
++
++zbt_set_5g_deployment()
++{
++    local requested="$1" desired current response actual
++
++    json_init
++    json_add_object result
++    if ! desired=$(zbt_5g_deployment_value "$requested"); then
++        json_add_string status 0
++        json_add_string message 'Invalid 5G deployment mode.'
++    elif ! current=$(zbt_5g_deployment_query); then
++        json_add_string status 0
++        json_add_string message 'Unable to read a supported Quectel 5G deployment setting; no change was made.'
++    elif [ "$current" = "$desired" ]; then
++        json_add_string status 1
++        json_add_string mode "$requested"
++        json_add_string changed 0
++        json_add_string message 'The requested mode is already active; no modem write was needed.'
++    else
++        response=$(at "$at_port" "AT+QNWPREFCFG=\"nr5g_disable_mode\",$desired")
++        if printf '%s\n' "$response" | grep -q '^[[:space:]]*OK[[:space:]]*$' &&
++           actual=$(zbt_5g_deployment_query) && [ "$actual" = "$desired" ]; then
++            json_add_string status 1
++            json_add_string mode "$requested"
++            json_add_string changed 1
++            json_add_string message '5G deployment mode changed and verified.'
++        else
++            json_add_string status 0
++            json_add_string message 'The modem did not confirm the requested mode; its band masks were not changed.'
++        fi
++    fi
++    json_close_object
++    json_dump
++}
++
+ case "$1" in
+     list)
+         cat <<EOF
+@@ -530,6 +622,9 @@
+     "get_dns": {
+         "config_section": "string"
+     },
++    "get_5g_deployment": {
++        "config_section": "string"
++    },
+     "get_imei": {
+         "config_section": "string"
+     },
+@@ -582,6 +677,10 @@
+         "config_section": "string",
+         "imei": "string"
+     },
++    "set_5g_deployment": {
++        "config_section": "string",
++        "mode": "string"
++    },
+     "set_lockband": {
+         "config_section": "string",
+         "params": "object"
+@@ -648,7 +747,7 @@
+ 
+         case "$2" in
+             base_info|cell_info|info|network_info|sim_info|get_copyright|\
+-            get_disabled_features|get_dns|get_imei|get_lockband|get_mode|\
++            get_disabled_features|get_dns|get_5g_deployment|get_imei|get_lockband|get_mode|\
+             get_neighborcell|get_network_prefer|get_reboot_caps|get_stats|save_stats|\
+             get_traffic_reset_schedule|\
+             get_sms|\
+@@ -724,6 +823,9 @@
+                         get_dns
+                         json_dump
+                         ;;
++                    get_5g_deployment)
++                        zbt_get_5g_deployment
++                        ;;
+                     get_imei)
+                         json_init
+                         get_imei
+@@ -988,6 +1090,11 @@
+                 json_add_string result "$mode"
+                 json_dump
+                 ;;
++
++            set_5g_deployment)
++                mode=$(echo "$input" | jsonfilter -e '@.mode')
++                zbt_set_5g_deployment "$mode"
++                ;;
+                 
+             set_sms_storage)
+                 storage=$(echo "$input" | jsonfilter -e '@.storage')
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/qmodem/qmodem.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/qmodem/qmodem.js
+@@ -87,6 +87,13 @@
+ 	expect: { }
+ });
+ 
++var callGet5gDeployment = rpc.declare({
++	object: 'qmodem',
++	method: 'get_5g_deployment',
++	params: ['config_section'],
++	expect: { }
++});
++
+ var callGetSms = rpc.declare({
+ 	object: 'qmodem',
+ 	method: 'get_sms',
+@@ -150,6 +157,13 @@
+ 	expect: { }
+ });
+ 
++var callSet5gDeployment = rpc.declare({
++	object: 'qmodem',
++	method: 'set_5g_deployment',
++	params: ['config_section', 'mode'],
++	expect: { }
++});
++
+ var callSetLockband = rpc.declare({
+ 	object: 'qmodem',
+ 	method: 'set_lockband',
+@@ -334,6 +348,11 @@
+ 		return callGetDns(section);
+ 	},
+ 
++	// Read Quectel SA/NSA availability without changing modem settings.
++	get5gDeployment: function(section) {
++		return callGet5gDeployment(section);
++	},
++
+ 	// Get SMS messages
+ 	getSms: function(section) {
+ 		return callGetSms(section);
+@@ -391,6 +410,11 @@
+ 		return callSetImei(section, imei);
+ 	},
+ 
++	// Change only the Quectel SA/NSA selector; band masks are preserved.
++	set5gDeployment: function(section, mode) {
++		return callSet5gDeployment(section, mode);
++	},
++
+ 	// Set lock band
+ 	setLockBand: function(section, params) {
+ 		return callSetLockband(section, params);
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+@@ -351,6 +351,50 @@
+ 			_('Configure network preference (5G/4G/3G priority). Changes may require modem restart.'));
+ 		container.appendChild(description);
+ 
++		// Quectel exposes SA/NSA availability separately from its band masks.
++		// Reading this control never changes the modem, and Apply is a no-op
++		// when the requested mode is already active.
++		var deploymentSection = E('div', { 'class': 'cbi-value' });
++		deploymentSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('5G Connection Type')));
++		var deploymentField = E('div', { 'class': 'cbi-value-field' });
++		var deploymentCurrent = E('strong', { 'id': 'deployment_current_' + modem.id }, _('Reading modem...'));
++		var deploymentSelect = E('select', {
++			'class': 'cbi-input-select',
++			'id': 'deployment_select_' + modem.id,
++			'disabled': true
++		}, [
++			E('option', { 'value': 'auto' }, _('Automatic (recommended)')),
++			E('option', { 'value': 'nsa' }, _('NSA only (LTE + 5G)')),
++			E('option', { 'value': 'sa' }, _('SA only (standalone 5G)'))
++		]);
++		var deploymentApply = E('button', {
++			'class': 'btn cbi-button-action',
++			'type': 'button',
++			'disabled': true,
++			'click': function() {
++				deploymentSelect.disabled = true;
++				deploymentApply.disabled = true;
++				deploymentApply.textContent = _('Applying...');
++				qmodem.set5gDeployment(modem.id, deploymentSelect.value).then(function(result) {
++					var reply = result && result.result;
++					if (!reply || String(reply.status) !== '1')
++						throw new Error((reply && reply.message) || _('The modem did not confirm the change'));
++					ui.addNotification(null, E('p', {}, reply.message || _('5G connection type updated')), 'success');
++					return self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
++				}).catch(function(e) {
++					ui.addNotification(null, E('p', {}, _('5G connection type: %s').format(e.message)), 'error');
++					return self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
++				});
++			}
++		}, _('Apply'));
++		deploymentField.appendChild(deploymentCurrent);
++		deploymentField.appendChild(E('div', { 'style': 'margin-top: 8px;' }, [deploymentSelect, ' ', deploymentApply]));
++		deploymentField.appendChild(E('div', { 'class': 'cbi-value-description' },
++			_('Automatic leaves SA and NSA available. NSA only is a reversible test for LTE-anchored carrier aggregation; this control never rewrites band lists. A reconnect may take up to one minute.')));
++		deploymentSection.appendChild(deploymentField);
++		container.appendChild(deploymentSection);
++		self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
++
+ 		// Current network preference display
+ 		var currentPrefSection = E('div', { 'class': 'cbi-value' });
+ 		currentPrefSection.appendChild(E('label', { 'class': 'cbi-value-title' }, _('Current Preference')));
+@@ -480,6 +524,34 @@
+ 		});
+ 	},
+ 
++	load5gDeployment: function(modem, currentValue, select, applyButton) {
++		var labels = {
++			auto: _('Automatic (recommended)'),
++			nsa: _('NSA only (LTE + 5G)'),
++			sa: _('SA only (standalone 5G)')
++		};
++		return qmodem.get5gDeployment(modem.id).then(function(result) {
++			var deployment = result && result.deployment;
++			if (!deployment || String(deployment.supported) !== '1' || !labels[deployment.mode]) {
++				currentValue.textContent = _('Unavailable on this modem');
++				select.disabled = true;
++				applyButton.disabled = true;
++				applyButton.textContent = _('Apply');
++				return;
++			}
++			currentValue.textContent = labels[deployment.mode];
++			select.value = deployment.mode;
++			select.disabled = false;
++			applyButton.disabled = false;
++			applyButton.textContent = _('Apply');
++		}).catch(function(e) {
++			currentValue.textContent = _('Read failed: %s').format(e.message);
++			select.disabled = true;
++			applyButton.disabled = true;
++			applyButton.textContent = _('Apply');
++		});
++	},
++
+ 	createImeiTab: function(modem) {
+ 		var self = this;
+ 		var container = E('fieldset', { 'class': 'cbi-section' });
+@@ -1162,6 +1234,16 @@
+ 
+ 			bandClasses.forEach(function(bandClass) {
+ 				var bandData = lockband[bandClass];
++				if (bandData && bandData.read_state === 'disabled') {
++					container.appendChild(E('div', { 'class': 'cbi-section' }, [
++						E('h3', {}, bandClass),
++						E('p', { 'class': 'alert-message info' },
++							bandData.read_error || _('This band family is disabled by the selected 5G connection type.')),
++						E('p', {}, _('No band-mask error occurred. Change 5G Connection Type under Network Preference if you want to enable this family.')),
++						retryButton()
++					]));
++					return;
++				}
+ 				if (bandData && (bandData.read_error || bandData.read_state === 'unknown')) {
+ 					var unknownSection = E('div', { 'class': 'cbi-section' }, [
+ 						E('h3', {}, bandClass),
+--- a/luci/luci-app-qmodem-next/root/usr/share/rpcd/acl.d/luci-app-qmodem-next.json
++++ b/luci/luci-app-qmodem-next/root/usr/share/rpcd/acl.d/luci-app-qmodem-next.json
+@@ -29,6 +29,7 @@
+ 					"send_raw_pdu",
+ 					"send_sms",
+ 					"set_imei",
++					"set_5g_deployment",
+ 					"set_lockband",
+ 					"set_mode",
+ 					"set_neighborcell",

@@ -695,14 +695,14 @@
  
 --- a/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
 +++ b/application/qmodem/files/usr/share/qmodem/vendor/quectel.sh
-@@ -1492,12 +1492,75 @@
+@@ -1492,12 +1492,104 @@
  }
  
  #小区信息
 +add_quectel_ca_report()
 +{
 +    local ca_response="$1"
-+    local ca_lines total active index line role freq bandwidth band state_code state_label bandwidth_label value
++    local ca_lines total active index line role freq bandwidth band field5 state_code state_label pcid bandwidth_label value
 +    ca_lines=$(printf '%s\n' "$ca_response" | sed -n '/^[[:space:]]*+QCAINFO: "\(PCC\|SCC\)"/p')
 +    [ -n "$ca_lines" ] || return 0
 +
@@ -710,11 +710,17 @@
 +    active=0
 +    while IFS= read -r line; do
 +        role=$(printf '%s\n' "$line" | awk -F',' '{gsub(/^[^"]*"/, "", $1); gsub(/".*$/, "", $1); print $1}')
-+        state_code=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $5); print $5}')
-+        if { [ "$role" = "PCC" ] && [ "$state_code" = 1 ]; } ||
-+            { [ "$role" = "SCC" ] && [ "$state_code" = 2 ]; }; then
-+            active=$((active + 1))
-+        fi
++        band=$(printf '%s\n' "$line" | awk -F',' '{gsub(/^[[:space:]]*"|"[[:space:]\r]*$/, "", $4); print $4}')
++        field5=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $5); print $5}')
++        case "$role:$band:$field5" in
++            "PCC:NR5G BAND "*:*) active=$((active + 1)) ;;
++            PCC:*:1|SCC:*:2) active=$((active + 1)) ;;
++            # Newer NR PCC reports place PCI in field 5 and omit the LTE
++            # state field. A reported PCC is the serving carrier.
++            PCC:*:*)
++                case "$field5" in 0|'') ;; *) active=$((active + 1)) ;; esac
++                ;;
++        esac
 +    done <<EOF
 +$ca_lines
 +EOF
@@ -728,14 +734,35 @@
 +        freq=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $2); print $2}')
 +        bandwidth=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $3); print $3}')
 +        band=$(printf '%s\n' "$line" | awk -F',' '{gsub(/^[[:space:]]*"|"[[:space:]\r]*$/, "", $4); print $4}')
-+        state_code=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $5); print $5}')
++        field5=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $5); print $5}')
++        case "$role:$band" in
++            "PCC:NR5G BAND "*)
++                state_code=''
++                pcid="$field5"
++                ;;
++            *)
++                case "$field5" in
++                    0|1|2)
++                        state_code="$field5"
++                        pcid=$(printf '%s\n' "$line" | awk -F',' '{gsub(/[[:space:]\r]/, "", $6); print $6}')
++                        ;;
++                    *)
++                        # Defensive fallback for other firmware layouts.
++                        state_code=''
++                        pcid="$field5"
++                        ;;
++                esac
++                ;;
++        esac
 +        case "$role:$state_code" in
 +            PCC:1) state_label="registered" ;;
 +            PCC:0) state_label="not serving" ;;
++            PCC:) state_label="serving" ;;
 +            SCC:2) state_label="active" ;;
 +            SCC:1) state_label="configured, idle" ;;
 +            SCC:0) state_label="deconfigured" ;;
-+            *) state_label="state $state_code" ;;
++            SCC:) state_label="reported; state unavailable" ;;
++            *) state_label="state unavailable" ;;
 +        esac
 +        bandwidth_label="$bandwidth"
 +        case "$band:$bandwidth" in
@@ -752,7 +779,9 @@
 +                esac
 +                ;;
 +        esac
-+        value="$band; channel $freq; bandwidth $bandwidth_label; $state_label"
++        value="$band; channel $freq; bandwidth $bandwidth_label"
++        [ -n "$pcid" ] && value="$value; PCI $pcid"
++        value="$value; $state_label"
 +        extra_info="$role"
 +        add_plain_info_entry "Component Carrier $index" "$value" "Component Carrier $index"
 +        unset extra_info
@@ -771,7 +800,7 @@
      
      local lte=$(echo "$response" | grep "+QENG: \"LTE\"")
      local nr5g_nsa=$(echo "$response" | grep "+QENG: \"NR5G-NSA\"")
-@@ -1546,8 +1609,6 @@
+@@ -1546,8 +1638,6 @@
          case $rat in
              "NR5G-SA")
                  network_mode="NR5G-SA Mode"
@@ -780,7 +809,7 @@
                  ca_scc_info=$(echo "$ca_response" | grep "+QCAINFO:" | grep "SCC")
  
                  if [ -n "$ca_scc_info" ]; then
-@@ -1585,7 +1646,6 @@
+@@ -1585,7 +1675,6 @@
                      done <<EOF
  $(echo "$ca_scc_info")
  EOF
@@ -788,7 +817,7 @@
                  fi
                  nr_duplex_mode=$(echo "$response" | awk -F',' '{print $4}' | sed 's/"//g')
                  nr_mcc=$(echo "$response" | awk -F',' '{print $5}')
-@@ -1657,6 +1717,7 @@
+@@ -1657,6 +1746,7 @@
      fi
      class="Cell Information"
      add_plain_info_entry "network_mode" "$network_mode" "Network Mode"

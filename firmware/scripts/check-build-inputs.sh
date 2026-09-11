@@ -125,6 +125,19 @@ grep -Fq "form.DummyValue, '_route_metric'" firmware/patches/qmodem-dual-runtime
 grep -Fq "uci.load('network')" firmware/patches/qmodem-dual-runtime.patch
 grep -Fq "Phone Number (MSISDN)" firmware/patches/qmodem-dual-runtime.patch
 grep -Fq "Not provided by SIM or carrier" firmware/patches/qmodem-dual-runtime.patch
+test -s firmware/patches/qmodem-cell-discovery.patch
+test -s firmware/patches/qmodem-5g-deployment.patch
+test -s firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
+grep -Fq 'qmodem-cell-discovery.patch' firmware/docker/build-openwrt.sh
+grep -Fq 'qmodem-5g-deployment.patch' firmware/docker/build-openwrt.sh
+grep -Fq 'zbt_quectel_sim_number "$at_port"' firmware/patches/qmodem-cell-discovery.patch
+grep -Fq 'zbt_quectel_get_cells "$at_port"' firmware/patches/qmodem-cell-discovery.patch
+grep -Fq "'AT+QSCAN=3,1'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
+grep -Fq ' -t 185 -g' firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
+grep -Fq "'AT+CPBS=\"ON\"'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
+grep -Fq 'AT+QNWPREFCFG="nr5g_disable_mode"' firmware/patches/qmodem-5g-deployment.patch
+grep -Fq 'Automatic (recommended)' firmware/patches/qmodem-5g-deployment.patch
+grep -Fq "[ \"\$current\" = \"\$desired\" ]" firmware/patches/qmodem-5g-deployment.patch
 grep -Fq 'add_quectel_ca_report "$ca_response"' firmware/patches/qmodem-dual-runtime.patch
 grep -Fq '"Carrier Aggregation" "$active active / $total reported"' firmware/patches/qmodem-dual-runtime.patch
 if grep -Fq '[ "$section" != 4_1 ] || enable=1' firmware/files/usr/lib/zbt/ttl.sh; then
@@ -239,8 +252,13 @@ grep -Fq '"path": "speedify/speedify"' firmware/files/usr/share/luci/menu.d/zbt-
 grep -Fq "target.protocol = 'https:'" firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq 'window.location.replace(target.href)' firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq "install_luci_wrapper || return 1" firmware/files/usr/sbin/speedify-installer-loop
-grep -Fq "window.addEventListener('focus', scheduleRefresh)" firmware/files/usr/share/zbt/speedify-luci-wrapper.js
-grep -Fq 'speedifyuiframe.contentWindow.location.reload()' firmware/files/usr/share/zbt/speedify-luci-wrapper.js
+if grep -Eq "addEventListener\\('(blur|focus|visibilitychange)'|speedifyuiframe\\.(contentWindow\\.)?location\\.reload\\(|speedifyuiframe\\.src[[:space:]]*=" \
+  firmware/files/usr/share/zbt/speedify-luci-wrapper.js; then
+  echo 'Speedify wrapper must preserve the live login iframe when its tab regains focus' >&2
+  exit 1
+fi
+grep -Fq "speedifyuiframe.contentWindow.addEventListener('hashchange', syncOuterHash)" \
+  firmware/files/usr/share/zbt/speedify-luci-wrapper.js
 
 grep -q "OPENWRT_GIT_REF:-v25.12.021" firmware/docker/build-openwrt.sh
 grep -q "OPENWRT_GIT_URL:-https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git" \
@@ -250,6 +268,8 @@ grep -q "EXPECTED_OPENWRT_COMMIT:-edc738504fe8fae81eb15de967456204699b1830" \
 grep -Fq 'luci-first-login-password.patch' firmware/docker/build-openwrt.sh
 grep -Fq "root_password_is_unset()" firmware/patches/luci-first-login-password.patch
 grep -Fq "admin/system/admin/password" firmware/patches/luci-first-login-password.patch
+grep -Fq "password') + '?first=1'" firmware/patches/luci-first-login-password.patch
+grep -Fq "window.location.replace(L.url('admin', 'about'))" firmware/patches/luci-first-login-password.patch
 grep -Fq 'does not ship the shared vendor password "admin"' \
   firmware/files/etc/uci-defaults/80-zbt-z8803be-admin-password
 if grep -Eq 'passwd[[:space:]]+root|admin\\nadmin' firmware/files/etc/uci-defaults/80-zbt-z8803be-admin-password; then

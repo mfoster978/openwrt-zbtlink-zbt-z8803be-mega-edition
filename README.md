@@ -125,8 +125,10 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - QMI/MBIM paths using `quectel-CM-M -d` use `proto=none`: the connection manager owns addresses and routes, with no competing DHCP client. ECM/RNDIS retain their protocol-specific behavior.
 - Both USB modems use the same startup, APN, protocol, and recovery logic. The connection manager applies the MTU reported for each data connection, rather than copying one carrier's value to everyone.
 - Blank/auto QMI APNs retain modem/network profile negotiation. A directly identified AT&T US `310/410` SIM gets the data-device fallback `broadband`; every manual APN still wins. Both SIM selectors also offer editable presets for AT&T, FirstNet, T-Mobile, Verizon, Google Fi, and U.S. Cellular.
-- SIM information shows the carrier-provided phone number through `AT+CNUM` when one is provisioned, and says explicitly when the SIM/carrier does not provide an MSISDN.
-- Quectel carrier aggregation is reported in LTE, 5G NSA and 5G SA modes with every PCC/SCC, bandwidth, state and active/reported count returned by `AT+QCAINFO`; the router does not impose or advertise a fake two-carrier limit.
+- SIM information reads the subscriber number from the full `AT+CNUM` response and falls back to the SIM's standard Own Numbers (`ON` / EF-MSISDN) phonebook. It says explicitly when neither store is provisioned; the modem cannot reconstruct an unrecorded number from ICCID or IMSI.
+- QModem's nearby-cell button runs Quectel's full LTE/5G `AT+QSCAN=3,1` with its documented network-dependent timeout instead of treating a three-second timeout as an empty result. It falls back to `AT+QENG="neighbourcell"` and always includes the registered serving cell when available.
+- Quectel carrier aggregation is reported in LTE, 5G NSA and 5G SA modes with every PCC/SCC, bandwidth, PCI, state and active/reported count returned by `AT+QCAINFO`; newer NR PCC layouts are not mislabelled as values such as “state 436.” The router does not impose or advertise a fake two-carrier limit.
+- Advanced Network Preference exposes the modem's read-backed **Automatic (recommended)**, **NSA only**, and **SA only** connection type. It changes only Quectel `nr5g_disable_mode`, preserves both band masks, performs no write when the selected mode is already active, and never changes merely because the page was opened. A verified zero SA/NSA mask for a disabled family is shown as informational instead of a generic band-query failure.
 - Band changes require a successful AT response and matching readback. Unknown masks have read-only diagnostics and Retry; reported bands stay separate from pending edits. See [per-modem band readback](firmware/docs/band-readback.md).
 - Carrier TTL/hop-limit handling and modem NAT detection remain available per modem, but both policies are off on a fresh install so they do not silently disable flow offload.
 
@@ -207,6 +209,10 @@ QModem menus, dropdowns and dial-log titles show **Modem 1** / **Modem 2**. The 
 
 QModem's cell information now reads Quectel `AT+QCAINFO` in LTE, 5G NSA and 5G SA modes. It lists every PCC/SCC the modem reports and distinguishes active secondary carriers from configured-but-idle carriers. This removes the misleading combined “2 CA” label; it does not force an unsupported tower/carrier combination. See [carrier aggregation and throughput diagnosis](firmware/docs/carrier-aggregation-and-throughput.md).
 
+The Advanced nearby-cell action is a real modem search, not a refresh of the passive neighbor list. On supported Quectel modules it uses `AT+QSCAN=3,1` for LTE and NR cells and can take up to three minutes depending on the network. If full scan is unavailable or returns no records, Mega reads the network-reported `AT+QENG="neighbourcell"` list and the current serving cell instead.
+
+The adjacent **5G Connection Type** control defaults to recommending Automatic and always displays the modem's actual readback. **NSA only** is available as a reversible comparison against SA; it can allow LTE anchor carriers plus 5G, but tower policy, radio conditions and supported combinations still decide the result. Returning to Automatic enables both SA and NSA without replacing the selected band lists.
+
 The September 10 follow-up repairs LED startup ordering and trigger restoration without touching modem power or SIM GPIOs. Run `zbt-modem-led-poller status` for read-only LED diagnostics. See the [follow-up notes](firmware/docs/runtime-repair-2026-09.md#september-10-led-and-label-follow-up) for the remaining modem 2 registration check.
 
 The firmware does not infer a live modem merely because a UCI section exists. Runtime recovery is tied to a physically enumerated USB path, which prevents activity on one slot from needlessly repowering or redialing the other.
@@ -283,7 +289,7 @@ The installer:
 3. downloads the pinned core and LuCI APKs over HTTPS with retries;
 4. rejects either file unless its reviewed SHA256 matches;
 5. installs only the downloaded local APKs with `--no-network`, preventing an ABI-mismatched kernel module from being pulled later;
-6. installs a reviewed LuCI wrapper that preserves the vendor application and refreshes it after returning from an external account-login screen;
+6. installs a reviewed LuCI wrapper that preserves the vendor application's live iframe and WebSocket while an external account-login screen is open;
 7. starts and health-checks Speedify, its web service, nginx, and both the HTTP and HTTPS LuCI routes;
 8. keeps nginx and its authenticated Speedify routes in place if a service health check fails; retries do not reinstall already-present packages or repeatedly run vendor network setup;
 9. records completion only after all selected services pass.
@@ -542,7 +548,7 @@ logread -e speedify-installer
 
 Clicking Speedify from an HTTP LuCI session now returns a Speedify-only **307 redirect to HTTPS**; ordinary LuCI pages remain available over HTTP. Without a login session, the protected HTTPS Speedify index should return **401**, not 404 or 502. This is required because the embedded application uses authenticated WebSockets and browser secure-context features. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
 
-If Speedify sends the browser to an external account-login screen, return to its router tab after completing sign-in. Mega's reviewed wrapper detects that leave/return cycle and refreshes the embedded application so it reads the daemon's new account state. A second router login can still be required when the HTTP-to-HTTPS transition starts a separate secure LuCI session.
+If Speedify sends the browser to an external account-login screen, return to the same router tab after completing sign-in. Mega's reviewed wrapper keeps that embedded application and its WebSocket alive so it can receive the daemon's new account state; it does not reload the iframe and restart the login flow. A second router login can still be required when the HTTP-to-HTTPS transition starts a separate secure LuCI session.
 
 ### HTTPS warning on the router's private IP address
 
