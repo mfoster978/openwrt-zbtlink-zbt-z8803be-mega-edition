@@ -51,9 +51,8 @@ done
 uci -q commit wireless
 logger -t zbt-wifi 'applied US defaults; 2.4/5 GHz auto power and 6 GHz 14 dBm VLP ceiling'
 
-# The vendor defaults may already queue a reload on a clean install. Defer our
-# reload long enough for that one to finish and coalesce it with the MLO repair
-# below, avoiding concurrent hostapd teardown/creation and false disabled radios.
-/usr/sbin/zbt-wifi-reload-deferred 10
+# UCI defaults run before netifd starts. Do not queue a wireless reload here:
+# doing so can collide with the first network bring-up and temporarily strand
+# both the LAN bridge and every radio until the router is rebooted.
 
 exit 0

@@ -75,8 +75,7 @@ done
 
 [ "$changed" -eq 0 ] || {
 	uci -q commit wireless
-	# Share one delayed reload with regulatory defaults. Overlapping reloads can
-	# strand an otherwise-enabled MLO link after hostapd returns -23 or -95.
-	/usr/sbin/zbt-wifi-reload-deferred 10
+	# This migration runs before netifd's first bring-up. The committed settings
+	# are consumed naturally; reloading Wi-Fi here races that initial bring-up.
 }
 exit 0
