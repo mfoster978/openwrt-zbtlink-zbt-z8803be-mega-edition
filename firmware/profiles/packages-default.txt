@@ -46,3 +46,27 @@ curl
 # custom UX package in this repo feed
 luci-app-modem-watchdog
 luci-app-speedtest-lite
+# Android and iPhone USB tethering
+kmod-usb-net-cdc-ether
+kmod-usb-net-rndis
+kmod-usb-net-ipheth
+usbmuxd
+libimobiledevice-utils
+usbutils
+# USB storage and opt-in SMB file sharing
+block-mount
+kmod-usb-storage
+kmod-usb-storage-uas
+kmod-fs-ext4
+kmod-fs-exfat
+kmod-fs-vfat
+kmod-nls-utf8
+ksmbd-server
+luci-app-ksmbd
+# USB-over-IP client/server; the server config defaults to disabled
+usbip
+usbip-client
+usbip-server
+kmod-usbip
+kmod-usbip-client
+kmod-usbip-server

@@ -1,0 +1,20 @@
+--- a/files/ksmbd.config
++++ b/files/ksmbd.config
+@@ -1,3 +1,4 @@
+ config globals
++	option 'enabled'		'0'
+ 	option 'workgroup'		'WORKGROUP'
+ 	option 'description'	'Ksmbd on OpenWrt'
+--- a/files/ksmbd.init
++++ b/files/ksmbd.init
+@@ -156,6 +156,10 @@ stop_service()
+ 
+ start_service()
+ {
++	config_load ksmbd
++	config_get_bool enabled globals enabled 0
++	[ "$enabled" -eq 1 ] || return 0
++
+ 	init_config
+ 
+ 	if [ ! -e /etc/ksmbd/ksmbd.conf ]; then

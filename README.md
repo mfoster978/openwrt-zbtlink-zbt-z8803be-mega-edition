@@ -81,6 +81,8 @@ Mega Edition combines a wide selection of add-on packages with custom-developed 
 | Live Speed Test Utility | Runs only when you start a test; it does not automatically consume cellular data in the background. |
 | Speedify | Dependencies are baked in and its first-online installer is enabled. Bonding still requires your own account and setup; no credentials are preconfigured. |
 | Tailscale and OpenVPN | Available for your own account/tunnel configuration; no user VPN connection is preconfigured. |
+| Android/iPhone USB tethering | Drivers and Apple pairing tools are ready; the phone and its OpenWrt network interface still require owner setup. |
+| USB storage, SMB shares, and USB over IP | Storage drivers are ready. Mounts, the KSMBD server, and the USB/IP server are not activated until the owner configures/enables them. |
 | Firmware updates and downgrades | Explicitly requested and confirmed by you; no unattended flashing. |
 
 Installed does not mean every feature is actively controlling traffic. Keep unused optional services off, enable only what suits your setup, and avoid putting multiple routing managers in charge of the same traffic without reviewing their policies.
@@ -139,6 +141,14 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - **Services → Tailscale** provides a locally packaged status/sign-in page; each user authenticates their own account. Advanced Tailscale route/exit-node options remain CLI-managed.
 - OpenVPN with OpenSSL and its LuCI application are included.
 - TUN, nftables/iptables compatibility, TPROXY, BBR, C++ runtime, atomic, and keyutils support are built against this exact kernel and userspace.
+
+### USB tethering, storage and sharing
+
+- Android USB tethering is supported through the RNDIS and CDC Ethernet drivers. Enable USB tethering on the phone, then assign the detected Ethernet device to a DHCP-client interface under **Network → Interfaces**. The firmware does not silently replace an existing WAN policy.
+- iPhone/iPad USB tethering is supported through `ipheth`, `usbmuxd`, and `libimobiledevice` utilities. Trust the router from the Apple device and enable Personal Hotspot before assigning the detected interface. Apple pairing and carrier behavior remain device/account dependent.
+- **Services → USB Storage** opens OpenWrt's standard Mount Points page. USB mass-storage/UAS and ext4, exFAT, and FAT filesystem support are included. Detected media is not automatically exposed as a network share.
+- **Services → Network Shares** configures the in-kernel KSMBD server. A new **Enable server** switch defaults off; set mount paths, users, guest access, and listening interfaces before enabling it.
+- USB-over-IP client and server tools are included for advanced use. The server defaults off in `/etc/config/usbipd`; there is no USB/IP LuCI application in the pinned OpenWrt feed. Binding and exporting a USB device is therefore an intentional command-line action. Do not expose USB/IP to untrusted WAN networks.
 
 ### Build integrity and safety
 

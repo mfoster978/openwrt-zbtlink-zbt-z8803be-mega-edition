@@ -147,6 +147,23 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci < "$mwan_luc
   echo 'MWAN3 route-metric UI patch does not match pinned LuCI feed' >&2
   exit 3
 fi
+# Keep optional file sharing inert until the owner enables it in LuCI. The
+# upstream package starts unconditionally, so both the daemon gate and its
+# matching UI switch are pinned and validated here.
+ksmbd_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/ksmbd-server-disabled.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/packages/net/ksmbd-tools < "$ksmbd_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/packages/net/ksmbd-tools < "$ksmbd_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/packages/net/ksmbd-tools < "$ksmbd_patch" >/dev/null; then
+  echo 'KSMBD disabled-by-default patch does not match pinned packages feed' >&2
+  exit 3
+fi
+ksmbd_luci_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/luci-app-ksmbd-enable-toggle.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/luci/applications/luci-app-ksmbd < "$ksmbd_luci_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/luci/applications/luci-app-ksmbd < "$ksmbd_luci_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci/applications/luci-app-ksmbd < "$ksmbd_luci_patch" >/dev/null; then
+  echo 'KSMBD LuCI enable-toggle patch does not match pinned LuCI feed' >&2
+  exit 3
+fi
 mkdir -p files
 if [[ -d "${FILES_OVERLAY_DIR}" ]]; then
   # This source tree is intentionally reusable between local builds. Mirror
@@ -222,6 +239,8 @@ make package/luci-app-mlo/clean
 make package/network/services/hostapd/clean
 make package/feeds/luci/luci-app-mwan3/clean
 make package/firmware/wireless-regdb/clean
+make package/feeds/packages/ksmbd-tools/clean
+make package/feeds/luci/luci-app-ksmbd/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
@@ -272,6 +291,27 @@ required_config_flags=(
   "CONFIG_PACKAGE_iptables-mod-conntrack-extra=y"
   "CONFIG_PACKAGE_luci-nginx=y"
   "CONFIG_PACKAGE_python3-light=y"
+  "CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y"
+  "CONFIG_PACKAGE_kmod-usb-net-rndis=y"
+  "CONFIG_PACKAGE_kmod-usb-net-ipheth=y"
+  "CONFIG_PACKAGE_usbmuxd=y"
+  "CONFIG_PACKAGE_libimobiledevice-utils=y"
+  "CONFIG_PACKAGE_usbutils=y"
+  "CONFIG_PACKAGE_block-mount=y"
+  "CONFIG_PACKAGE_kmod-usb-storage=y"
+  "CONFIG_PACKAGE_kmod-usb-storage-uas=y"
+  "CONFIG_PACKAGE_kmod-fs-ext4=y"
+  "CONFIG_PACKAGE_kmod-fs-exfat=y"
+  "CONFIG_PACKAGE_kmod-fs-vfat=y"
+  "CONFIG_PACKAGE_kmod-nls-utf8=y"
+  "CONFIG_PACKAGE_ksmbd-server=y"
+  "CONFIG_PACKAGE_luci-app-ksmbd=y"
+  "CONFIG_PACKAGE_usbip=y"
+  "CONFIG_PACKAGE_usbip-client=y"
+  "CONFIG_PACKAGE_usbip-server=y"
+  "CONFIG_PACKAGE_kmod-usbip=y"
+  "CONFIG_PACKAGE_kmod-usbip-client=y"
+  "CONFIG_PACKAGE_kmod-usbip-server=y"
 )
 for cfg in "${required_config_flags[@]}"; do
   if ! grep -q "^${cfg}$" .config; then
@@ -302,6 +342,12 @@ required_image_packages=(
   iptables-nft kmod-nft-tproxy
   iptables-mod-tproxy kmod-tcp-bbr iptables-mod-extra
   iptables-mod-conntrack-extra luci-nginx python3-light
+  kmod-usb-net-cdc-ether kmod-usb-net-rndis kmod-usb-net-ipheth
+  usbmuxd libimobiledevice-utils usbutils block-mount
+  kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-exfat
+  kmod-fs-vfat kmod-nls-utf8 ksmbd-server luci-app-ksmbd
+  usbip usbip-client usbip-server kmod-usbip kmod-usbip-client
+  kmod-usbip-server
 )
 for package in "${required_image_packages[@]}"; do
   if ! grep -q "^${package} - " "${manifest}"; then
@@ -378,6 +424,8 @@ required_overlay_files=(
   etc/uci-defaults/99-zbt-route-priority-repair
   usr/share/rpcd/acl.d/zbt-speedtest.json
   usr/share/luci/menu.d/tailscale.json
+  etc/config/usbipd
+  usr/share/luci/menu.d/zbt-usb-services.json
 )
 for overlay_file in "${required_overlay_files[@]}"; do
   if [[ ! -s "${rootfs_dir}/${overlay_file}" ]]; then
@@ -440,6 +488,29 @@ grep -Eq "uci\.set\('network',[[:space:]]*section_id,[[:space:]]*'metric',[[:spa
 grep -Fq '"network"' \
   "${rootfs_dir}/usr/share/rpcd/acl.d/luci-app-mwan3.json" || {
   echo 'MultiWAN Manager lacks permission to persist network metrics' >&2; exit 4;
+}
+grep -Eq "option[[:space:]]+'?enabled'?[[:space:]]+'?0'?" \
+  "${rootfs_dir}/etc/config/ksmbd" || {
+  echo 'KSMBD is not disabled by default in the image' >&2; exit 4;
+}
+grep -Fq 'config_get_bool enabled globals enabled 0' \
+  "${rootfs_dir}/etc/init.d/ksmbd" || {
+  echo 'KSMBD service lacks its disabled-by-default runtime gate' >&2; exit 4;
+}
+grep -Fq "form.Flag, 'enabled'" \
+  "${rootfs_dir}/www/luci-static/resources/view/ksmbd.js" || {
+  echo 'KSMBD LuCI enable switch is missing from the image' >&2; exit 4;
+}
+grep -Eq "option[[:space:]]+enable[[:space:]]+'0'" \
+  "${rootfs_dir}/etc/config/usbipd" || {
+  echo 'USB/IP server is not disabled by default in the image' >&2; exit 4;
+}
+test -x "${rootfs_dir}/usr/sbin/usbip" && test -x "${rootfs_dir}/usr/sbin/usbipd" || {
+  echo 'USB/IP client/server binaries are missing from the image' >&2; exit 4;
+}
+grep -Fq 'admin/system/mounts' \
+  "${rootfs_dir}/usr/share/luci/menu.d/zbt-usb-services.json" || {
+  echo 'Services > USB Storage menu alias is missing from the image' >&2; exit 4;
 }
 [ "$(readlink "${rootfs_dir}/etc/rc.d/S79uwsgi")" = ../init.d/uwsgi ] || {
   echo 'LuCI uWSGI backend is not enabled at S79' >&2; exit 4;

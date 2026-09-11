@@ -16,6 +16,8 @@ Use the exact release notes, checksums and build provenance for your download. C
 - Custom LuCI watchdog app feed: `firmware/feeds/luci-app-modem-watchdog`
 - Custom LuCI speed test app feed: `firmware/feeds/luci-app-speedtest-lite`
 - Local Tailscale LuCI status/login app: `firmware/feeds/luci-app-tailscale`
+- Mega-only Android/iPhone tethering, USB storage, KSMBD and USB-over-IP package selections: `firmware/profiles/packages-default.txt`
+- Disabled-by-default KSMBD service/UI patches and USB/IP configuration: `firmware/patches/ksmbd-server-disabled.patch`, `firmware/patches/luci-app-ksmbd-enable-toggle.patch`, `firmware/files/etc/config/usbipd`
 - Version-pinned, zero-fuzz runtime patches: `firmware/patches`
 - Automated shell/runtime regression tests: `firmware/tests`
 - Read-only router diagnostic script: `firmware/scripts/verify-router-runtime.sh`. The old live defaults application script is retired; it must not be used to overwrite a running router's configuration.
@@ -58,6 +60,8 @@ docker run --rm -it \
 - `speedtest-netperf` and `speedtest-go` remain available as separate command-line tools. The live LuCI engine and optional background sampler bind to the selected physical network interface; the background sampler uses curl, while the live dashboard uses `zbt-speedtest`. Neither relies only on a source IP that could be identical on both cellular links.
 - Failover and load-balancing support is baked in via `mwan3`, `luci-app-mwan3`, and first-boot defaults in `firmware/files/etc/uci-defaults/95-mwan3-defaults`.
 - VPN support is baked in via `tailscale`, `luci-app-tailscale`, `openvpn-openssl`, and `luci-app-openvpn`.
+- Android RNDIS/CDC Ethernet and Apple `ipheth`/`usbmuxd` support are baked in for owner-configured USB phone tethering. The firmware does not automatically insert a newly attached phone above existing mwan3 priorities.
+- USB storage/UAS, ext4, exFAT, FAT, KSMBD, and USB-over-IP client/server support are baked in. Mount Points is linked under `Services -> USB Storage`; KSMBD is under `Services -> Network Shares`. KSMBD and USB/IP servers are disabled by default, and the pinned feeds provide no USB/IP LuCI application.
 - Required tunnel/kernel support is baked in via OpenWrt's `CONFIG_PACKAGE_kmod-tun=y` selector (`firmware/profiles/kconfig-fragment.conf`).
 - Speedify LuCI support defaults on and uses its required `luci-nginx` and `python3-light` packages. Set `speedify_bootstrap.main.install_luci=0` before installation to skip the proprietary UI and install Speedify core only. Ordinary LuCI remains available over LAN HTTP, while a dedicated nginx rule redirects only Speedify pages and endpoints to HTTPS for its WebSocket/secure-context requirements. The installer retains nginx and the authenticated Speedify proxy when a service health check fails; it does not fall back to a web server that cannot serve the vendor UI. Existing packages are not repeatedly reinstalled, avoiding repeated vendor network setup. Completion still requires service and web health checks; a visible menu is not proof the VPN daemon is healthy.
 - OpenMPTCProuter is intentionally not offered as a package toggle here. It is a separate firmware distribution with a companion server stack; adding a subset of its feed packages would not turn Mega Edition into a supported OpenMPTCProuter build.

@@ -12,6 +12,8 @@ const specs = [
   ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', 'qmodem-dual-runtime.patch', ''],
   ['packages', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'mwan3-speed-policy.patch', ''],
   ['mwan3-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-mwan3-route-metric.patch', ''],
+  ['ksmbd', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'ksmbd-server-disabled.patch', 'net/ksmbd-tools/'],
+  ['ksmbd-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-ksmbd-enable-toggle.patch', 'applications/luci-app-ksmbd/'],
   ['mlo', '0xFar5eer/openwrt25.12_ZBT_Z8803BE', 'edc738504fe8fae81eb15de967456204699b1830', 'luci-app-mlo-shared-iface.patch', 'package/luci-app-mlo/']
 ];
 function run(command, args, options = {}) {

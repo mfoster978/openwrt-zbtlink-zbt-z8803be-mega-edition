@@ -127,6 +127,22 @@ if rg -n -i 'donate|ERC20|BEP20|TRC20|0xfar5eer@gmail\.com|0xFar5eer#6504' \
   exit 1
 fi
 
+# Mega-only USB features are selected explicitly. Phone tethering drivers are
+# available on attachment, while file sharing and USB/IP listen only after an
+# owner opts in.
+test -s firmware/patches/ksmbd-server-disabled.patch
+grep -Fq "config_get_bool enabled globals enabled 0" firmware/patches/ksmbd-server-disabled.patch
+grep -Fq "option 'enabled'" firmware/patches/ksmbd-server-disabled.patch
+test -s firmware/patches/luci-app-ksmbd-enable-toggle.patch
+grep -Fq "form.Flag, 'enabled'" firmware/patches/luci-app-ksmbd-enable-toggle.patch
+grep -Fq 'KSMBD disabled-by-default patch does not match pinned packages feed' \
+  firmware/docker/build-openwrt.sh
+grep -Fq 'KSMBD LuCI enable-toggle patch does not match pinned LuCI feed' \
+  firmware/docker/build-openwrt.sh
+grep -Fq "option enable '0'" firmware/files/etc/config/usbipd
+python3 -m json.tool firmware/files/usr/share/luci/menu.d/zbt-usb-services.json >/dev/null
+grep -Fq 'admin/system/mounts' firmware/files/usr/share/luci/menu.d/zbt-usb-services.json
+
 grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_zbtlink_zbt-z8803be=y' \
   firmware/profiles/base-config-zbt-z8803be-v25.12.021.config
 printf '%s  %s\n' \
@@ -145,6 +161,21 @@ for package in "${required_packages[@]}"; do
   }
 done
 grep -qx 'zbt-firmware-updater' firmware/profiles/packages-default.txt
+
+mega_usb_packages=(
+  kmod-usb-net-cdc-ether kmod-usb-net-rndis kmod-usb-net-ipheth
+  usbmuxd libimobiledevice-utils usbutils block-mount
+  kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-exfat
+  kmod-fs-vfat kmod-nls-utf8 ksmbd-server luci-app-ksmbd
+  usbip usbip-client usbip-server kmod-usbip kmod-usbip-client
+  kmod-usbip-server
+)
+for package in "${mega_usb_packages[@]}"; do
+  grep -qx "${package}" firmware/profiles/packages-default.txt || {
+    echo "Missing Mega USB feature package: ${package}" >&2
+    exit 1
+  }
+done
 
 # Mega's menu must not appear without its view, permissions and backend.
 for component in \

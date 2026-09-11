@@ -1,0 +1,16 @@
+{
+	"admin/services/usb-storage": {
+		"title": "USB Storage",
+		"order": 45,
+		"action": {
+			"type": "alias",
+			"path": "admin/system/mounts"
+		},
+		"depends": {
+			"acl": [ "luci-mod-system-mounts" ],
+			"fs": {
+				"/sbin/block": "executable"
+			}
+		}
+	}
+}
