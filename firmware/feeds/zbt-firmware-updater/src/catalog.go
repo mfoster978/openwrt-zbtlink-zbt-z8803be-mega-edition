@@ -18,6 +18,7 @@ import (
 )
 
 const repository = "mfoster978/OpenWrt-ZBT-Z8803BE-Mega"
+const repositoryID = "1362525334"
 const boardName = "zbtlink,zbt-z8803be"
 const apiRoot = "https://api.github.com/repos/" + repository
 const webRoot = "https://github.com/" + repository
@@ -90,15 +91,32 @@ func githubClient() *http.Client {
 			if len(via) > 5 {
 				return errors.New("Too many GitHub redirects")
 			}
-			if !safeRedirect(r.URL) {
-				return errors.New("Blocked redirect outside GitHub release storage")
+			if !safeRedirect(r.URL, via) {
+				return errors.New("Blocked redirect outside the configured GitHub API or release storage")
 			}
 			return nil
 		},
 	}
 }
-func safeRedirect(u *url.URL) bool {
-	if u.Scheme != "https" || u.User != nil || u.Fragment != "" || u.Port() != "" {
+
+func safeHTTPSURL(u *url.URL) bool {
+	return u != nil && u.Scheme == "https" && u.User == nil && u.Fragment == "" && u.Port() == ""
+}
+
+func pathAtOrBelow(path, root string) bool {
+	return path == root || strings.HasPrefix(path, root+"/")
+}
+
+func canonicalAPIURL(u *url.URL) bool {
+	return safeHTTPSURL(u) && u.Host == "api.github.com" && pathAtOrBelow(u.Path, "/repos/"+repository+"/releases")
+}
+
+func immutableAPIURL(u *url.URL) bool {
+	return safeHTTPSURL(u) && u.Host == "api.github.com" && pathAtOrBelow(u.Path, "/repositories/"+repositoryID+"/releases")
+}
+
+func releaseAssetURL(u *url.URL) bool {
+	if !safeHTTPSURL(u) {
 		return false
 	}
 	switch u.Host {
@@ -107,12 +125,36 @@ func safeRedirect(u *url.URL) bool {
 	}
 	return u.Host == "github.com" && strings.HasPrefix(u.Path, "/"+repository+"/releases/download/")
 }
+
+// GitHub redirects a renamed repository's /repos/{owner}/{name} API route to
+// its immutable numeric /repositories/{id} route. Keep redirect handling
+// origin-aware: metadata requests may only follow that exact repository ID,
+// while image requests may only enter GitHub's release-asset storage.
+func safeRedirect(u *url.URL, via []*http.Request) bool {
+	if len(via) == 0 || via[0] == nil || via[0].URL == nil {
+		return false
+	}
+	if canonicalAPIURL(via[0].URL) {
+		return canonicalAPIURL(u) || immutableAPIURL(u)
+	}
+	if releaseAssetURL(via[0].URL) {
+		return releaseAssetURL(u)
+	}
+	return false
+}
+
+func safeInitialURL(u *url.URL) bool {
+	if u.Scheme != "https" || u.User != nil || u.Fragment != "" || u.Port() != "" {
+		return false
+	}
+	return canonicalAPIURL(u) || (u.Host == "github.com" && strings.HasPrefix(u.Path, "/"+repository+"/releases/download/"))
+}
 func (c Catalog) get(ctx context.Context, raw string) (*http.Response, error) {
 	u, e := url.Parse(raw)
 	if e != nil {
 		return nil, errors.New("Invalid GitHub URL")
 	}
-	if u.Scheme != "https" || u.User != nil || u.Fragment != "" || u.Port() != "" || !((u.Host == "api.github.com" && strings.HasPrefix(u.Path, "/repos/"+repository+"/releases")) || (u.Host == "github.com" && strings.HasPrefix(u.Path, "/"+repository+"/releases/download/"))) {
+	if !safeInitialURL(u) {
 		return nil, errors.New("Release URL is outside the configured repository")
 	}
 	r, e := http.NewRequestWithContext(ctx, "GET", raw, nil)

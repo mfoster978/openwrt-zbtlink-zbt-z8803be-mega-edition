@@ -30,6 +30,9 @@ func TestMegaEditionRepositoryIdentity(t *testing.T) {
 	if apiRoot != "https://api.github.com/repos/"+repository || webRoot != "https://github.com/"+repository {
 		t.Fatal("GitHub origins must derive from the exact Mega repository identity")
 	}
+	if repositoryID != "1362525334" {
+		t.Fatal("Updater must pin the immutable GitHub repository ID used by rename redirects")
+	}
 }
 
 func identityFixture(version string) Identity {
@@ -286,15 +289,16 @@ func TestCatalogRejectsWrongRepositoryAndUnsafeAssets(t *testing.T) {
 	}
 }
 func TestRedirectHostAllowlist(t *testing.T) {
+	assetOrigin, _ := http.NewRequest("GET", webRoot+"/releases/download/firmware-1.1/firmware.bin", nil)
 	for _, raw := range []string{"http://release-assets.githubusercontent.com/x", "https://evil.example/x", "https://release-assets.githubusercontent.com.evil.example/x", "https://user@release-assets.githubusercontent.com/x", "https://release-assets.githubusercontent.com:444/x", "https://github.com/other/repo/releases/download/v/a"} {
 		u, _ := url.Parse(raw)
-		if safeRedirect(u) {
+		if safeRedirect(u, []*http.Request{assetOrigin}) {
 			t.Fatal(raw)
 		}
 	}
 	for _, raw := range []string{"https://release-assets.githubusercontent.com/a?sig=fixture", "https://objects.githubusercontent.com/a", webRoot + "/releases/download/firmware-1.1/a"} {
 		u, _ := url.Parse(raw)
-		if !safeRedirect(u) {
+		if !safeRedirect(u, []*http.Request{assetOrigin}) {
 			t.Fatal(raw)
 		}
 	}
@@ -306,6 +310,44 @@ func TestRedirectHostAllowlist(t *testing.T) {
 	r, _ = http.NewRequest("GET", "https://release-assets.githubusercontent.com/a", nil)
 	if client.CheckRedirect(r, make([]*http.Request, 6)) == nil {
 		t.Fatal("redirect loop accepted")
+	}
+}
+
+func TestRepositoryRenameAPIRedirect(t *testing.T) {
+	client := githubClient()
+	origin, _ := http.NewRequest("GET", apiRoot+"/releases?per_page=20&page=1", nil)
+	allowed := []string{
+		"https://api.github.com/repositories/" + repositoryID + "/releases?per_page=20&page=1",
+		"https://api.github.com/repositories/" + repositoryID + "/releases/101",
+	}
+	for _, raw := range allowed {
+		next, _ := http.NewRequest("GET", raw, nil)
+		if e := client.CheckRedirect(next, []*http.Request{origin}); e != nil {
+			t.Fatalf("safe repository rename redirect rejected: %s: %v", raw, e)
+		}
+	}
+	blocked := []string{
+		"https://api.github.com/repositories/999/releases",
+		"https://api.github.com/repositories/" + repositoryID + "/issues",
+		"https://api.github.com/repositories/" + repositoryID + "/releases-archive",
+		"http://api.github.com/repositories/" + repositoryID + "/releases",
+		"https://user@api.github.com/repositories/" + repositoryID + "/releases",
+		"https://api.github.com:444/repositories/" + repositoryID + "/releases",
+		"https://release-assets.githubusercontent.com/from-api",
+	}
+	for _, raw := range blocked {
+		next, _ := http.NewRequest("GET", raw, nil)
+		if client.CheckRedirect(next, []*http.Request{origin}) == nil {
+			t.Fatalf("unsafe API redirect accepted: %s", raw)
+		}
+	}
+	apiDestination, _ := http.NewRequest("GET", "https://api.github.com/repositories/"+repositoryID+"/releases", nil)
+	assetOrigin, _ := http.NewRequest("GET", webRoot+"/releases/download/firmware-1.1/firmware.bin", nil)
+	if client.CheckRedirect(apiDestination, []*http.Request{assetOrigin}) == nil {
+		t.Fatal("asset request was allowed to redirect into the GitHub API")
+	}
+	if client.CheckRedirect(apiDestination, nil) == nil {
+		t.Fatal("redirect without an originating request was accepted")
 	}
 }
 func TestManifestFailuresNeverFallbackToLegacy(t *testing.T) {
