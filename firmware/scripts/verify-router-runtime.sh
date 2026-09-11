@@ -90,6 +90,19 @@ printf 'speedify_unauthenticated_https_status='
 curl -ksS --max-time 5 -o /dev/null -w '%{http_code}\n' https://127.0.0.1/luci-app-speedify/view/index.html
 printf 'tailscale_state='
 tailscale status --json 2>/dev/null | jq -r '.BackendState // "Unavailable"'
+printf '\n%s\n' 'Wi-Fi regulatory state (Mega defaults: US; 6 GHz power type 2/VLP)'
+for radio in $(uci -q show wireless | sed -nE 's/^wireless\.([^.]+)=wifi-device$/\1/p'); do
+	printf 'radio=%s band=%s country=%s country3=%s channel=%s htmode=%s txpower=%s reg_power_type=%s disabled=%s\n' \
+		"$radio" "$(uci -q get "wireless.${radio}.band")" \
+		"$(uci -q get "wireless.${radio}.country")" \
+		"$(uci -q get "wireless.${radio}.country3")" \
+		"$(uci -q get "wireless.${radio}.channel")" \
+		"$(uci -q get "wireless.${radio}.htmode")" \
+		"$(uci -q get "wireless.${radio}.txpower" || printf automatic)" \
+		"$(uci -q get "wireless.${radio}.reg_power_type")" \
+		"$(uci -q get "wireless.${radio}.disabled")"
+done
+iw reg get 2>/dev/null || true
 printf '\n%s\n' 'MLO representation and LAN bridge state (SSID/MAC output may need redaction)'
 for section in $(uci -q show wireless | sed -nE 's/^wireless\.([^.]+)=wifi-iface$/\1/p'); do
 	[ "$(uci -q get "wireless.${section}.mlo")" = 1 ] || continue

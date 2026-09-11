@@ -1,0 +1,20 @@
+Enable the FCC very-low-power device class for US 6 GHz operation.
+
+The upstream wireless-regdb entry models a client and therefore marks the
+entire band NO-IR. That prevents hostapd from initiating an AP even when it
+explicitly advertises he_6ghz_reg_pwr_type=2 (VLP). The Linux regdb format
+cannot express power limits per AP class, so this downstream firmware uses
+the most conservative AP class that is usable in a mobile router: 14 dBm
+maximum EIRP across the complete 6 GHz band. Standard-power/AFC and 30 dBm
+low-power-indoor operation remain unavailable.
+
+--- a/db.txt
++++ b/db.txt
+@@ -2053,6 +2053,6 @@ country US: DFS-FCC
+ 	# 6g band
+ 	# https://www.federalregister.gov/documents/2020/05/26/2020-11236/unlicensed-use-of-the-6ghz-band
+-	(5925 - 7125 @ 320), (12), NO-OUTDOOR, NO-IR
++	(5925 - 7125 @ 320), (14)
+ 	# 60g band
+ 	# reference: section IV-D https://docs.fcc.gov/public/attachments/FCC-16-89A1.pdf
+ 	# channels 1-6 EIRP=40dBm(43dBm peak)

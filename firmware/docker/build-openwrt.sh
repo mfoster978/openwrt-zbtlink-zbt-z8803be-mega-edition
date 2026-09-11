@@ -115,6 +115,15 @@ kernel_led_patch_target=target/linux/mediatek/patches-6.12/753-net-phy-mediatek-
 if ! cmp -s "$kernel_led_patch" "$kernel_led_patch_target"; then
   cp "$kernel_led_patch" "$kernel_led_patch_target"
 fi
+# The upstream US 6 GHz rule is client-only (NO-IR), which makes a US AP
+# impossible even when hostapd advertises the FCC VLP device class. Install a
+# reviewed package patch that permits only the 14 dBm VLP ceiling; the higher
+# indoor and standard-power/AFC classes remain unavailable.
+regdb_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/wireless-regdb-us-6ghz-vlp.patch"
+regdb_patch_target=package/firmware/wireless-regdb/patches/610-us-6ghz-vlp.patch
+if ! cmp -s "$regdb_patch" "$regdb_patch_target"; then
+  cp "$regdb_patch" "$regdb_patch_target"
+fi
 policy_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/mwan3-speed-policy.patch"
 if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch" >/dev/null; then
   patch --batch --fuzz=0 --forward -p1 -d feeds/packages < "$policy_patch"
@@ -202,6 +211,7 @@ make package/feeds/qmodem/qmodem/clean
 make package/feeds/qmodem/luci-app-qmodem-next/clean
 make package/luci-app-mlo/clean
 make package/feeds/luci/luci-app-mwan3/clean
+make package/firmware/wireless-regdb/clean
 if ! grep -q '^CONFIG_PACKAGE_kmod-tun=y$' .config; then
   echo "Required package missing from resolved config: CONFIG_PACKAGE_kmod-tun=y" >&2
   exit 3
@@ -341,6 +351,7 @@ required_overlay_files=(
   etc/init.d/zbt-modem-leds
   etc/uci-defaults/48-zbt-modem-led-dark-repair
   etc/uci-defaults/49-zbt-modem-labels-leds
+  etc/uci-defaults/73-zbt-us-wifi-defaults
   etc/uci-defaults/74-zbt-mlo-shared-iface-repair
   etc/uci-defaults/50-zbt-luci-web-recovery
   usr/lib/zbt/quectel-bands.sh
@@ -382,11 +393,26 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
 done
+regdb_source="$(find build_dir/target-* -maxdepth 2 -type f -path '*/wireless-regdb-*/db.txt' -print -quit)"
+if [[ -z "$regdb_source" ]]; then
+  echo 'Unable to locate the prepared wireless regulatory database' >&2
+  exit 4
+fi
+grep -Fq $'\t(5925 - 7125 @ 320), (14)' "$regdb_source" || {
+  echo 'US 6 GHz VLP power rule is missing from the prepared regulatory database' >&2; exit 4;
+}
+if sed -n '/^country US:/,/^country /p' "$regdb_source" | grep -Fq $'\t(5925 - 7125 @ 320), (12), NO-OUTDOOR, NO-IR'; then
+  echo 'Client-only US 6 GHz NO-IR rule survived package preparation' >&2
+  exit 4
+fi
+test -s "${rootfs_dir}/lib/firmware/regulatory.db" || {
+  echo 'Compiled wireless regulatory database is missing from the image' >&2; exit 4;
+}
 grep -Fq 'network_metric=$(uci -q get network.${interface_name}.metric)' \
   "${rootfs_dir}/usr/share/qmodem/modem_dial.sh" || {
   echo 'QModem is not consuming the persistent network route metric' >&2; exit 4;

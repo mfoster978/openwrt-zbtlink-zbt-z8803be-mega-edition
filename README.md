@@ -357,7 +357,7 @@ Baseline first-boot credentials are `root` / `admin` at `192.168.1.1`. Change th
 ## First-boot checklist
 
 - Change the root password.
-- Set the correct regulatory country before configuring Wi-Fi channels or transmit power.
+- Wi-Fi defaults to the US regulatory domain on 2.4, 5 and 6 GHz. Transmit power remains automatic so the driver honors the lower of the US limit and the board's calibrated EEPROM limit. The mobile-compatible 6 GHz profile is capped to the FCC very-low-power class (14 dBm EIRP), not indoor 30 dBm or standard-power/AFC operation; use only compliant hardware and antennas.
 - Confirm both installed modems appear under QModem and match sections `4_1` and `2_1`.
 - Configure APN, PIN, PDP, and carrier-specific settings for each modem.
 - Confirm `wan`, `wan_sfp`, `4_1`, and `2_1` status in LuCI before enabling automated recovery.

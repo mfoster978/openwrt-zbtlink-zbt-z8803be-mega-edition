@@ -241,7 +241,7 @@ return view.extend({
 					]),
 					feature('chip', 'A device-specific foundation.', 'Far5eer baseline', 'This is an OpenWrt build for the ZBTLink ZBT-Z8803BE—not a universal image for other routers.', [
 						'MediaTek MT7988A / Filogic 880, MT7996-family tri-band Wi-Fi 7, SFP+ and copper Ethernet board support come from the pinned upstream platform.',
-						'2.4 GHz, 5 GHz and 6 GHz support includes the upstream opt-in MLO interface. Use the correct regulatory country and channels for your location; client and regional support vary.',
+						'2.4 GHz, 5 GHz and 6 GHz default to the US domain. Power stays automatic on 2.4/5 GHz so regulatory and EEPROM limits remain authoritative; mobile 6 GHz uses the 14 dBm VLP class. Other countries must select their own domain, and 6 GHz still requires compliant hardware, antennas and clients.',
 						'USB storage, block mounting and ext4/vfat/exfat support are retained. HTTPS LuCI, package management and SFTP provide familiar administration tools.',
 						'Source and package selections are pinned and checked during the build. Successful compilation is not a substitute for real hardware validation.'
 					])

@@ -10,6 +10,7 @@ for script in \
   firmware/files/etc/init.d/speedify-installer \
   firmware/files/etc/init.d/zbt-luci-backend \
   firmware/files/etc/uci-defaults/50-zbt-luci-web-recovery \
+  firmware/files/etc/uci-defaults/73-zbt-us-wifi-defaults \
   firmware/files/etc/uci-defaults/95-mwan3-defaults \
   firmware/files/etc/uci-defaults/99-zbt-route-priority-repair \
   firmware/files/etc/uci-defaults/99-speedify-bootstrap \
@@ -40,6 +41,26 @@ grep -Fq "uci.set('network', section_id, 'metric', value);" \
 grep -Fq '"network"' firmware/patches/luci-app-mwan3-route-metric.patch
 grep -Fq "uci -q add_list \"wireless.\${first}.device=\${device}\"" \
   firmware/files/etc/uci-defaults/74-zbt-mlo-shared-iface-repair
+
+# US is the factory regulatory domain on every MT7996 radio. Numeric UCI
+# txpower overrides are forbidden: the driver must retain its regulatory and
+# EEPROM minimum. The mobile-safe 6 GHz profile is VLP at 14 dBm EIRP.
+us_wifi_defaults=firmware/files/etc/uci-defaults/73-zbt-us-wifi-defaults
+grep -Fq 'wireless.${radio}.country=US' "$us_wifi_defaults"
+grep -Fq 'wireless.${radio}.reg_power_type=2' "$us_wifi_defaults"
+grep -Fq 'wireless.${radio}.country3=32' "$us_wifi_defaults"
+grep -F 'wireless.${radio}.txpower' "$us_wifi_defaults" | grep -Fq 'delete'
+if grep -Eq 'txpower=[0-9]|\.txpower=[0-9]' "$us_wifi_defaults"; then
+  echo 'US Wi-Fi defaults must not bypass the regulatory/EEPROM power minimum' >&2
+  exit 1
+fi
+regdb_patch=firmware/patches/wireless-regdb-us-6ghz-vlp.patch
+test -s "$regdb_patch"
+grep -Fq -- $'+\t(5925 - 7125 @ 320), (14)' "$regdb_patch"
+grep -Fq -- $'-\t(5925 - 7125 @ 320), (12), NO-OUTDOOR, NO-IR' "$regdb_patch"
+grep -Fq 'regdb_patch_target=package/firmware/wireless-regdb/patches/610-us-6ghz-vlp.patch' \
+  firmware/docker/build-openwrt.sh
+grep -Fq 'make package/firmware/wireless-regdb/clean' firmware/docker/build-openwrt.sh
 
 # LuCI must remain reachable over warning-free LAN HTTP while preserving the
 # optional HTTPS listener. This is a one-time migration so operator changes
