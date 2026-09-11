@@ -2,12 +2,12 @@
   <img src="https://raw.githubusercontent.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE/v25.12.021/include/logo.png" alt="OpenWrt" width="420">
 </p>
 
-<h1 align="center">OpenWrt ZBTLink ZBT-Z8803BE Mega Edition Firmware</h1>
+<h1 align="center">OpenWrt Mega Edition for ZBTLink ZBT-Z8803BE</h1>
 
 <p align="center">
   Developed and maintained by <a href="https://github.com/mfoster978">Michael Foster · @mfoster978</a>.<br>
   A full-featured OpenWrt community firmware for the ZBTLink ZBT-Z8803BE Wi-Fi 7 router,
-  with independent RM551E-GL dual-5G modem controls, multi-WAN failover, live speed testing,
+  with independent dual-cellular-modem controls, multi-WAN failover, live speed testing,
   integrated Speedify support, USB tethering and sharing, VPN tools, and guided firmware updates.
 </p>
 
@@ -100,7 +100,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 ### Mega About and firmware updates
 
 - **About** is a desktop-ready, dark six-tab guide with dedicated Features, Speedify, USB & Sharing, Packages, installed-build, and project/credits content. It includes illustrations, developer/maintainer Michael Foster's email and Discord contacts, and special thanks to upstream developer [0xFar5eer](https://github.com/0xFar5eer).
-- **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Live download/validation progress scrolls into view immediately, and the final flash dialog shows an indeterminate write/reboot indicator. Older versions can be selected for downgrade; keeping settings is off by default for downgrades.
+- **System → Firmware Update** offers release checks, release notes, a verified SquashFS download, and an explicitly confirmed flash from this repository. Every entry shows both how long ago it was released and its exact date. New/current builds and older downgrade choices are presented in separate sections. Live download/validation progress scrolls into view immediately, and the final flash dialog shows an indeterminate write/reboot indicator. Keeping settings is off by default for downgrades.
 - HTTPS, SHA256, local device identity and OpenWrt image checks are required. There is no forced/unattended flash or automatic rollback. Back up settings first. Old firmware without this tool requires the usual LuCI flash page for subsequent updates.
 - These features are **Mega-only**; Minimal retains its original About screen and does not include this updater. See [behavior, safety and verification](firmware/docs/mega-firmware-updates.md) for the remaining on-router acceptance checks.
 
@@ -116,6 +116,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 
 ### Cellular and modem support
 
+- The router firmware is modem-neutral. The supplied hardware evidence uses dual Quectel RM551E-GL modules, but that model is not part of the firmware filename or a requirement; other modules still depend on their own electrical compatibility, Linux driver, QModem vendor support, connection mode, and carrier certification.
 - QModem Next with LuCI modem controls, SMS, monitoring, and AT debugging.
 - QMI and MBIM protocol support with `uqmi`, `umbim`, and the matching LuCI protocol handlers.
 - USB QMI/MBIM, USB WDM, USB serial/Option, NCM, WWAN, and Quectel connection-manager support.
@@ -325,9 +326,9 @@ Download from [Mega Edition releases](https://github.com/mfoster978/OpenWrt-ZBT-
 
 | Release asset | Purpose |
 |---|---|
-| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin` | Normal firmware upgrade for the supported router. This is the image selected by the Mega updater. |
-| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-initramfs-kernel.bin` | Temporary boot / advanced recovery, not a normal persistent upgrade. |
-| `openwrt-mediatek-filogic-zbtlink_zbt-z8803be.manifest` | Exact package inventory for that image. |
+| `OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin` | Normal firmware upgrade for the supported router. This is the image selected by the Mega updater. |
+| `OpenWrt-Mega-Edition-ZBT-Z8803BE-initramfs.bin` | Temporary boot / advanced recovery, not a normal persistent upgrade. |
+| `OpenWrt-Mega-Edition-ZBT-Z8803BE-packages.manifest` | Exact package inventory for that image. |
 | `SHA256SUMS`, `BUILD-INFO.txt`, `mega-release.json` | Download integrity, build provenance, and machine-readable Mega identity. |
 | `RELEASE_NOTES.md`, `verify-router-runtime.sh` | Changes, upgrade caveats, and a read-only diagnostic helper. |
 
@@ -373,13 +374,13 @@ sha256sum -c sha256sums
 Upload the SquashFS sysupgrade image through LuCI, or copy it to the router and run:
 
 ```sh
-sysupgrade openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin
+sysupgrade OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin
 ```
 
 For the cleanest first installation of this customized build:
 
 ```sh
-sysupgrade -n openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin
+sysupgrade -n OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin
 ```
 
 The `-n` option discards existing configuration. Do not use it unless the backup is complete and a clean configuration is intended.
@@ -389,7 +390,7 @@ The `-n` option discards existing configuration. Do not use it unless the backup
 1. Disconnect unnecessary USB devices and connect a computer to Ethernet.
 2. Hold **Reset** while applying power until the recovery interface starts.
 3. Open `http://192.168.1.1`.
-4. Upload `openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin`.
+4. Upload `OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin`.
 5. Do not interrupt power. Allow several minutes for writing, first boot, and overlay initialization.
 
 A clean Mega installation has no shared `admin` password. Open `http://192.168.1.1`, sign in locally as `root` with the initially empty password, and LuCI will require a new root password before exposing the rest of administration. A settings-preserving upgrade keeps the existing root password.

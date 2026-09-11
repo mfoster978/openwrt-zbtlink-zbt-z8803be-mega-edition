@@ -83,8 +83,9 @@ class PublicationTests(unittest.TestCase):
         return self.command("rev-parse", "HEAD")
 
     def api(self, repository=MEGA):
-        images = {p.SYSUPGRADE: b"s" * (1 << 20), p.INITRAMFS: b"i" * (1 << 20)}
-        content = {**images, p.PACKAGE_MANIFEST: b"base-files - fixture\n", p.RUNTIME: self.runtime}
+        sysupgrade, initramfs, package_manifest = p.release_files(repository)
+        images = {sysupgrade: b"s" * (1 << 20), initramfs: b"i" * (1 << 20)}
+        content = {**images, package_manifest: b"base-files - fixture\n", p.RUNTIME: self.runtime}
         content["SHA256SUMS"] = "".join(hashlib.sha256(data).hexdigest() + "  " + name + "\n" for name, data in images.items()).encode()
         fields = {"Recipe commit": self.source, "Target": "mediatek/filogic", "Device": p.DEVICE,
                   "Edition": p.REPOSITORIES[repository][2], "Version": TAG, "Build host": "local server",
@@ -96,8 +97,8 @@ class PublicationTests(unittest.TestCase):
                                                         "board": p.BOARD, "version": TAG, "source_sha": self.source,
                                                         "base_version": "v25.12.021", "dirty": False,
                                                         "built_at": "2026-09-10T06:57:00Z",
-                                                        "image": {"name": p.SYSUPGRADE, "size": len(images[p.SYSUPGRADE]),
-                                                                  "sha256": hashlib.sha256(images[p.SYSUPGRADE]).hexdigest()}}).encode()
+                                                        "image": {"name": sysupgrade, "size": len(images[sysupgrade]),
+                                                                  "sha256": hashlib.sha256(images[sysupgrade]).hexdigest()}}).encode()
         return FakeGitHub(repository, self.source, content)
 
     def prepare(self, api):

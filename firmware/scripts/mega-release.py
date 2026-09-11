@@ -14,7 +14,7 @@ import subprocess
 
 REPOSITORY = "mfoster978/OpenWrt-ZBT-Z8803BE-Mega"
 BOARD = "zbtlink,zbt-z8803be"
-IMAGE = "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
+IMAGE = "OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin"
 VERSION = re.compile(r"firmware-[1-9][0-9]*\.[1-9][0-9]*\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 

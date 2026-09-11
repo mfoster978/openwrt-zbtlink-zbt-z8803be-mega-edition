@@ -22,14 +22,15 @@ window.errorsByMethod = {};
 window.prepareDelay = 0;
 Element.prototype.scrollIntoView = function(options) { scrollTargets.push({className:this.className,options}); };
 const params = new URLSearchParams(location.search);
-window.releases = [{ id: 22, tag: 'firmware-22.1', name: 'New Mega build', published_at: '2026-09-10T00:00:00Z',
+const ago = milliseconds => new Date(Date.now() - milliseconds).toISOString();
+window.releases = [{ id: 22, tag: 'firmware-22.1', name: 'New Mega build', published_at: ago(3 * 3600000),
  body: '# New features\\n<script>window.evil=1<\\/script><img src=x onerror="window.evil=1">\\n[bad](javascript:alert(1))',
- compatible: true, image: {name:'openwrt-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin',size:67108864},
+ compatible: true, image: {name:'OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin',size:67108864},
  html_url:'javascript:alert(1)' },
- { id: 21, tag: 'firmware-21.1', name: 'Current Mega build', compatible:true, body:'Current notes',image:{name:'current.bin',size:33554432}},
- { id: 20, tag: 'firmware-20.2', name: 'Older Mega build', compatible:true, body:'Older notes',image:{name:'older.bin',size:33554432}},
- { id: 19, tag: 'unversioned', name: 'Legacy build', compatible:true, legacy:true, body:'Legacy notes',image:{name:'legacy.bin',size:33554432}},
- { id: 18, tag: 'firmware-18.1', name: 'Incompatible build', compatible:false,reason:'Wrong board',body:'Not compatible',image:{name:'other.bin',size:33554432}}];
+ { id: 21, tag: 'firmware-21.1', name: 'Current Mega build', published_at:ago(2 * 86400000),compatible:true, body:'Current notes',image:{name:'current.bin',size:33554432}},
+ { id: 20, tag: 'firmware-20.2', name: 'Older Mega build', published_at:ago(8 * 86400000),compatible:true, body:'Older notes',image:{name:'older.bin',size:33554432}},
+ { id: 19, tag: 'unversioned', name: 'Legacy build', published_at:ago(35 * 86400000),compatible:true, legacy:true, body:'Legacy notes',image:{name:'legacy.bin',size:33554432}},
+ { id: 18, tag: 'firmware-18.1', name: 'Incompatible build', published_at:ago(70 * 86400000),compatible:false,reason:'Wrong board',body:'Not compatible',image:{name:'other.bin',size:33554432}}];
 window.snapshot = {ok:true,id:'job-1',phase:'downloading',bytes:1048576,total:67108864,release:releases[0]};
 window.flashResponse = {ok:true,id:'job-1',accepted:true};
 window._ = s => s;
@@ -50,7 +51,7 @@ window.rpc = {declare: spec => async (...args) => {
  if (spec.method === 'info') return {ok:true,eligible:!params.has('ineligible'),board:'zbtlink,zbt-z8803be',error:params.has('ineligible')?'Unknown installed identity':'',
   active_id:params.has('active')?'job-1':undefined,
   installed:{schema:1,variant:'mega',version:params.has('unknown')?'custom-build':'firmware-21.1',dirty:params.has('dirty'),source_sha:'123456789abcdef',built_at:'2026-09-09T22:00:00Z'}};
- if (spec.method === 'check') return {ok:true,page:args[0],has_more:args[0]===1,latest_tag:args[0]===1?'firmware-22.1':undefined,releases:args[0]===1?releases:[{...releases[2],id:17,tag:'firmware-17.1',name:'Archive release'}]};
+ if (spec.method === 'check') return {ok:true,page:args[0],has_more:args[0]===1,latest_tag:args[0]===1?'firmware-22.1':undefined,releases:args[0]===1?releases:[{...releases[2],id:17,tag:'firmware-17.1',name:'Archive release',published_at:ago(100 * 86400000)}]};
  if (spec.method === 'prepare') { if (prepareDelay) await new Promise(resolve=>setTimeout(resolve,prepareDelay)); snapshot={...snapshot,phase:'downloading',release:releases.find(x=>x.id===args[0])}; return {ok:true,id:'job-1'}; }
  if (spec.method === 'status') return snapshot;
  if (spec.method === 'flash') { if(flashResponse.ok) snapshot={...snapshot,phase:'flashing'}; return flashResponse; }
@@ -80,7 +81,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
   const page = await browser.newPage({ viewport: { width: 1280, height: 1200 } });
   page.on('pageerror', error => errors.push(error.message));
   async function open(query = '') { await page.goto(base + query); await page.waitForSelector('.zfu-hero'); }
-  async function check() { await page.getByRole('button', {name:'Check for updates',exact:true}).click(); await page.waitForSelector('.zfu-download'); }
+  async function check() { await page.getByRole('button', {name:'Check for updates',exact:true}).click(); await page.waitForSelector('.zfu-update-list .zfu-download'); }
   async function ready(options = {}) {
     await page.evaluate(async opts => {
       snapshot = {...snapshot,phase:'ready',allow_backup:true,confirmation:'a'.repeat(32),sha256:'b'.repeat(64),...opts};
@@ -94,12 +95,16 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     assert.deepEqual(await page.evaluate(() => calls.map(c => c.method)), ['info'], 'no update check, download, or flash on page load');
     assert.equal(await page.evaluate(() => dashboard.handleSaveApply), null, 'no Save & Apply action');
     await check();
-    assert.equal(await page.locator('.zfu-download').isEnabled(), true);
+    assert.equal(await page.locator('.zfu-update-list .zfu-download').isEnabled(), true);
     assert.match(await page.locator('.zfu-notice').innerText(), /newer Mega release/);
-    assert.match(await page.locator('.zfu-notes').innerText(), /<script>/, 'release notes remain text');
+    assert.match(await page.locator('.zfu-update-list .zfu-notes').innerText(), /<script>/, 'release notes remain text');
     assert.equal(await page.evaluate(() => window.evil), undefined, 'untrusted notes cannot execute');
     assert.equal(await page.locator('.zfu-notes img, .zfu-notes script, .zfu-notes a').count(), 0);
-    assert.equal(await page.getByRole('link', {name:'Read on GitHub ↗',exact:true}).getAttribute('href'), 'https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases', 'unsafe release link rejected');
+    assert.equal(await page.locator('.zfu-update-list').getByRole('link', {name:'Read on GitHub ↗',exact:true}).getAttribute('href'), 'https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases', 'unsafe release link rejected');
+    assert.match(await page.locator('.zfu-update-list .zfu-release-age').innerText(), /Released 3 hours ago/);
+    assert.equal(await page.locator('.zfu-update-list .zfu-release-age time').getAttribute('datetime'), await page.evaluate(() => releases[0].published_at));
+    assert.equal(await page.getByRole('heading', {name:'Updates',exact:true}).count(), 1);
+    assert.equal(await page.getByRole('heading', {name:'Older releases / downgrade',exact:true}).count(), 1);
     if (process.env.ZBT_UI_SCREENSHOTS) await page.screenshot({path:path.join(process.env.ZBT_UI_SCREENSHOTS,'firmware-update-desktop.png'),fullPage:true});
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile overflow');
@@ -110,13 +115,14 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     await page.emulateMedia({colorScheme:'light'});
     await page.getByRole('button',{name:'Load older releases',exact:true}).click();
     await page.waitForFunction(() => dashboard.page === 2);
-    assert.equal(await page.locator('#zfu-release option').count(), 6);
+    assert.equal(await page.locator('#zfu-release option').count(), 3);
+    assert.equal(await page.locator('#zfu-downgrade-release option').count(), 3);
     assert.equal(await page.getByRole('button',{name:'Load older releases',exact:true}).isVisible(), false);
-    await page.locator('#zfu-release').selectOption('18');
-    assert.equal(await page.locator('.zfu-download').isDisabled(), true, 'incompatible release cannot download');
+    await page.locator('#zfu-downgrade-release').selectOption('18');
+    assert.equal(await page.locator('.zfu-downgrade-list .zfu-download').isDisabled(), true, 'incompatible release cannot download');
     await page.locator('#zfu-release').selectOption('22');
 	await page.evaluate(() => { prepareDelay=150; });
-    await page.locator('.zfu-download').click();
+    await page.locator('.zfu-update-list .zfu-download').click();
 	await page.waitForSelector('.zfu-request-progress');
 	assert.match(await page.locator('.zfu-job').innerText(), /Starting secure firmware download/);
 	await page.waitForFunction(() => scrollTargets.length > 0);
@@ -144,8 +150,8 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     await page.locator('.zfu-discard').click();
     await page.waitForFunction(() => dashboard.job === null);
-    await page.locator('#zfu-release').selectOption('20');
-    await page.locator('.zfu-download').click();
+    await page.locator('#zfu-downgrade-release').selectOption('20');
+    await page.locator('.zfu-downgrade-list .zfu-download').click();
     await ready();
     await page.locator('.zfu-review').click();
     assert.equal(await page.locator('#zfu-keep').isChecked(), false, 'downgrade defaults to fresh configuration');
@@ -154,7 +160,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     await page.locator('.zfu-discard').click();
     await page.waitForFunction(() => dashboard.job === null);
     await page.locator('#zfu-release').selectOption('19');
-    await page.locator('.zfu-download').click();
+    await page.locator('.zfu-update-list .zfu-download').click();
     await ready();
     await page.locator('.zfu-review').click();
     assert.equal(await page.locator('#zfu-keep').isChecked(), false, 'unknown order defaults to fresh configuration');
@@ -162,7 +168,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     await page.locator('.zfu-discard').click();
     await page.waitForFunction(() => dashboard.job === null);
     await page.locator('#zfu-release').selectOption('22');
-    await page.locator('.zfu-download').click();
+    await page.locator('.zfu-update-list .zfu-download').click();
     await ready();
     await page.evaluate(() => {errorsByMethod.flash='Network timeout';});
     await page.locator('.zfu-review').click();
@@ -213,7 +219,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
 
     await open('?readonly=1');
     await check();
-    assert.equal(await page.locator('.zfu-download').isDisabled(), true, 'read-only download disabled');
+    assert.equal(await page.locator('.zfu-update-list .zfu-download').isDisabled(), true, 'read-only download disabled');
     await page.evaluate(async () => {await dashboard.prepare(releases[0]);dashboard.job={...snapshot,phase:'ready',confirmation:'a'.repeat(32)};dashboard.confirm();await dashboard.discard();});
     assert.equal(await page.evaluate(() => calls.some(c=>['prepare','flash','discard'].includes(c.method))), false, 'write functions independently reject read-only calls');
     await open('?ineligible=1');
@@ -227,7 +233,7 @@ dashboard.load().then(info=>document.body.appendChild(dashboard.render(info)));
     assert.match(await page.locator('.zfu-version').innerText(), /local changes/);
     assert.match(await page.locator('.zfu-notice').innerText(), /includes local changes/);
     await page.locator('#zfu-release').selectOption('21');
-    assert.match(await page.locator('.zfu-badge').innerText(), /Locally modified/);
+    assert.match(await page.locator('.zfu-update-list .zfu-badge').innerText(), /Locally modified/);
     await open('?active=1');
     await page.waitForSelector('.zfu-job:not([hidden])');
     assert.equal(await page.evaluate(() => calls.some(c=>c.method==='prepare')), false, 'reload resumes existing download without starting another');

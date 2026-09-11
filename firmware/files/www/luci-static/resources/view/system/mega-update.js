@@ -18,6 +18,19 @@ function size(value) {
 	if (!Number.isFinite(Number(value)) || Number(value) < 0) return '—';
 	return (Number(value) / 1048576).toFixed(1) + ' MiB';
 }
+function releaseTime(value) {
+	var date = new Date(value || '');
+	if (!Number.isFinite(date.getTime())) return { relative: _('Release date unavailable'), exact: '—' };
+	var seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+	var amount, unit;
+	if (seconds < 60) return { relative: _('Released less than a minute ago'), exact: date.toLocaleString() };
+	if (seconds < 3600) { amount = Math.floor(seconds / 60); unit = amount === 1 ? _('minute ago') : _('minutes ago'); }
+	else if (seconds < 86400) { amount = Math.floor(seconds / 3600); unit = amount === 1 ? _('hour ago') : _('hours ago'); }
+	else if (seconds < 2592000) { amount = Math.floor(seconds / 86400); unit = amount === 1 ? _('day ago') : _('days ago'); }
+	else if (seconds < 31536000) { amount = Math.floor(seconds / 2592000); unit = amount === 1 ? _('month ago') : _('months ago'); }
+	else { amount = Math.floor(seconds / 31536000); unit = amount === 1 ? _('year ago') : _('years ago'); }
+	return { relative: _('Released') + ' ' + amount + ' ' + unit, exact: date.toLocaleString() };
+}
 function compareVersion(a, b) {
 	var x = /^firmware-(\d+)\.(\d+)$/.exec(a || '');
 	var y = /^firmware-(\d+)\.(\d+)$/.exec(b || '');
@@ -81,7 +94,8 @@ return view.extend({
 		this.notice = E('div', { 'class': 'zfu-notice', role: 'status', 'aria-live': 'polite', hidden: '' });
 		this.checkButton = E('button', { 'class': 'zfu-button zfu-primary', type: 'button', click: function() { return self.check(1); } }, _('Check for updates'));
 		this.checkButton.disabled = !this.info.eligible;
-		this.releaseList = E('div', { 'class': 'zfu-release-list' }, E('p', { 'class': 'zfu-empty' }, _('Check GitHub to see the latest compatible Mega firmware and its release notes. Nothing is downloaded or flashed until you choose it.')));
+		this.updateList = E('div', { 'class': 'zfu-release-list zfu-update-list' }, E('p', { 'class': 'zfu-empty' }, _('Check GitHub to see newer OpenWrt Mega Edition releases. Nothing is downloaded or flashed until you choose it.')));
+		this.downgradeList = E('div', { 'class': 'zfu-release-list zfu-downgrade-list' }, E('p', { 'class': 'zfu-empty' }, _('Check GitHub to choose an older compatible release for a deliberate downgrade.')));
 		this.moreButton = E('button', { 'class': 'zfu-button', type: 'button', hidden: '', click: function() { return self.check(self.page + 1); } }, _('Load older releases'));
 		this.jobPanel = E('section', { 'class': 'zfu-card zfu-job', 'aria-label': _('Firmware download and validation'), role: 'status', 'aria-live': 'polite', tabindex: '-1', hidden: '' });
 		var root = E('div', { 'class': 'zfu' }, [
@@ -111,7 +125,10 @@ return view.extend({
 				E('p', {}, [_('Use stable power and a wired connection. '), E('a', { href: backupUrl }, _('Download a configuration backup')), _(' before continuing. Flashing restarts the router and disconnects the Internet. Installed add-on packages are not automatically retained.')]),
 				E('p', {}, _('Older firmware can contain security issues, incompatible settings, or no updater at all. A downgrade is not an automatic recovery system; there is no guaranteed unattended rollback.'))]),
 			this.jobPanel,
-			E('section', { 'class': 'zfu-releases' }, [E('div', { 'class': 'zfu-section-head' }, [E('h3', {}, _('Available releases')), E('span', { 'class': 'zfu-muted' }, _('Mega firmware only'))]), this.releaseList, this.moreButton])
+			E('section', { 'class': 'zfu-releases zfu-updates' }, [E('div', { 'class': 'zfu-section-head' }, [E('h3', {}, _('Updates')), E('span', { 'class': 'zfu-muted' }, _('Newer and currently installed Mega releases'))]), this.updateList]),
+			E('section', { 'class': 'zfu-releases zfu-downgrades' }, [E('div', { 'class': 'zfu-section-head' }, [E('h3', {}, _('Older releases / downgrade')), E('span', { 'class': 'zfu-muted' }, _('Separate deliberate downgrade path'))]),
+				E('p', { 'class': 'zfu-warning' }, _('Downgrading can restore old bugs or security issues and may make current settings incompatible. Back up first; fresh settings are selected by default.')),
+				this.downgradeList, this.moreButton])
 		].filter(function(x) { return x != null; }));
 		if (!this.info.eligible) this.message(this.info.error || _('This installed firmware or router is not eligible for the Mega updater. Use Backup / Flash Firmware to install a verified compatible image manually.'), true);
 		if (this.info.active_id) this.job = { id: this.info.active_id, phase: 'loading' };
@@ -173,24 +190,43 @@ return view.extend({
 			self.busy = false;
 			self.checkButton.disabled = !self.info.eligible || !!self.accepted;
 			self.moreButton.disabled = !!self.accepted;
-			if (self.releaseSelect) self.renderSelected();
+			self.renderSelections();
 		});
 	},
 
 	renderReleases: function() {
 		var self = this;
-		var selected = this.releaseSelect && this.releaseSelect.value;
-		var releases = this.releases;
-		if (!releases.length) { replace(this.releaseList, E('p', { 'class': 'zfu-empty' }, _('No published releases were returned.'))); return; }
+		var updates = this.releases.filter(function(release) { return self.relation(release).kind !== 'downgrade'; });
+		var downgrades = this.releases.filter(function(release) { return self.relation(release).kind === 'downgrade'; });
+		this.renderReleaseGroup('update', updates);
+		this.renderReleaseGroup('downgrade', downgrades);
+	},
+
+	renderReleaseGroup: function(kind, releases) {
+		var self = this;
+		var isDowngrade = kind === 'downgrade';
+		var list = isDowngrade ? this.downgradeList : this.updateList;
+		var previous = isDowngrade ? this.downgradeSelect : this.releaseSelect;
+		var selected = previous && previous.value;
+		if (!releases.length) {
+			replace(list, E('p', { 'class': 'zfu-empty' }, isDowngrade ? _('No older releases are loaded. Use Load older releases to search further back.') : _('No newer or current published releases were returned.')));
+			if (isDowngrade) { this.downgradeSelect = null; this.downgradePanel = null; }
+			else { this.releaseSelect = null; this.selectedPanel = null; }
+			return;
+		}
 		var options = releases.map(function(release) {
 			var relation = self.relation(release);
-			return E('option', { value: String(release.id) }, text(release.tag) + ' — ' + relation.label + (release.compatible ? '' : ' — ' + _('Unavailable')));
+			var age = releaseTime(release.published_at);
+			return E('option', { value: String(release.id) }, text(release.tag) + ' — ' + age.relative + (release.compatible ? '' : ' — ' + _('Unavailable')));
 		});
-		this.releaseSelect = E('select', { id: 'zfu-release', 'aria-label': _('Release to install'), change: function() { self.renderSelected(); } }, options);
-		if (selected && releases.some(function(r) { return String(r.id) === selected; })) this.releaseSelect.value = selected;
-		this.selectedPanel = E('div', { 'class': 'zfu-selected' });
-		replace(this.releaseList, [E('label', { 'class': 'zfu-select-label', for: 'zfu-release' }, _('Select a release to upgrade, reinstall or downgrade')), this.releaseSelect, this.selectedPanel]);
-		this.renderSelected();
+		var id = isDowngrade ? 'zfu-downgrade-release' : 'zfu-release';
+		var panel = E('div', { 'class': 'zfu-selected' });
+		var select = E('select', { id: id, 'aria-label': isDowngrade ? _('Older release to install') : _('Update release to install'), change: function() { self.renderSelected(select, panel); } }, options);
+		if (selected && releases.some(function(r) { return String(r.id) === selected; })) select.value = selected;
+		if (isDowngrade) { this.downgradeSelect = select; this.downgradePanel = panel; }
+		else { this.releaseSelect = select; this.selectedPanel = panel; }
+		replace(list, [E('label', { 'class': 'zfu-select-label', for: id }, isDowngrade ? _('Select an older release to downgrade') : _('Select a newer release to update or the current release to reinstall')), select, panel]);
+		this.renderSelected(select, panel);
 	},
 
 	relation: function(release) {
@@ -203,17 +239,27 @@ return view.extend({
 		return { kind: 'upgrade', label: _('Newer version / upgrade') };
 	},
 
-	renderSelected: function() {
+	renderSelections: function() {
+		if (this.releaseSelect && this.selectedPanel) this.renderSelected(this.releaseSelect, this.selectedPanel);
+		if (this.downgradeSelect && this.downgradePanel) this.renderSelected(this.downgradeSelect, this.downgradePanel);
+	},
+
+	renderSelected: function(select, panel) {
 		var self = this;
-		var release = this.releases.find(function(r) { return String(r.id) === self.releaseSelect.value; });
+		select = select || this.releaseSelect;
+		panel = panel || this.selectedPanel;
+		if (!select || !panel) return;
+		var release = this.releases.find(function(r) { return String(r.id) === select.value; });
 		if (!release) return;
 		var relation = this.relation(release);
+		var released = releaseTime(release.published_at);
 		var button = E('button', { type: 'button', 'class': 'zfu-button zfu-primary zfu-download', click: function() { return self.prepare(release); } }, relation.kind === 'downgrade' ? _('Download & verify downgrade') : _('Download & verify'));
 		button.disabled = !this.writable || !this.info.eligible || !release.compatible || !!this.job || this.busy || this.accepted;
 		var image = release.image || {};
-		replace(this.selectedPanel, E('article', { 'class': 'zfu-card zfu-release' }, [
+		replace(panel, E('article', { 'class': 'zfu-card zfu-release' }, [
 			E('div', { 'class': 'zfu-release-heading' }, [E('div', {}, [E('span', { 'class': 'zfu-eyebrow' }, release.tag === this.latestTag ? _('LATEST PUBLISHED RELEASE') : _('PROJECT RELEASE')), E('h3', {}, text(release.name, release.tag))]), E('span', { 'class': 'zfu-badge' }, relation.label)]),
-			E('p', { 'class': 'zfu-muted' }, text(release.tag) + ' · ' + text(release.published_at)),
+			E('p', { 'class': 'zfu-release-age' }, [released.relative, E('time', { datetime: text(release.published_at), title: released.exact }, released.exact)]),
+			E('p', { 'class': 'zfu-muted' }, text(release.tag)),
 			!release.compatible ? E('p', { 'class': 'zfu-warning' }, text(release.reason, _('This release has no compatible verified upgrade image.'))) : null,
 			relation.kind === 'downgrade' ? E('p', { 'class': 'zfu-warning' }, _('Downgrade selected. Starting with fresh settings is recommended. Make a backup and check the older release’s limitations.')) : null,
 			relation.kind === 'unknown' ? E('p', { 'class': 'zfu-warning' }, _('The updater cannot establish whether this release is older or newer than the installed build. Settings preservation will be off by default.')) : null,
@@ -229,7 +275,7 @@ return view.extend({
 		var self = this;
 		if (!this.writable || !this.info.eligible || !release.compatible || this.busy || this.job || this.accepted) return Promise.resolve();
 		this.busy = true;
-		this.renderSelected();
+		this.renderSelections();
 		this.message(_('Requesting this release’s exact upgrade image. This does not flash the router.'));
 		this.renderRequestProgress(release);
 		return callPrepare(release.id).then(function(result) {
@@ -242,7 +288,7 @@ return view.extend({
 		}).catch(function(error) {
 			self.message(error.message, true);
 			self.renderRequestProgress(release, error.message);
-		}).finally(function() { self.busy = false; self.renderSelected(); });
+		}).finally(function() { self.busy = false; self.renderSelections(); });
 	},
 
 	refreshStatus: function() {
@@ -265,7 +311,7 @@ return view.extend({
 				self.message(result.error || (result.flash_started ? _('Flashing was started, but its outcome cannot be confirmed. Keep power connected and check the router before taking further action.') : _('Flashing was rejected. The router has not been told to reboot.')), true);
 			}
 			self.renderJob();
-			if (result.phase === 'discarded') { self.job = null; self.jobPanel.hidden = true; if (self.releaseSelect) self.renderSelected(); }
+			if (result.phase === 'discarded') { self.job = null; self.jobPanel.hidden = true; self.renderSelections(); }
 		}).catch(function(error) {
 			if (self.accepted) {
 				// Only an explicitly accepted flash may turn a lost connection into a reconnect wait.
@@ -332,7 +378,7 @@ return view.extend({
 			self.job = null;
 			self.jobPanel.hidden = true;
 			self.message(_('Downloaded image discarded. No firmware was flashed.'));
-		}).catch(function(error) { self.message(error.message, true); }).finally(function() { self.busy = false; if (self.releaseSelect) self.renderSelected(); if (self.job) self.renderJob(); });
+		}).catch(function(error) { self.message(error.message, true); }).finally(function() { self.busy = false; self.renderSelections(); if (self.job) self.renderJob(); });
 	},
 
 	confirm: function() {
@@ -366,7 +412,7 @@ return view.extend({
 			}).catch(function(error) {
 				ui.hideModal();
 				self.message(receivedReply ? error.message : _('The flash response was lost, so acceptance could not be confirmed. Keep power connected and check the router before trying again. ') + error.message, true);
-			}).finally(function() { self.busy = false; self.renderJob(); if (self.releaseSelect) self.renderSelected(); });
+			}).finally(function() { self.busy = false; self.renderJob(); self.renderSelections(); });
 		} }, relation.kind === 'downgrade' ? _('Downgrade now') : relation.kind === 'same' ? _('Reinstall now') : _('Update now'));
 		install.disabled = true;
 		acknowledged.addEventListener('change', function() { install.disabled = !acknowledged.checked; });

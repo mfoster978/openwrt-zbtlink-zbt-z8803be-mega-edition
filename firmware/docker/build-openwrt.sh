@@ -639,7 +639,7 @@ grep -Fq "password') + '?first=1'" \
   "${rootfs_dir}/usr/share/ucode/luci/dispatcher.uc" || {
   echo 'First-login password route is missing its completion marker' >&2; exit 4;
 }
-grep -Fq "window.location.replace(L.url('admin', 'about'))" \
+grep -Eq "window\.location\.replace\(L\.url\('admin',[[:space:]]*'about'\)\)" \
   "${rootfs_dir}/www/luci-static/resources/view/system/password.js" || {
   echo 'Successful first-login password setup does not continue to About' >&2; exit 4;
 }

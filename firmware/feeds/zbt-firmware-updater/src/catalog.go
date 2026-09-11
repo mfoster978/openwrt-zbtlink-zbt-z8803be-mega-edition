@@ -26,7 +26,7 @@ const maxImage = 128 << 20
 const maxJSON = 4 << 20
 
 var tagPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$`)
-var imagePattern = regexp.MustCompile(`^openwrt-(?:[A-Za-z0-9._-]+-)?mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade\.bin$`)
+var imagePattern = regexp.MustCompile(`^OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade\.bin$`)
 var shaPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var sourcePattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var versionPattern = regexp.MustCompile(`^firmware-([0-9]{1,12})\.([0-9]{1,6})$`)

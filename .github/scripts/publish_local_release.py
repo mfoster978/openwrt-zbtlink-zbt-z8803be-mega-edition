@@ -31,16 +31,28 @@ HASH = re.compile(r"[0-9a-f]{64}\Z")
 TAG = re.compile(r"firmware-[1-9][0-9]{0,11}\.[1-9][0-9]{0,5}\Z")
 DEVICE = "zbtlink_zbt-z8803be"
 BOARD = "zbtlink,zbt-z8803be"
-PREFIX = "openwrt-mediatek-filogic-" + DEVICE
-SYSUPGRADE = PREFIX + "-squashfs-sysupgrade.bin"
-INITRAMFS = PREFIX + "-initramfs-kernel.bin"
-PACKAGE_MANIFEST = PREFIX + ".manifest"
+OPENWRT_PREFIX = "openwrt-mediatek-filogic-" + DEVICE
+MEGA_PREFIX = "OpenWrt-Mega-Edition-ZBT-Z8803BE"
+SYSUPGRADE = MEGA_PREFIX + "-sysupgrade.bin"
+INITRAMFS = MEGA_PREFIX + "-initramfs.bin"
+PACKAGE_MANIFEST = MEGA_PREFIX + "-packages.manifest"
 RUNTIME = "verify-router-runtime.sh"
 NOTES = "RELEASE_NOTES.md"
 BASE_SHA = "edc738504fe8fae81eb15de967456204699b1830"
-LIMITS = {SYSUPGRADE: 128 << 20, INITRAMFS: 128 << 20,
-          PACKAGE_MANIFEST: 4 << 20, "SHA256SUMS": 16384,
-          "BUILD-INFO.txt": 16384, RUNTIME: 1 << 20, "mega-release.json": 65536}
+
+
+def release_files(repository):
+    if REPOSITORIES[repository][1] == "mega":
+        return SYSUPGRADE, INITRAMFS, PACKAGE_MANIFEST
+    return (OPENWRT_PREFIX + "-squashfs-sysupgrade.bin",
+            OPENWRT_PREFIX + "-initramfs-kernel.bin", OPENWRT_PREFIX + ".manifest")
+
+
+def asset_limits(repository):
+    sysupgrade, initramfs, package_manifest = release_files(repository)
+    return {sysupgrade: 128 << 20, initramfs: 128 << 20,
+            package_manifest: 4 << 20, "SHA256SUMS": 16384,
+            "BUILD-INFO.txt": 16384, RUNTIME: 1 << 20, "mega-release.json": 65536}
 
 
 def git(root, *args, check=True):
@@ -197,7 +209,9 @@ def selected_assets(release, repository, tag, source_sha):
             release.get("tag_name") != tag or release.get("target_commitish") != source_sha or
             type(release.get("id")) is not int or release["id"] < 1):
         raise ValueError("An existing non-prerelease draft targeting exactly the build SHA is required")
-    required = set(LIMITS) - ({"mega-release.json"} if REPOSITORIES[repository][1] == "minimal" else set())
+    limits = asset_limits(repository)
+    sysupgrade, initramfs, _ = release_files(repository)
+    required = set(limits) - ({"mega-release.json"} if REPOSITORIES[repository][1] == "minimal" else set())
     assets = release.get("assets")
     if not isinstance(assets, list) or len(assets) > len(required) + 1:
         raise ValueError("Unexpected draft release assets")
@@ -208,7 +222,7 @@ def selected_assets(release, repository, tag, source_sha):
             raise ValueError("Unknown, duplicate or source archive release asset")
         names.add(name)
         size, ident = asset.get("size"), asset.get("id")
-        limit = 32768 if name == NOTES else LIMITS[name]
+        limit = 32768 if name == NOTES else limits[name]
         if (type(size) is not int or size <= 0 or size > limit or
                 type(ident) is not int or ident <= 0 or asset.get("state") != "uploaded" or
                 asset.get("url") != "https://api.github.com/repos/" + repository + "/releases/assets/" + str(ident)):
@@ -216,7 +230,7 @@ def selected_assets(release, repository, tag, source_sha):
         if ident in ids:
             raise ValueError("Duplicate numeric release asset ID")
         ids.add(ident)
-        if name in {SYSUPGRADE, INITRAMFS} and size < 1 << 20:
+        if name in {sysupgrade, initramfs} and size < 1 << 20:
             raise ValueError("Firmware image is unexpectedly small")
         if name != NOTES:
             selected[name] = asset
@@ -230,22 +244,24 @@ def fingerprint(assets):
             for name, asset in assets.items()}
 
 
-def checksums(text):
+def checksums(text, repository="mfoster978/OpenWrt-ZBT-Z8803BE-Mega"):
+    sysupgrade, initramfs, _ = release_files(repository)
     result = {}
     for line in text.splitlines():
         if not line:
             continue
         match = re.fullmatch(r"([0-9a-fA-F]{64}) [ *]([^\r\n]+)", line)
-        if not match or match[2] not in {SYSUPGRADE, INITRAMFS} or match[2] in result:
+        if not match or match[2] not in {sysupgrade, initramfs} or match[2] in result:
             raise ValueError("SHA256SUMS must contain exactly the two fixed image names, without paths or duplicates")
         result[match[2]] = match[1].lower()
-    if set(result) != {SYSUPGRADE, INITRAMFS}:
+    if set(result) != {sysupgrade, initramfs}:
         raise ValueError("Both firmware image checksums are required")
     return result
 
 
 def validate_files(root, folder, repository, tag, source_sha, hashes):
-    expected = checksums((folder / "SHA256SUMS").read_text())
+    sysupgrade, _, package_manifest = release_files(repository)
+    expected = checksums((folder / "SHA256SUMS").read_text(), repository)
     if any(hashes.get(name) != digest for name, digest in expected.items()):
         raise ValueError("Downloaded firmware SHA-256 verification failed")
     info = {}
@@ -267,7 +283,7 @@ def validate_files(root, folder, repository, tag, source_sha, hashes):
     if hashlib.sha256(runtime).hexdigest() != hashes.get(RUNTIME):
         raise ValueError("Runtime verifier does not match the built recipe commit")
     # A package manifest is text evidence, never commands to run on this runner.
-    if "\x00" in (folder / PACKAGE_MANIFEST).read_text():
+    if "\x00" in (folder / package_manifest).read_text():
         raise ValueError("Invalid package manifest")
     if REPOSITORIES[repository][1] == "mega":
         data = json.loads((folder / "mega-release.json").read_text())
@@ -281,7 +297,7 @@ def validate_files(root, folder, repository, tag, source_sha, hashes):
         if date.tzinfo is None:
             raise ValueError("Mega build timestamp requires a timezone")
         image = data.get("image", {})
-        if image != {"name": SYSUPGRADE, "size": (folder / SYSUPGRADE).stat().st_size, "sha256": hashes[SYSUPGRADE]}:
+        if image != {"name": sysupgrade, "size": (folder / sysupgrade).stat().st_size, "sha256": hashes[sysupgrade]}:
             raise ValueError("Mega manifest image hash/size/name mismatch")
 
 

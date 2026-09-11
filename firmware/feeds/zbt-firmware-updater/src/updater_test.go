@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const imageName = "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-squashfs-sysupgrade.bin"
+const imageName = "OpenWrt-Mega-Edition-ZBT-Z8803BE-sysupgrade.bin"
 
 func TestMegaEditionRepositoryIdentity(t *testing.T) {
 	if repository != "mfoster978/OpenWrt-ZBT-Z8803BE-Mega" {
@@ -273,7 +273,7 @@ func TestCatalogRejectsWrongRepositoryAndUnsafeAssets(t *testing.T) {
 		"duplicate manifest": func(r *Release) { r.Assets = append(r.Assets, r.Assets[1]) },
 		"oversize":           func(r *Release) { r.Assets[0].Size = maxImage + 1 }, "unuploaded": func(r *Release) { r.Assets[0].State = "new" },
 		"initramfs": func(r *Release) {
-			r.Assets[0].Name = "openwrt-mediatek-filogic-zbtlink_zbt-z8803be-initramfs-kernel.bin"
+			r.Assets[0].Name = "OpenWrt-Mega-Edition-ZBT-Z8803BE-initramfs.bin"
 		},
 		"source only":  func(r *Release) { r.Assets[0].Name = "source.tar.gz" },
 		"other device": func(r *Release) { r.Assets[0].Name = "openwrt-mediatek-filogic-openwrt_one-squashfs-sysupgrade.bin" },

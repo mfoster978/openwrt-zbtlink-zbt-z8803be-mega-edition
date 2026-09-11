@@ -36,8 +36,10 @@ the page does not contact GitHub, download firmware, or flash it.
 1. Check for updates. The router reads published releases from the fixed
    [Mega Edition repository](https://github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega/releases).
    No GitHub account or API key is needed for public releases.
-2. Review the installed/selected versions and release notes, or select an older
-   published version. Drafts, prereleases and unsupported assets are excluded.
+2. Review the installed/selected versions and release notes. Each release shows
+   both a relative age and its exact publication date. New/current releases and
+   known older releases are separated into Update and Downgrade sections.
+   Drafts, prereleases and unsupported assets are excluded.
 3. Download and verify. The image is streamed into temporary `/tmp` storage,
    checked against SHA256 and validated for this router by OpenWrt. The live
    status card scrolls into view immediately and reports bytes/percentage when
