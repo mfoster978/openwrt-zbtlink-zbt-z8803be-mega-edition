@@ -1,5 +1,5 @@
-# Speedify's embedded application uses authenticated WebSockets and browser
-# secure-context features. Keep ordinary LuCI available on LAN HTTP, but move
+# Mega uses HTTPS for Speedify's authenticated WebSockets. This is a Mega
+# transport choice, not a claim that upstream requires HTTPS. Keep LAN HTTP, but move
 # only the Speedify outer page and its private application endpoints to HTTPS.
 #
 # This file is included inside nginx's _lan server by conf.d/*.locations. The

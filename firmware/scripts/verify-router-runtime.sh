@@ -5,6 +5,10 @@
 printf '%s\n' 'Runtime diagnostics (review/redact before sharing)'
 printf 'kernel=%s\n' "$(uname -r)"
 printf 'board=%s\n' "$(cat /tmp/sysinfo/board_name 2>/dev/null)"
+printf 'qmodem_firstboot_rpc_matches='
+cmp -s /usr/lib/zbt/qmodem-rpcd /usr/libexec/rpcd/qmodem && echo yes || echo no
+printf '%s\n' 'Registered 5G backend methods (read-only)'
+ubus -v list qmodem 2>/dev/null | grep '5g_deployment' || true
 for section in 4_1 2_1; do
 	zbt_slot "$section"
 	device=$(zbt_netdev "$section") || device=''

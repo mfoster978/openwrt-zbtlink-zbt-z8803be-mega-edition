@@ -56,4 +56,13 @@ for token in missing valid invalid; do
     [ "$code" = 401 ]
   fi
 done
+# Angular drops index.html from its visible route. Reload still reaches the
+# protected index, retaining query parameters rather than serving a directory.
+code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' \
+  -H 'Cookie: sfy-session=zbtTestAdminSession' "$base/luci-app-speedify/view/?wsPort=match&wsEndpoint=/luci-app-speedify/api/ws")
+[ "$code" = 200 ]
+grep -qi '<html' /tmp/test-response
+code=$(curl $curl_flags -o /tmp/test-response -w '%{http_code}' "$base/luci-app-speedify/view/?wsPort=match")
+[ "$code" = 401 ]
+python3 "$(dirname "$0")/speedify-websocket.py"
 printf '%s\n' 'Speedify nginx/proxy integration: HTTP Speedify=307 to HTTPS; HTTPS auth and ordinary HTTP LuCI remain healthy'

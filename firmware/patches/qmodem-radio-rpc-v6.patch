@@ -1,0 +1,46 @@
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+@@ -7,10 +7,10 @@
+ 'require qmodem.qmodem as qmodem';
+ 
+ var callGet5gDeployment = rpc.declare({
+-	object: 'qmodem', method: 'get_5g_deployment', params: ['config_section'], expect: { }
++	object: 'qmodem', method: 'get_5g_deployment', params: ['config_section'], expect: { }, raise: true, nobatch: true
+ });
+ var callSet5gDeployment = rpc.declare({
+-	object: 'qmodem', method: 'set_5g_deployment', params: ['config_section', 'mode'], expect: { }
++	object: 'qmodem', method: 'set_5g_deployment', params: ['config_section', 'mode'], expect: { }, raise: true, nobatch: true
+ });
+ 
+ function megaModemName(section) {
+@@ -424,7 +424,7 @@
+ 			_('Automatic restores automatic network selection and allows SA plus NSA. Selecting NSA also enables its required LTE anchor if necessary. Settings are read before writing and changes are verified; a failed change attempts to restore the previous settings. Band lists are never rewritten here. A change can briefly interrupt this modem.')));
+ 		deploymentSection.appendChild(deploymentField);
+ 		container.appendChild(deploymentSection);
+-		self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
++		var deploymentRead = self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
+ 
+ 		// Current network preference display
+ 		var currentPrefSection = E('div', { 'class': 'cbi-value' });
+@@ -491,7 +491,9 @@
+ 		container.appendChild(buttonSection);
+ 
+ 		// Load current network preference
+-		self.loadNetworkPrefer(modem, currentPrefValue, prefSelectionField, submitButton);
++		deploymentRead.then(function() {
++			self.loadNetworkPrefer(modem, currentPrefValue, prefSelectionField, submitButton);
++		});
+ 
+ 		return container;
+ 	},
+@@ -572,7 +574,9 @@
+ 			sa: _('SA only')
+ 		};
+ 		return callGet5gDeployment(modem.id).then(function(result) {
+-			var deployment = result && result.deployment;
++			if (!result || !result.deployment)
++				throw new Error(_('QModem returned no 5G settings object. Check that the QModem backend matches this firmware and that its RPC service is running.'));
++			var deployment = result.deployment;
+ 			if (!deployment || String(deployment.supported) !== '1' || !activeLabels[deployment.mode]) {
+ 				currentValue.textContent = (deployment && deployment.message) || _('Could not read the 5G setting. This does not mean the modem is unsupported. Retry after the modem finishes connecting.');
+ 				if (deployment && deployment.read_response)

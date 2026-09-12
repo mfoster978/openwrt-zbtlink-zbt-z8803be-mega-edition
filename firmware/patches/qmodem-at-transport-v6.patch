@@ -1,0 +1,277 @@
+--- a/application/tom_modem/src/utils.c
++++ b/application/tom_modem/src/utils.c
+@@ -1,40 +1,41 @@
+ #include "utils.h"
+ 
+ #ifdef USE_SEMAPHORE
+-void generate_semaphore_name(const char* filename, char* semaphore_name) {
+-    snprintf(semaphore_name, MAX_FILENAME_LEN, "%s%s", SEMAPHORE_PREFIX, filename);
+-    for (int i = 0; semaphore_name[i] != '\0'; i++) {
+-        if (semaphore_name[i] == '/') {
+-            semaphore_name[i] = '_';
+-        }
+-    }
+-}
+-
+-int lock_at_port(char* filename){
+-    char semaphore_name[MAX_FILENAME_LEN];
+-    generate_semaphore_name(filename, semaphore_name);
+-    dbg_msg("semaphore_name: %s", semaphore_name);
+-    sem_t *sem = sem_open(semaphore_name, O_CREAT, 0644, 1);
+-    if (sem == SEM_FAILED) {
+-        perror("sem_open failed");
+-        return -1;
+-    }
+-    sem_wait(sem);
+-    return 0;
+-}
+-
+-int unlock_at_port(char* filename){
+-    char semaphore_name[MAX_FILENAME_LEN];
+-    generate_semaphore_name(filename, semaphore_name);
+-    dbg_msg("semaphore_name: %s", semaphore_name);
+-    sem_t *sem = sem_open(semaphore_name, O_CREAT, 0644, 1);
+-    if (sem == SEM_FAILED) {
+-        perror("sem_open failed");
+-        return -1;
+-    }
+-    sem_post(sem);
+-    sem_close(sem);
+-    sem_unlink(semaphore_name);
++// One inode per character device, never unlinked while a waiter may exist.
++// Kernel-owned locks are released even if rpcd kills a timed-out AT request.
++static int at_lock_fd = -1;
++
++int lock_at_port(char* filename) {
++    struct stat device;
++    char lock_path[128];
++    struct timespec began, now;
++    if (!filename || stat(filename, &device) != 0 || !S_ISCHR(device.st_mode))
++        return -1;
++    snprintf(lock_path, sizeof(lock_path), "/var/lock/tom-modem-%u-%u.lock",
++             major(device.st_rdev), minor(device.st_rdev));
++    at_lock_fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
++    if (at_lock_fd < 0) return -1;
++    clock_gettime(CLOCK_MONOTONIC, &began);
++    for (;;) {
++        if (flock(at_lock_fd, LOCK_EX | LOCK_NB) == 0) return 0;
++        if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR) break;
++        clock_gettime(CLOCK_MONOTONIC, &now);
++        if (now.tv_sec - began.tv_sec >= 10) {
++            err_msg("AT port busy: timed out waiting for its current request");
++            break;
++        }
++        usleep(20000);
++    }
++    close(at_lock_fd);
++    at_lock_fd = -1;
++    return -1;
++}
++
++int unlock_at_port(char* filename __attribute__((unused))) {
++    if (at_lock_fd >= 0) {
++        close(at_lock_fd);
++        at_lock_fd = -1;
++    }
+     return 0;
+ }
+ 
+--- a/application/tom_modem/src/utils.h
++++ b/application/tom_modem/src/utils.h
+@@ -15,17 +15,11 @@
+ #include "time.h"
+ 
+ #ifdef USE_SEMAPHORE
+-#include <semaphore.h>
+-#include <sys/wait.h>
+-#include <sys/types.h>
+-#define MAX_FILENAME_LEN 256
+-#define SEMAPHORE_PREFIX "tom_modem_lock"
+-typedef struct FileLock {
+-    char filename[MAX_FILENAME_LEN];
+-    sem_t semaphore;
+-} FileLock;
+-
+-void generate_semaphore_name(const char* filename, char* semaphore_name);
++#include <sys/file.h>
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++#include <sys/wait.h>
++#include <sys/types.h>
+ int lock_at_port(char* filename);
+ int unlock_at_port(char* filename);
+ #endif
+--- a/application/tom_modem/src/main.c
++++ b/application/tom_modem/src/main.c
+@@ -221,89 +221,86 @@
+     return UNKNOWN_ERROR;
+ }
+ 
+-static void clean_up(int sig __attribute__((unused)))
+-{
+-    dbg_msg("Clean up success");
+-    
+-    // Cleanup transport
+-    transport_cleanup(&s_transport);
+-    
+-#ifdef USE_SEMAPHORE
+-    if (s_profile.transport == TRANSPORT_TTY && unlock_at_port(s_profile.tty_dev))
+-    {
+-        err_msg("Failed to unlock tty device");
+-    }
+-#endif
+-}
+-
+-static void atexit_cleanup(void)
+-{
+-    clean_up(0);
+-}
+-
+-static void signal_cleanup(int sig __attribute__((unused)))
+-{
+-    clean_up(sig);
+-}
+-
+-int main(int argc, char *argv[])
+-{
+-    PROFILE_T *profile = &s_profile;
+-    parse_user_input(argc, argv, profile);
+-    dump_profile();
+-    
+-    // Initialize transport layer
+-    if (transport_init(&s_transport, profile->transport) != SUCCESS) {
+-        err_msg("Failed to initialize transport layer");
+-        return COMM_ERROR;
+-    }
+-    
+-    // Setup cleanup and signal handlers
+-    atexit(atexit_cleanup);
+-    signal(SIGINT, signal_cleanup);
+-    signal(SIGTERM, signal_cleanup);
+-    
+-#ifdef USE_SEMAPHORE
+-    if (profile->op == CLEANUP_SEMAPHORE_OP)
+-    {
+-        if (unlock_at_port(profile->tty_dev))
+-        {
+-            err_msg("Failed to unlock tty device");
+-        }
+-        return SUCCESS;
+-    }
+-    
+-    // Only use semaphore locking for TTY transport
+-    if (profile->transport == TRANSPORT_TTY && profile->tty_dev != NULL)
+-    {
+-        if (lock_at_port(profile->tty_dev))
+-        {
+-            err_msg("Failed to lock tty device");
+-            return COMM_ERROR;
+-        }
+-    }
+-#endif
+-    
+-    // Open device
+-    if (transport_open_device(&s_transport, profile) != SUCCESS)
+-    {
+-        err_msg("Failed to open device");
+-        return COMM_ERROR;
+-    }
+-    
+-    // Run operation
+-    if (run_op(profile, &s_transport))
+-    {
+-        err_msg("Failed to run operation %d", profile->op);
+-#ifdef USE_SEMAPHORE
+-        if (profile->transport == TRANSPORT_TTY && unlock_at_port(profile->tty_dev))
+-        {
+-            err_msg("Failed to unlock tty device");
+-        }
+-#endif
+-        kill(getpid(), SIGINT); 
+-    }
+-    
+-    dbg_msg("Exit");
+-    return SUCCESS;
++static int device_opened;
++static int cleaned;
++
++static void clean_up(int sig __attribute__((unused)))
++{
++    if (cleaned) return;
++    cleaned = 1;
++    if (device_opened) transport_close_device(&s_transport, &s_profile);
++    dbg_msg("Clean up success");
++    
++    // Cleanup transport
++    transport_cleanup(&s_transport);
++    
++#ifdef USE_SEMAPHORE
++    if (s_profile.transport == TRANSPORT_TTY && unlock_at_port(s_profile.tty_dev))
++    {
++        err_msg("Failed to unlock tty device");
++    }
++#endif
++}
++
++static void atexit_cleanup(void)
++{
++    clean_up(0);
++}
++
++static void signal_cleanup(int sig __attribute__((unused)))
++{
++    exit(128 + sig); // atexit performs cleanup exactly once, then terminates
++}
++
++int main(int argc, char *argv[])
++{
++    PROFILE_T *profile = &s_profile;
++    if (parse_user_input(argc, argv, profile) != SUCCESS) return INVALID_PARAM;
++    dump_profile();
++    
++    // Initialize transport layer
++    if (transport_init(&s_transport, profile->transport) != SUCCESS) {
++        err_msg("Failed to initialize transport layer");
++        return COMM_ERROR;
++    }
++    
++    // Setup cleanup and signal handlers
++    atexit(atexit_cleanup);
++    signal(SIGINT, signal_cleanup);
++    signal(SIGTERM, signal_cleanup);
++    
++#ifdef USE_SEMAPHORE
++    if (profile->op == CLEANUP_SEMAPHORE_OP)
++    {
++        if (unlock_at_port(profile->tty_dev))
++        {
++            err_msg("Failed to unlock tty device");
++        }
++        return SUCCESS;
++    }
++    
++    // Only use semaphore locking for TTY transport
++    if (profile->transport == TRANSPORT_TTY && profile->tty_dev != NULL)
++    {
++        if (lock_at_port(profile->tty_dev))
++        {
++            err_msg("Failed to lock tty device");
++            return COMM_ERROR;
++        }
++    }
++#endif
++    
++    // Open device
++    if (transport_open_device(&s_transport, profile) != SUCCESS)
++    {
++        err_msg("Failed to open device");
++        return COMM_ERROR;
++    }
++    
++    device_opened = 1;
++    // Propagate transport failures to callers; never raise a signal and then
++    // continue executing with an already-freed transport.
++    int result = run_op(profile, &s_transport);
++    if (result != SUCCESS) err_msg("Failed to run operation %d", profile->op);
++    return result;
+ }

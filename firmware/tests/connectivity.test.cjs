@@ -153,7 +153,7 @@ logger() { :; }
   assert.equal(shell(read('files/usr/lib/zbt/mwan3-speed-metric.sh') + '\nzbt_speed_metric failover_2_1 2_1 5'), '5');
   assert.doesNotMatch(read('files/usr/lib/zbt/mwan3-speed-metric.sh'), /\/tmp\/|expiry/);
 });
-test('Speedify RPC accepts only official activation links and distinguishes daemon failure from logged out', () => {
+test('Speedify RPC is read-only diagnostics; native Speedify owns activation', () => {
   const dir = path.join(tmp, String(++id)); fs.mkdirSync(dir);
   const cli = path.join(dir, 'cli');
   fs.writeFileSync(cli, '#!/bin/sh\nprintf \'%s\\n\' "$REPLY"\nexit ${CLI_EXIT:-0}\n', { mode: 0o755 });
@@ -163,8 +163,6 @@ test('Speedify RPC accepts only official activation links and distinguishes daem
   assert.equal(call('status', { isAutoAccount: false, email: 'test@example.invalid' }).signed_in, true);
   assert.equal(call('status', {}).ok, false);
   assert.equal(call('status', {}, '1').ok, false);
-  const url = 'https://my.speedify.com/activate?activationCode=1234567&role=router';
-  assert.equal(call('activation', { activationUrl: url }).url, url);
-  for (const bad of ['http://my.speedify.com/activate?activationCode=1&role=router', url.replace('my.speedify.com', 'my.speedify.com.evil.invalid'), 'javascript:alert(1)'])
-    assert.equal(call('activation', { activationUrl: bad }).ok, false);
+  assert.deepEqual(JSON.parse(shell(rpc, {}, ['list'])), { status: {} });
+  assert.doesNotMatch(rpc, /activationcode|activationUrl/);
 });

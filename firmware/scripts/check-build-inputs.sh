@@ -327,8 +327,15 @@ if grep -Eq "window.location.replace|syncOuterHash" \
 fi
 grep -Fq "E('iframe'" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js
-grep -Fq "app.hash = '/?' + connectionParams" \
+grep -Fq "app.search = 'wsPort=match&wsEndpoint=" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js
+if grep -Eq "getRouterActivation|method: 'activation'|Sign in this router" firmware/files/usr/share/zbt/speedify-luci-wrapper.js; then
+  echo 'Speedify must use its native sign-in UI' >&2; exit 1
+fi
+for patch_name in qmodem-at-transport-v6.patch qmodem-radio-rpc-v6.patch zbt-qmodem-rpc-firstboot.patch; do
+  test -s "firmware/patches/$patch_name"
+  grep -Fq "$patch_name" firmware/docker/build-openwrt.sh
+done
 
 grep -q "OPENWRT_GIT_REF:-v25.12.021" firmware/docker/build-openwrt.sh
 grep -q "OPENWRT_GIT_URL:-https://github.com/0xFar5eer/openwrt25.12_ZBT_Z8803BE.git" \

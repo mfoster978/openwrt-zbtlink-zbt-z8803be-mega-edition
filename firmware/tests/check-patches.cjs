@@ -9,7 +9,8 @@ const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'zbt-pinned-patches-'));
 const specs = [
-  ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', ['qmodem-dual-runtime.patch', 'qmodem-cell-discovery.patch', 'qmodem-5g-deployment.patch', 'qmodem-performance-ui.patch', 'qmodem-mega-policy-ui.patch', 'qmodem-connectivity-v5.patch'], ''],
+  ['qmodem-firstboot', '0xFar5eer/openwrt25.12_ZBT_Z8803BE', 'edc738504fe8fae81eb15de967456204699b1830', 'zbt-qmodem-rpc-firstboot.patch', ''],
+  ['qmodem', 'FUjr/QModem', 'a8b8a63e5b0853c79d2ad3f1ebbb673a724872bf', ['qmodem-dual-runtime.patch', 'qmodem-cell-discovery.patch', 'qmodem-5g-deployment.patch', 'qmodem-performance-ui.patch', 'qmodem-mega-policy-ui.patch', 'qmodem-connectivity-v5.patch', 'qmodem-at-transport-v6.patch', 'qmodem-radio-rpc-v6.patch'], ''],
   ['packages', 'openwrt/packages', 'db3b315119519f9194dad8aa668aa40618df9b20', 'mwan3-speed-policy.patch', ''],
   ['mwan3-luci', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-app-mwan3-route-metric.patch', ''],
   ['luci-first-login', 'openwrt/luci', 'a611522a2bfc24ca2625e8cd2fcc9404288532a6', 'luci-first-login-password.patch', ''],
@@ -40,6 +41,12 @@ function run(command, args, options = {}) {
     const patches = patchNames.map(patchName => fs.readFileSync(path.join(root, 'firmware/patches', patchName), 'utf8'));
     const tree = path.join(tmp, name);
     const files = [...new Set(patches.flatMap(patch => [...patch.matchAll(/^--- a\/(.+)$/gm)].map(m => m[1])))];
+    if (name === 'qmodem-firstboot') files.push('target/linux/mediatek/filogic/base-files/etc/uci-defaults/56-zbt-qmodem-soft-reboot-overlay');
+    if (name === 'qmodem') {
+      for (const file of ['main.h', 'operations.c', 'operations.h', 'transport.c', 'transport.h',
+        'ttydevice.c', 'ttydevice.h', 'modem_types.h', 'extlib/pdu.c', 'extlib/pdu.h', 'extlib/ucs2_to_utf8.c'])
+        files.push('application/tom_modem/src/' + file);
+    }
     await Promise.all(files.map(async p => {
       assert.ok(!p.includes('..') && /^[a-zA-Z0-9_/.+-]+$/.test(p));
       const response = await fetch(`https://raw.githubusercontent.com/${repo}/${commit}/${prefix}${p}`, { signal: AbortSignal.timeout(20000) });
@@ -118,6 +125,14 @@ function run(command, args, options = {}) {
       assert.equal(renderCalls, 0, 'a successful save is never rendered again before navigation');
     }
     console.log(`${name}: exact pinned patch, reverse/idempotence check and syntax passed (${commit})`);
+    if (name === 'qmodem-firstboot') require('./qmodem-firstboot.cjs')(root, tree, run);
+    if (name === 'qmodem') {
+      const source = path.join(tree, 'application/tom_modem/src');
+      const binary = path.join(tmp, 'tom_modem');
+      run('gcc', ['-o', binary, ...['main.c', 'utils.c', 'operations.c', 'transport.c', 'ttydevice.c',
+        'extlib/pdu.c', 'extlib/ucs2_to_utf8.c'].map(file => path.join(source, file)), '-pthread']);
+      process.stdout.write(run('python3', [path.join(__dirname, 'tom-modem-transport.py'), binary]));
+    }
   }
   const result = run(process.execPath, ['--test', path.join(__dirname, 'runtime.test.cjs'), path.join(__dirname, 'connectivity.test.cjs'), path.join(__dirname, 'led-labels.test.cjs'), path.join(__dirname, 'ttl.test.cjs'), path.join(__dirname, 'bands.test.cjs'), path.join(__dirname, 'band-ui.test.cjs'), path.join(__dirname, 'mlo-ui.test.cjs')], {
     env: {

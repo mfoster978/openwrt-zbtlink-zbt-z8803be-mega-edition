@@ -59,7 +59,7 @@ fi
 # Reverse only our exact known patches. Do not reset an entire checkout or
 # discard unrelated local edits while preparing a cached build.
 if ! git -C feeds/qmodem diff --quiet; then
-  for patch_name in qmodem-connectivity-v5.patch qmodem-mega-policy-ui.patch qmodem-performance-ui.patch qmodem-5g-deployment.patch qmodem-cell-discovery.patch qmodem-dual-runtime.patch; do
+  for patch_name in qmodem-radio-rpc-v6.patch qmodem-at-transport-v6.patch qmodem-connectivity-v5.patch qmodem-mega-policy-ui.patch qmodem-performance-ui.patch qmodem-5g-deployment.patch qmodem-cell-discovery.patch qmodem-dual-runtime.patch; do
     stack_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/$patch_name"
     # --force disables GNU patch's automatic reversal guessing. In batch
     # mode alone an absent patch can be applied while asking to reverse it.
@@ -157,6 +157,9 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$policy
 fi
 connectivity_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-connectivity-v5.patch"
 patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$connectivity_patch"
+for patch_name in qmodem-at-transport-v6.patch qmodem-radio-rpc-v6.patch; do
+  patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$(dirname "${FILES_OVERLAY_DIR}")/patches/$patch_name"
+done
 for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
   [ "$(grep -Fo "o.value('$apn'" feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js | wc -l)" -eq 2 ] || {
     echo "US APN preset is not present for both QModem SIM selectors: $apn" >&2; exit 3;
@@ -263,6 +266,15 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 < "$qmodem_monitor_patch" 
   echo 'QModem monitor hardening patch does not match the pinned OpenWrt tree' >&2
   exit 3
 fi
+# 56-zbt-qmodem-soft-reboot-overlay replaces the feed RPC on first boot.
+# Patch that authoritative copy too, retaining its security/reboot fixes.
+qmodem_boot_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/zbt-qmodem-rpc-firstboot.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 < "$qmodem_boot_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 < "$qmodem_boot_patch"
+elif ! patch --dry-run --force --fuzz=0 --reverse -p1 < "$qmodem_boot_patch" >/dev/null; then
+  echo 'QModem first-boot RPC patch does not match the pinned OpenWrt tree' >&2
+  exit 3
+fi
 qmodem_monitor_source=target/linux/mediatek/filogic/base-files/usr/lib/zbt/qmodem-modem_monitor.sh
 grep -Fq -- "--write-out '%{http_code}'" "$qmodem_monitor_source" &&
   grep -Fq '*generate_204*)' "$qmodem_monitor_source" &&
@@ -339,7 +351,9 @@ make defconfig
 # OpenWrt tree. Rebuild every directly patched package so an incremental build
 # cannot ship an older dialer, QModem UI, MLO writer, or MWAN metric editor.
 make package/feeds/luci/luci-base/clean
+make package/base-files/clean
 make package/feeds/qmodem/qmodem/clean
+make package/feeds/qmodem/tom_modem/clean
 make package/feeds/qmodem/luci-app-qmodem-next/clean
 make package/luci-app-mlo/clean
 make package/network/services/hostapd/clean
@@ -474,6 +488,16 @@ if [[ -z "${rootfs_dir}" ]]; then
   echo "Unable to locate the built MediaTek root filesystem" >&2
   exit 4
 fi
+cmp target/linux/mediatek/filogic/base-files/usr/lib/zbt/qmodem-rpcd "${rootfs_dir}/usr/lib/zbt/qmodem-rpcd"
+for rpc_source in usr/lib/zbt/qmodem-rpcd usr/libexec/rpcd/qmodem; do
+  for marker in 'get_5g_deployment)' 'set_5g_deployment)' '. /usr/lib/zbt/qmodem-5g.sh'; do
+    grep -Fq "$marker" "${rootfs_dir}/$rpc_source" || {
+      echo "5G RPC missing from pre/post-first-boot backend: $rpc_source" >&2; exit 4;
+    }
+  done
+done
+grep -Fq 'install_if_changed /usr/lib/zbt/qmodem-rpcd /usr/libexec/rpcd/qmodem 0755' \
+  "${rootfs_dir}/etc/uci-defaults/56-zbt-qmodem-soft-reboot-overlay" || exit 4
 qmodem_monitor_rootfs="${rootfs_dir}/usr/lib/zbt/qmodem-modem_monitor.sh"
 test -x "$qmodem_monitor_rootfs" || {
   echo 'Hardened QModem monitor tree copy is missing from the image' >&2; exit 4;

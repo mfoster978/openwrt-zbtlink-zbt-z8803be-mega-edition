@@ -1,0 +1,63 @@
+--- a/target/linux/mediatek/filogic/base-files/usr/lib/zbt/qmodem-rpcd
++++ b/target/linux/mediatek/filogic/base-files/usr/lib/zbt/qmodem-rpcd
+@@ -492,6 +492,8 @@
+     traffic_reset_dump_set_json "true" "$config_section" "$enabled" "$reset_type" "$hour" "$day" "$TRAFFIC_RESET_DEFAULT_MINUTE" "$line"
+ }
+ 
++. /usr/lib/zbt/qmodem-5g.sh
++
+ case "$1" in
+     list)
+         cat <<EOF
+@@ -546,6 +548,9 @@
+     "get_dns": {
+         "config_section": "string"
+     },
++    "get_5g_deployment": {
++        "config_section": "string"
++    },
+     "get_imei": {
+         "config_section": "string"
+     },
+@@ -598,6 +603,10 @@
+         "config_section": "string",
+         "imei": "string"
+     },
++    "set_5g_deployment": {
++        "config_section": "string",
++        "mode": "string"
++    },
+     "set_lockband": {
+         "config_section": "string",
+         "params": "object"
+@@ -664,7 +673,7 @@
+ 
+         case "$2" in
+             base_info|cell_info|info|network_info|sim_info|get_copyright|\
+-            get_disabled_features|get_dns|get_imei|get_lockband|get_mode|\
++            get_disabled_features|get_dns|get_5g_deployment|get_imei|get_lockband|get_mode|\
+             get_neighborcell|get_network_prefer|get_reboot_caps|get_stats|save_stats|\
+             get_traffic_reset_schedule|\
+             get_sms|\
+@@ -740,6 +749,9 @@
+                         get_dns
+                         json_dump
+                         ;;
++                    get_5g_deployment)
++                        zbt_get_5g_deployment
++                        ;;
+                     get_imei)
+                         json_init
+                         get_imei
+@@ -1022,6 +1034,11 @@
+                 json_dump
+                 ;;
+ 
++            set_5g_deployment)
++                mode=$(echo "$input" | jsonfilter -e '@.mode')
++                zbt_set_5g_deployment "$mode"
++                ;;
++
+             set_sms_storage)
+                 storage=$(echo "$input" | jsonfilter -e '@.storage')
+                 json_init

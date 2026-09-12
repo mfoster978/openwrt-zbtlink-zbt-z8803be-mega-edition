@@ -49,7 +49,7 @@ install_luci_wrapper() {
 	if ! cmp -s "$LUCI_WRAPPER" "$LUCI_WRAPPER_TARGET"; then
 		cp "$LUCI_WRAPPER" "$LUCI_WRAPPER_TARGET" || return 1
 		rm -f /tmp/luci-indexcache /tmp/luci-indexcache.json
-		log 'installed Speedify embedded dashboard and router activation controls'
+		log 'installed Speedify native dashboard with persistent connection parameters'
 	fi
 }
 
@@ -92,7 +92,7 @@ luci_healthy() {
 		2??|3??) ;;
 		*) return 1 ;;
 	esac
-	# Speedify requires HTTPS. HTTP must redirect only this application while
+	# Mega serves Speedify over HTTPS. HTTP redirects only this application while
 	# the protected HTTPS entry point challenges an unauthenticated request.
 	# 404 means the nginx locations were not included; 502 means proxy down.
 	http_status="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1/luci-app-speedify/view/index.html 2>/dev/null || true)"

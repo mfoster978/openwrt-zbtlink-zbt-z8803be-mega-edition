@@ -429,8 +429,9 @@ test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
   assert.doesNotMatch(wrapper, /syncOuterHash|window\.location\.replace/);
   assert.match(wrapper, /E\('iframe'/);
   assert.match(wrapper, /new URL\('\/luci-app-speedify\/view\/index\.html'/);
-  assert.match(wrapper, /app\.hash = '\/\?' \+ connectionParams/);
-  assert.match(wrapper, /method: 'activation'/);
+  assert.match(wrapper, /app\.search = 'wsPort=match&wsEndpoint=/);
+  assert.match(wrapper, /app\.hash = '\/'/);
+  assert.doesNotMatch(wrapper, /method: 'activation'|Sign in this router|wsToken=/);
   assert.match(wrapper, /SameSite=Strict/);
   assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);
 });

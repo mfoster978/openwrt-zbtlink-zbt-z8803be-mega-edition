@@ -20,7 +20,7 @@ return view.extend({
 	render: function() {
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('Opening Speedify securely…')),
-			E('p', {}, _('Speedify requires HTTPS for its authenticated connection interface.'))
+			E('p', {}, _('Opening the official Speedify dashboard over the router’s HTTPS connection.'))
 		]);
 	},
 
