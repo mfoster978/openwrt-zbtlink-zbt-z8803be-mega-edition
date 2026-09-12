@@ -75,18 +75,13 @@ check_modem() {
 	fi
 	printf '%s %s %s %s %s %s %s\n' "$last" "${speed:--}" "$bad" "$good" "$blocked" "$fails" "$last_action" > "$RUNDIR/$section.state"
 }
-write_preference() {
-	local section="$1" metric="$2" previous
-	previous=$(awk '{print $2}' "$RUNDIR/$section.metric" 2>/dev/null)
-	printf '%s %s\n' "$(($(now) + 150))" "$metric" > "$RUNDIR/$section.metric.new"
-	mv "$RUNDIR/$section.metric.new" "$RUNDIR/$section.metric"
-	[ "$previous" = "$metric" ] || changed=1
-}
 while [ "$(get global.enabled)" = 1 ]; do
 	interval=$(uint "$(get global.interval_seconds)" 30)
 	[ "$interval" -ge 10 ] || interval=10
 	[ "$interval" -le 60 ] || interval=60
-	sampling=$(get global.speed_test)
+	# Mega's cellular priority is fixed: Modem 1 is primary, Modem 2 is
+	# failover. Retained legacy speed flags must not sample or rewrite tiers.
+	sampling=0
 	sample_interval=$(uint "$(get global.speed_test_cooldown_minutes)" 15)
 	sample_interval=$((sample_interval * 60))
 	minimum=$(get global.speed_test_min_mbps)
@@ -98,31 +93,9 @@ while [ "$(get global.enabled)" = 1 ]; do
 	target=$(get global.ping_target); [ -n "$target" ] || target=1.1.1.1
 	check_modem modem1 4_1
 	check_modem modem2 2_1
-	if [ "$(get global.failover)" = 1 ]; then
-		m1=3; m2=4; s1=''; s2=''
-		if [ -f "$RUNDIR/4_1.state" ]; then
-			read -r ts s1 bad good blocked rest < "$RUNDIR/4_1.state"
-			[ "$blocked" != 1 ] || m1=5
-		fi
-		if [ -f "$RUNDIR/2_1.state" ]; then
-			read -r ts s2 bad good blocked rest < "$RUNDIR/2_1.state"
-			[ "$blocked" != 1 ] || m2=5
-		fi
-		delta=$(get global.fastest_delta_mbps)
-		case "$delta" in ''|*[!0-9.]*|*.*.*|.) delta=5 ;; esac
-		if [ "$m1$m2" = 34 ] && [ "$(get global.prefer_fastest)" = 1 ] &&
-		   [ -n "$s1" ] && [ "$s1" != '-' ] && [ -n "$s2" ] && [ "$s2" != '-' ]; then
-			if awk -v a="$s1" -v b="$s2" -v d="$delta" 'BEGIN { exit !(b > a + d) }'; then preferred=2
-			elif awk -v a="$s1" -v b="$s2" -v d="$delta" 'BEGIN { exit !(a > b + d) }'; then preferred=1; fi
-			[ "${preferred:-1}" != 2 ] || { m1=4; m2=3; }
-		fi
-		changed=0
-		write_preference 4_1 "$m1"
-		write_preference 2_1 "$m2"
-		[ "$changed" = 0 ] || /usr/sbin/zbt-mwan-apply
-	else
-		if [ -f "$RUNDIR/4_1.metric" ] || [ -f "$RUNDIR/2_1.metric" ]; then cleanup; fi
-	fi
+	# Remove a pre-upgrade temporary promotion once, then let MWAN3's health
+	# tracking decide failover within the permanent 4_1-before-2_1 policy.
+	if [ -f "$RUNDIR/4_1.metric" ] || [ -f "$RUNDIR/2_1.metric" ]; then cleanup; fi
 	sleep "$interval"
 done
 cleanup

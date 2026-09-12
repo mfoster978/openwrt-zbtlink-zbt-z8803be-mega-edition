@@ -1,0 +1,198 @@
+--- a/application/qmodem/files/usr/libexec/rpcd/qmodem
++++ b/application/qmodem/files/usr/libexec/rpcd/qmodem
+@@ -508,7 +508,23 @@
+ 
+ zbt_5g_deployment_value()
+ {
++    local response token imsi
+     case "$1" in
++        auto_preferred)
++            # The modem comparison that triggered this policy is direct
++            # T-Mobile US (310/260): NSA exposes LTE anchors plus NR carrier
++            # aggregation while its selected SA cell is severely congested.
++            # Use the subscriber identity only in memory; never return/log it.
++            response=$(at "$at_port" 'AT+CIMI' 2>/dev/null) || response=''
++            imsi=''
++            for token in $(printf '%s\n' "$response" | tr -d '\r'); do
++                case "$token" in *[!0-9]*) continue ;; esac
++                [ "${#token}" -ge 14 ] && [ "${#token}" -le 16 ] || continue
++                imsi=$token
++                break
++            done
++            case "$imsi" in 310260*) printf '%s\n' 1 ;; *) printf '%s\n' 0 ;; esac
++            ;;
+         auto) printf '%s\n' 0 ;;
+         nsa) printf '%s\n' 1 ;;
+         sa) printf '%s\n' 2 ;;
+@@ -516,12 +532,27 @@
+     esac
+ }
+ 
++zbt_5g_policy()
++{
++    local policy
++    policy=$(uci -q get "qmodem.$config_section.zbt_5g_policy")
++    case "$policy" in auto_preferred|auto|nsa|sa) ;; *) policy=auto_preferred ;; esac
++    printf '%s\n' "$policy"
++}
++
++zbt_remember_5g_policy()
++{
++    uci -q set "qmodem.$config_section.zbt_5g_policy=$1" && uci -q commit qmodem
++}
++
+ zbt_get_5g_deployment()
+ {
+-    local value mode
++    local value mode policy
+ 
+     json_init
+     json_add_object deployment
++    policy=$(zbt_5g_policy)
++    json_add_string policy "$policy"
+     if value=$(zbt_5g_deployment_query) && mode=$(zbt_5g_deployment_name "$value"); then
+         json_add_string supported 1
+         json_add_string mode "$mode"
+@@ -547,18 +578,24 @@
+         json_add_string status 0
+         json_add_string message 'Unable to read a supported Quectel 5G deployment setting; no change was made.'
+     elif [ "$current" = "$desired" ]; then
+-        json_add_string status 1
+-        json_add_string mode "$requested"
+-        json_add_string changed 0
+-        json_add_string message 'The requested mode is already active; no modem write was needed.'
++        if zbt_remember_5g_policy "$requested"; then
++            json_add_string status 1
++            json_add_string mode "$requested"
++            json_add_string changed 0
++            json_add_string message 'The requested policy is saved and its mode is already active; no modem write was needed.'
++        else
++            json_add_string status 0
++            json_add_string message 'The active mode already matches, but the policy could not be saved.'
++        fi
+     else
+         response=$(at "$at_port" "AT+QNWPREFCFG=\"nr5g_disable_mode\",$desired")
+         if printf '%s\n' "$response" | grep -q '^[[:space:]]*OK[[:space:]]*$' &&
+-           actual=$(zbt_5g_deployment_query) && [ "$actual" = "$desired" ]; then
++           actual=$(zbt_5g_deployment_query) && [ "$actual" = "$desired" ] &&
++           zbt_remember_5g_policy "$requested"; then
+             json_add_string status 1
+             json_add_string mode "$requested"
+             json_add_string changed 1
+-            json_add_string message '5G deployment mode changed and verified.'
++            json_add_string message '5G deployment policy saved; the active mode changed and was verified.'
+         else
+             json_add_string status 0
+             json_add_string message 'The modem did not confirm the requested mode; its band masks were not changed.'
+--- a/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
++++ b/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/config_advanced.js
+@@ -2,11 +2,36 @@
+ 'require view';
+ 'require ui';
+ 'require dom';
++'require rpc';
++'require uci';
+ 'require qmodem.qmodem as qmodem';
+ 
++var callGet5gDeployment = rpc.declare({
++	object: 'qmodem', method: 'get_5g_deployment', params: ['config_section'], expect: { }
++});
++var callSet5gDeployment = rpc.declare({
++	object: 'qmodem', method: 'set_5g_deployment', params: ['config_section', 'mode'], expect: { }
++});
++
++function megaModemName(section) {
++	var id = section['.name'];
++	var label = (section.display_name || '').trim();
++	if (!label || /^(4_1|2_1|modem1|modem2)$/.test(label))
++		label = id === '4_1' ? _('Modem 1') : id === '2_1' ? _('Modem 2') : (section.alias || id);
++	return label + (section.name ? ' (' + section.name.toUpperCase() + ')' : '');
++}
++
+ return view.extend({
+ 	load: function() {
+-		return qmodem.getModemSections();
++		// Read labels directly from UCI. This keeps the page compatible with a
++		// QModem helper module retained by an already-open pre-upgrade browser.
++		return uci.load('qmodem').then(function() {
++			var modems = [];
++			uci.sections('qmodem', 'modem-device', function(section) {
++				modems.push({ id: section['.name'], name: megaModemName(section), enabled: section.enabled !== '0' });
++			});
++			return modems;
++		});
+ 	},
+ 
+ 	render: function(modems) {
+@@ -347,7 +372,7 @@
+ 			_('View the active 5G connection type and network priority. Opening this page is read-only; the modem changes only after you press Apply.'));
+ 		container.appendChild(description);
+ 		container.appendChild(E('div', { 'class': 'alert-message info', 'style': 'margin: 12px;' },
+-			_('Automatic keeps both standalone 5G (SA) and LTE-anchored 5G (NSA) available. If SA is unusually slow, select NSA only, apply it, reconnect, and compare. Preferred Bands is a separate tab and its band masks are not changed here.')));
++			_('Automatic preferred selects LTE-anchored 5G (NSA) for direct T-Mobile US service and keeps SA plus NSA available elsewhere. You can explicitly select Automatic, NSA only, or SA only. Preferred Bands is separate; none of these choices changes a band mask.')));
+ 
+ 		// Quectel exposes SA/NSA availability separately from its band masks.
+ 		// Reading this control never changes the modem, and Apply is a no-op
+@@ -365,7 +390,8 @@
+ 			'id': 'deployment_select_' + modem.id,
+ 			'disabled': true
+ 		}, [
+-			E('option', { 'value': 'auto' }, _('Automatic — SA + NSA (recommended default)')),
++			E('option', { 'value': 'auto_preferred' }, _('Automatic preferred — NSA on T-Mobile, SA + NSA elsewhere')),
++			E('option', { 'value': 'auto' }, _('Automatic — SA + NSA')),
+ 			E('option', { 'value': 'nsa' }, _('NSA only — LTE-anchored 5G speed comparison')),
+ 			E('option', { 'value': 'sa' }, _('SA only — standalone 5G'))
+ 		]);
+@@ -377,7 +403,7 @@
+ 				deploymentSelect.disabled = true;
+ 				deploymentApply.disabled = true;
+ 				deploymentApply.textContent = _('Applying...');
+-				qmodem.set5gDeployment(modem.id, deploymentSelect.value).then(function(result) {
++				callSet5gDeployment(modem.id, deploymentSelect.value).then(function(result) {
+ 					var reply = result && result.result;
+ 					if (!reply || String(reply.status) !== '1')
+ 						throw new Error((reply && reply.message) || _('The modem did not confirm the change'));
+@@ -392,7 +418,7 @@
+ 		deploymentField.appendChild(deploymentCurrent);
+ 		deploymentField.appendChild(E('div', { 'style': 'margin-top: 8px;' }, [deploymentSelect, ' ', deploymentApply]));
+ 		deploymentField.appendChild(E('div', { 'class': 'cbi-value-description' },
+-			_('Recommended default: Automatic. NSA only is a reversible comparison for LTE plus 5G carrier aggregation. This control never rewrites band lists and skips the modem write when the requested choice is already active. A reconnect may take up to one minute.')));
++			_('Recommended default: Automatic preferred. On direct T-Mobile US service it prefers NSA because that can combine LTE anchors with 5G; elsewhere it leaves SA and NSA available. Overrides are reversible. No choice here rewrites band lists, and an already-active mode is not written again. A reconnect may take up to one minute.')));
+ 		deploymentSection.appendChild(deploymentField);
+ 		container.appendChild(deploymentSection);
+ 		self.load5gDeployment(modem, deploymentCurrent, deploymentSelect, deploymentApply);
+@@ -527,22 +553,29 @@
+ 	},
+ 
+ 	load5gDeployment: function(modem, currentValue, select, applyButton) {
+-		var labels = {
++		var activeLabels = {
+ 			auto: _('Automatic — SA + NSA'),
+ 			nsa: _('NSA only — LTE-anchored 5G'),
+ 			sa: _('SA only — standalone 5G')
+ 		};
+-		return qmodem.get5gDeployment(modem.id).then(function(result) {
++		var policyLabels = {
++			auto_preferred: _('Automatic preferred'),
++			auto: _('Automatic — SA + NSA'),
++			nsa: _('NSA only'),
++			sa: _('SA only')
++		};
++		return callGet5gDeployment(modem.id).then(function(result) {
+ 			var deployment = result && result.deployment;
+-			if (!deployment || String(deployment.supported) !== '1' || !labels[deployment.mode]) {
++			if (!deployment || String(deployment.supported) !== '1' || !activeLabels[deployment.mode]) {
+ 				currentValue.textContent = _('Unavailable on this modem');
+ 				select.disabled = true;
+ 				applyButton.disabled = true;
+ 				applyButton.textContent = _('Apply');
+ 				return;
+ 			}
+-			currentValue.textContent = labels[deployment.mode];
+-			select.value = deployment.mode;
++			var policy = policyLabels[deployment.policy] ? deployment.policy : deployment.mode;
++			currentValue.textContent = _('Active modem mode: %s. Saved policy: %s.').format(activeLabels[deployment.mode], policyLabels[policy]);
++			select.value = policy;
+ 			select.disabled = false;
+ 			applyButton.disabled = false;
+ 			applyButton.textContent = _('Apply');

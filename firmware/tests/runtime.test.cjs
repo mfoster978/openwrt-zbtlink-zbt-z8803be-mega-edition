@@ -233,10 +233,12 @@ at_port=/dev/ttyTEST
 at() {
   printf '%s\\n' "$2" >> "$AT_LOG"
   case "$2" in
+    AT+CIMI) printf '%s\\r\\nOK\\r\\n' "$TEST_IMSI" ;;
     *nr5g_disable_mode\\\",*) printf '%s\\n' "\${2##*,}" > "$MODE_STATE"; printf 'OK\\r\\n' ;;
     *) printf '+QNWPREFCFG: "nr5g_disable_mode",%s\\r\\nOK\\r\\n' "$(sed -n '1p' "$MODE_STATE")" ;;
   esac
 }
+uci() { return 0; }
 json_init() { :; }; json_add_object() { :; }; json_close_object() { :; }; json_dump() { :; }
 json_add_string() { printf '%s=%s\\n' "$1" "$2"; }
 `;
@@ -248,6 +250,46 @@ json_add_string() { printf '%s=%s\\n' "$1" "$2"; }
   assert.match(out, /status=1[\s\S]*changed=1/);
   assert.equal(fs.readFileSync(state, 'utf8').trim(), '0');
   assert.equal((fs.readFileSync(log, 'utf8').match(/,[012]$/gm) || []).length, 1);
+  out = shell(helper + mocks + '\nzbt_5g_deployment_value auto_preferred',
+    { MODE_STATE: state, AT_LOG: log, TEST_IMSI: '310260123456789' });
+  assert.equal(out, '1', 'direct T-Mobile US defaults to LTE-anchored 5G');
+  out = shell(helper + mocks + '\nzbt_5g_deployment_value auto_preferred',
+    { MODE_STATE: state, AT_LOG: log, TEST_IMSI: '310410123456789' });
+  assert.equal(out, '0', 'other carriers retain modem-managed SA plus NSA');
+});
+
+test('Mega automatic 5G policy reads before writing and never touches band masks', () => {
+  const text = file('firmware/files/usr/sbin/zbt-qmodem-performance-policy');
+  const body = text.slice(text.indexOf("TAG='zbt-5g-policy'"), text.lastIndexOf('\ncase "$1" in'));
+  const dir = sandbox(), state = path.join(dir, 'state'), log = path.join(dir, 'at.log');
+  fs.writeFileSync(state, '1\n');
+  const mocks = `
+section_ready() { at_port=/dev/ttyTEST; return 0; }
+zbt_modem_imsi() { printf '%s\\n' "$TEST_IMSI"; }
+query_mode() { sed -n '1p' "$MODE_STATE"; }
+uci() {
+  [ "$1" != -q ] || shift
+  case "$1" in get) printf '%s\\n' "$TEST_POLICY" ;; *) return 0 ;; esac
+}
+at() {
+  printf '%s\\n' "$2" >> "$AT_LOG"
+  case "$2" in *nr5g_disable_mode\\\",*) printf '%s\\n' "\${2##*,}" > "$MODE_STATE"; printf 'OK\\r\\n' ;; esac
+}
+logger() { :; }
+`;
+  shell(body + mocks + '\napply_policy 4_1', {
+    MODE_STATE: state, AT_LOG: log, TEST_POLICY: 'auto_preferred', TEST_IMSI: '310260123456789'
+  });
+  assert.equal(fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', '', 'matching active mode performs no modem write');
+
+  fs.writeFileSync(state, '2\n');
+  shell(body + mocks + '\napply_policy 4_1', {
+    MODE_STATE: state, AT_LOG: log, TEST_POLICY: 'nsa', TEST_IMSI: '310260123456789'
+  });
+  assert.equal(fs.readFileSync(state, 'utf8').trim(), '1');
+  const commands = fs.readFileSync(log, 'utf8');
+  assert.match(commands, /nr5g_disable_mode",1/);
+  assert.doesNotMatch(commands, /(?:lte|nr5g|nsa)_band/i, 'deployment policy must not alter any band mask');
 });
 
 test('fresh slow samples demote after threshold and two good samples recover', () => {
@@ -456,11 +498,11 @@ test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
   assert.match(view, /Finishing Speedify setup/);
   assert.doesNotMatch(view, /handleSaveApply:\s*function|fetch\(/);
   assert.match(installer, /install_luci_wrapper \|\| return 1/);
-  assert.doesNotMatch(wrapper, /window\.addEventListener\('(?:blur|focus)'/);
-  assert.doesNotMatch(wrapper, /document\.addEventListener\('visibilitychange'/);
-  assert.doesNotMatch(wrapper, /speedifyuiframe\.contentWindow\.location\.reload\(\)/);
-  assert.doesNotMatch(wrapper, /speedifyuiframe\.src\s*=/);
-  assert.match(wrapper, /speedifyuiframe\.contentWindow\.addEventListener\('hashchange', syncOuterHash\)/);
+  assert.doesNotMatch(wrapper, /speedifyuiframe|syncOuterHash|E\('iframe'/);
+  assert.match(wrapper, /new URL\('\/luci-app-speedify\/view\/index\.html'/);
+  assert.match(wrapper, /app\.hash = '\/\?' \+ connectionParams/);
+  assert.match(wrapper, /window\.location\.replace\(app\.href\)/);
+  assert.match(wrapper, /SameSite=Strict/);
   assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);
 });
 
@@ -653,6 +695,9 @@ test('MWAN3 interface UI edits the persistent network metric', { skip: !process.
 test('routing presets keep one explicit whole-router priority order', () => {
   const preset = file('firmware/files/usr/sbin/zbt-mwan-preset');
   const migration = file('firmware/files/etc/uci-defaults/99-zbt-route-priority-repair');
+  const priorityV4 = file('firmware/files/etc/uci-defaults/99-zbt-modem1-priority-v4');
+  const watchdog = file('firmware/feeds/luci-app-modem-watchdog/root/usr/sbin/modem-watchdog');
+  const watchdogUi = file('firmware/feeds/luci-app-modem-watchdog/htdocs/luci-static/resources/view/modem-watchdog/config.js');
   assert.match(preset, /ensure_route_metric wan_sfp 9 "\$exact"/);
   assert.match(preset, /ensure_route_metric wan 10 "\$exact"/);
   assert.match(preset, /ensure_route_metric usb_tether 100 "\$exact"/);
@@ -663,11 +708,16 @@ test('routing presets keep one explicit whole-router priority order', () => {
   assert.match(preset, /configure_member failover_usb_tether usb_tether 3 1/);
   assert.match(preset, /configure_member failover_4_1 4_1 4 1/);
   assert.match(preset, /configure_member failover_2_1 2_1 5 1/);
+  assert.match(preset, /configure_member balanced_4_1 4_1 4 1/);
+  assert.match(preset, /configure_member balanced_2_1 2_1 5 1/);
   assert.match(preset, /if \[ "\$\{ZBT_MWAN_NO_RELOAD:-0\}" != 1 \]; then/);
-  assert.match(migration, /DEFAULTS_VERSION=3/);
-  assert.match(migration, /''\|priority\) preset=failover/);
+  assert.match(migration, /DEFAULTS_VERSION=4/);
+  assert.match(migration, /''\|priority\|fastest\) preset=failover/);
   assert.match(migration, /ZBT_MWAN_NO_RELOAD=1 \/usr\/sbin\/zbt-mwan-preset "\$preset"/);
-  assert.match(migration, /priority\|failover\|fastest/);
+  assert.match(priorityV4, /zbt-mwan-preset failover/);
+  assert.match(priorityV4, /prefer_fastest='0'/);
+  assert.doesNotMatch(watchdog, /write_preference|preferred=2/);
+  assert.doesNotMatch(watchdogUi, /applyPreset\('fastest'\)|Prefer the fastest cellular modem/);
 });
 
 test('Mega phone tethering has a stable hotplug identity ahead of cellular modems', () => {

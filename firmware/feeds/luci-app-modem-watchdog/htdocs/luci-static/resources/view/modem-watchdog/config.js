@@ -24,8 +24,8 @@ return view.extend({
 			});
 		};
 
-		m = new form.Map('modem_watchdog', _('Multi-WAN Presets & Recovery'),
-			_('MWAN3 owns router-wide priority. QModem only brings each cellular link online. Base order is SFP, WAN, Modem 1, then Modem 2. Optional speed automation is disabled until selected below.'));
+		m = new form.Map('modem_watchdog', _('Multi-WAN Priority & Recovery'),
+			_('MWAN3 owns router-wide priority. QModem only brings each cellular link online. Modem 1 is always the preferred cellular path; Modem 2 is used only after MWAN3 marks Modem 1 unavailable.'));
 
 		var presets = m.section(form.NamedSection, 'global', 'modem_watchdog', _('Easy routing presets'),
 			_('Applying a preset updates only the firmware-managed MWAN3 members and route metrics. It does not reboot, redial, or power-cycle a modem.'));
@@ -35,7 +35,7 @@ return view.extend({
 			return ({
 				priority: _('Priority failover'),
 				failover: _('Fast health failover'),
-				fastest: _('Fastest cellular modem'),
+				fastest: _('Retired — use Fast health failover'),
 				custom: _('Custom settings')
 			})[value] || value;
 		};
@@ -47,11 +47,6 @@ return view.extend({
 			_('Uses the same safe priority order, but fails over after two failed checks and returns to the preferred link after its first successful check. Speed tests and modem reset actions stay off.'));
 		o.inputstyle = 'apply';
 		o.onclick = function() { return applyPreset('failover'); };
-		o = presets.option(form.Button, '_fastest', _('Prefer the fastest cellular modem'),
-			_('Keeps SFP and WAN first. When both wired links are unavailable, periodically samples Modem 1 and Modem 2 and gives the faster healthy modem priority. Each sample can download up to 25 MB per modem. Recovery actions stay off.'));
-		o.inputstyle = 'apply';
-		o.onclick = function() { return applyPreset('fastest'); };
-
 		s = m.section(form.TypedSection, 'modem_watchdog', _('Global settings'));
 		s.anonymous = true;
 		o = s.option(form.Flag, 'enabled', _('Enable watchdog service'));
@@ -69,24 +64,6 @@ return view.extend({
 		o = s.option(form.Value, 'cooldown_seconds', _('Recovery cooldown (seconds)'));
 		o.datatype = 'uinteger';
 		o.default = '180';
-		o = s.option(form.Flag, 'failover', _('Apply speed-based cellular preferences'));
-		o.default = '0';
-		o = s.option(form.Flag, 'prefer_fastest', _('Prefer fastest modem (speed test-assisted)'));
-		o.default = '0';
-		o = s.option(form.Flag, 'speed_test', _('Enable speed test sampling'));
-		o.default = '0';
-		o = s.option(form.Value, 'speed_test_cooldown_minutes', _('Speed test interval (minutes)'));
-		o.datatype = 'uinteger';
-		o.default = '15';
-		o = s.option(form.Value, 'speed_test_min_mbps', _('Minimum acceptable speed (Mbps)'));
-		o.datatype = 'ufloat';
-		o.default = '5';
-		o = s.option(form.Value, 'speed_fail_threshold', _('Fresh low-speed samples before demotion'));
-		o.datatype = 'uinteger';
-		o.default = '2';
-		o = s.option(form.Value, 'fastest_delta_mbps', _('Fastest-modem switching margin (Mbps)'));
-		o.datatype = 'ufloat';
-		o.default = '5';
 		var modem = m.section(form.TypedSection, 'modem', _('Per-modem settings'));
 		modem.anonymous = true;
 		modem.addremove = false;

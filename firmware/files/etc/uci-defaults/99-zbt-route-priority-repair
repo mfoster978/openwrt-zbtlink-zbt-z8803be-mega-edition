@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-DEFAULTS_VERSION=3
+DEFAULTS_VERSION=4
 [ "$(uci -q get system.zbt_route_priority.version 2>/dev/null || true)" = "$DEFAULTS_VERSION" ] && exit 0
 
 # Version 1 repaired only /etc/config/network metrics. That left the older
@@ -10,10 +10,10 @@ DEFAULTS_VERSION=3
 preset="$(uci -q get modem_watchdog.global.routing_preset 2>/dev/null || true)"
 # Versions through schema 2 wrote "priority" automatically. Migrate that
 # generated value to the quicker recovery preset once. An explicitly selected
-# fastest or custom layout remains untouched, and users may select priority
-# again after this migration has completed.
+# The retired fastest preset is migrated to failover. A custom layout remains
+# untouched, and users may select a firmware-managed preset after migration.
 case "$preset" in
-	''|priority) preset=failover ;;
+	''|priority|fastest) preset=failover ;;
 esac
 case "$preset" in
 	priority|failover|fastest)

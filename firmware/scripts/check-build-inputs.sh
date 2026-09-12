@@ -148,11 +148,32 @@ grep -Fq "Not provided by SIM or carrier" firmware/patches/qmodem-dual-runtime.p
 test -s firmware/patches/qmodem-cell-discovery.patch
 test -s firmware/patches/qmodem-5g-deployment.patch
 test -s firmware/patches/qmodem-performance-ui.patch
+test -s firmware/patches/qmodem-mega-policy-ui.patch
 test -s firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
 grep -Fq 'qmodem-cell-discovery.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-5g-deployment.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-performance-ui.patch' firmware/docker/build-openwrt.sh
+grep -Fq 'qmodem-mega-policy-ui.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'git -C feeds/qmodem reset --hard --quiet HEAD' firmware/docker/build-openwrt.sh
+qmodem_monitor_patch=firmware/patches/zbt-qmodem-monitor-hardening.patch
+test -s "$qmodem_monitor_patch"
+grep -Fq 'zbt-qmodem-monitor-hardening.patch' firmware/docker/build-openwrt.sh
+grep -Fq -- "--write-out '%{http_code}'" "$qmodem_monitor_patch"
+grep -Fq '*generate_204*)' "$qmodem_monitor_patch"
+grep -Fq 'MONITOR_RECOVERY_STREAK_DEFAULT=3' "$qmodem_monitor_patch"
+grep -Fq 'config_get MONITOR_RECOVERY_STREAK main zbt_monitor_recovery_streak' "$qmodem_monitor_patch"
+grep -Fq 'if [ "$status" -ne 0 ] && [ "$failed_count" -ge "$Threshold" ]; then' "$qmodem_monitor_patch"
+run_actions_line="$(grep -nE '^[+ ]+[[:space:]]*run_actions$' "$qmodem_monitor_patch" | tail -n 1 | cut -d: -f1)"
+mark_action_line="$(grep -nE '^[+ ]+[[:space:]]*mark_monitor_action$' "$qmodem_monitor_patch" | tail -n 1 | cut -d: -f1)"
+if [[ -z "$run_actions_line" || -z "$mark_action_line" || "$run_actions_line" -ge "$mark_action_line" ]]; then
+  echo 'QModem monitor patch must dispatch actions before marking the cooldown' >&2
+  exit 1
+fi
+if rg -n 'zbt_monitor_recovery_streak' firmware/files/etc/config firmware/files/etc/uci-defaults; then
+  echo 'QModem recovery-streak default must not be seeded into UCI' >&2
+  exit 1
+fi
+grep -Fq 'monitor_enabled=0' firmware/files/usr/sbin/zbt-qmodem-profile
 grep -Fq 'zbt_quectel_sim_number "$at_port"' firmware/patches/qmodem-cell-discovery.patch
 grep -Fq 'zbt_quectel_get_cells "$at_port"' firmware/patches/qmodem-cell-discovery.patch
 grep -Fq "'AT+QSCAN=3,1'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
@@ -161,9 +182,15 @@ grep -Fq "'AT+CPBS=\"ON\"'" firmware/files/usr/lib/zbt/qmodem-cell-discovery.sh
 grep -Fq 'AT+QNWPREFCFG="nr5g_disable_mode"' firmware/patches/qmodem-5g-deployment.patch
 grep -Fq 'Automatic (recommended)' firmware/patches/qmodem-5g-deployment.patch
 grep -Fq "[ \"\$current\" = \"\$desired\" ]" firmware/patches/qmodem-5g-deployment.patch
+grep -Fq 'auto_preferred)' firmware/patches/qmodem-mega-policy-ui.patch
+grep -Fq "return uci.load('qmodem').then" firmware/patches/qmodem-mega-policy-ui.patch
 grep -Fq 'NSA only — LTE-anchored 5G speed comparison' firmware/patches/qmodem-performance-ui.patch
 grep -Fq "name: _('Preferred Bands')" firmware/patches/qmodem-performance-ui.patch
 grep -Fq "''|4_1|2_1|modem1|modem2)" firmware/files/usr/sbin/zbt-qmodem-profile
+grep -Fq 'zbt_5g_policy=auto_preferred' firmware/files/usr/sbin/zbt-qmodem-profile
+test -x firmware/files/usr/sbin/zbt-qmodem-performance-policy
+grep -Fq '310260*)' firmware/files/usr/sbin/zbt-qmodem-performance-policy
+test -x firmware/files/etc/uci-defaults/55-zbt-modem-labels-policy-v3
 test -s firmware/files/etc/uci-defaults/53-zbt-modem-display-labels-v2
 grep -Fq 'add_quectel_ca_report "$ca_response"' firmware/patches/qmodem-dual-runtime.patch
 grep -Fq '"Carrier Aggregation" "$active active / $total reported"' firmware/patches/qmodem-dual-runtime.patch
@@ -176,13 +203,22 @@ grep -Fq 'ensure_route_metric wan 10' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric usb_tether 100' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric 4_1 200' firmware/files/usr/sbin/zbt-mwan-preset
 grep -Fq 'ensure_route_metric 2_1 210' firmware/files/usr/sbin/zbt-mwan-preset
-grep -Fq 'DEFAULTS_VERSION=3' firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
-grep -Fq "''|priority) preset=failover" firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq 'DEFAULTS_VERSION=4' firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
+grep -Fq "''|priority|fastest) preset=failover" firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
 grep -Fq 'rndis_host|cdc_ether|cdc_ncm|ipheth' firmware/files/etc/hotplug.d/net/15-zbt-rndis-auto
 grep -Fq 'network.usb_tether.metric=100' firmware/files/etc/uci-defaults/40-zbt-usb-tether-defaults
 grep -Fq 'ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset "$preset"' \
   firmware/files/etc/uci-defaults/99-zbt-route-priority-repair
 grep -Fq 'if [ "${ZBT_MWAN_NO_RELOAD:-0}" != 1 ]; then' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'configure_member balanced_4_1 4_1 4 1' firmware/files/usr/sbin/zbt-mwan-preset
+grep -Fq 'configure_member balanced_2_1 2_1 5 1' firmware/files/usr/sbin/zbt-mwan-preset
+test -x firmware/files/etc/uci-defaults/99-zbt-modem1-priority-v4
+grep -Fq 'ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset failover' firmware/files/etc/uci-defaults/99-zbt-modem1-priority-v4
+if rg -n "applyPreset\('fastest'\)|write_preference|preferred=2" \
+  firmware/feeds/luci-app-modem-watchdog; then
+  echo 'Mega must never dynamically promote Modem 2 over Modem 1' >&2
+  exit 1
+fi
 grep -Fq 'option routing_preset' firmware/feeds/luci-app-modem-watchdog/root/etc/config/modem_watchdog
 grep -Fq 'ZBT-Z8803BE Mega Edition' firmware/files/etc/banner
 grep -Fq 'github.com/mfoster978/OpenWrt-ZBT-Z8803BE-Mega' firmware/files/etc/banner
@@ -281,12 +317,14 @@ grep -Fq '"path": "speedify/speedify"' firmware/files/usr/share/luci/menu.d/zbt-
 grep -Fq "target.protocol = 'https:'" firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq 'window.location.replace(target.href)' firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq "install_luci_wrapper || return 1" firmware/files/usr/sbin/speedify-installer-loop
-if grep -Eq "addEventListener\\('(blur|focus|visibilitychange)'|speedifyuiframe\\.(contentWindow\\.)?location\\.reload\\(|speedifyuiframe\\.src[[:space:]]*=" \
+if grep -Eq "addEventListener\\('(blur|focus|visibilitychange)'|speedifyuiframe|syncOuterHash|E\\('iframe'" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js; then
-  echo 'Speedify wrapper must preserve the live login iframe when its tab regains focus' >&2
+  echo 'Speedify wrapper must use a top-level login handoff, not a disposable iframe' >&2
   exit 1
 fi
-grep -Fq "speedifyuiframe.contentWindow.addEventListener('hashchange', syncOuterHash)" \
+grep -Fq "window.location.replace(app.href)" \
+  firmware/files/usr/share/zbt/speedify-luci-wrapper.js
+grep -Fq "app.hash = '/?' + connectionParams" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js
 
 grep -q "OPENWRT_GIT_REF:-v25.12.021" firmware/docker/build-openwrt.sh

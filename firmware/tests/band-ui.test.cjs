@@ -67,11 +67,20 @@ function fixture(rpc = {}) {
     setNetworkPrefer: async () => ({}),
     ...rpc
   };
-  const view = new Function('view', 'ui', 'dom', 'qmodem', 'E', '_', source)(
+  const uci = {
+    load: async () => {},
+    sections: (config, type, callback) => [
+      { '.name': '4_1', name: 'rm551e-gl', display_name: '4_1', enabled: '1' },
+      { '.name': '2_1', name: 'rm551e-gl', display_name: '2_1', enabled: '1' }
+    ].forEach(callback)
+  };
+  const directRpc = { declare: spec => (...args) => spec.method === 'get_5g_deployment'
+    ? qmodem.get5gDeployment(...args) : qmodem.set5gDeployment(...args) };
+  const view = new Function('view', 'ui', 'dom', 'rpc', 'uci', 'qmodem', 'E', '_', source)(
     { extend: obj => obj },
     { addNotification: (_, node, type) => notifications.push({ text: node.textContent, type }) },
-    { content, append: (node, children) => node.append(children) }, qmodem, E, s => s);
-  return { view, qmodem, calls, notifications, container: E('div') };
+    { content, append: (node, children) => node.append(children) }, directRpc, uci, qmodem, E, s => s);
+  return { view, qmodem, calls, notifications, container: E('div'), uci };
 }
 function response(locked, extra = {}) {
   return { lockband: { NR: {
@@ -100,10 +109,18 @@ test('performance choices are first, visible, read-backed, and read-only on open
   const menu = tabs.children[0];
   assert.deepEqual(menu.children.slice(0, 3).map(el => el.textContent),
     ['5G & Network Mode', 'Preferred Bands', 'Neighbor Cell']);
-  assert.match(tabs.textContent, /Automatic — SA \+ NSA \(recommended default\)/);
+  assert.match(tabs.textContent, /Automatic preferred — NSA on T-Mobile, SA \+ NSA elsewhere/);
   assert.match(tabs.textContent, /opening this page is read-only/i);
   assert.equal(deploymentReads, 1);
   assert.equal(deploymentWrites, 0, 'rendering the page must never write to the modem');
+});
+
+test('Advanced loads friendly slot labels without the newer shared helper API', { skip: !tree }, async () => {
+  const f = fixture({ getModemLabel: undefined, getModemSections: undefined });
+  const modems = await f.view.load();
+  assert.deepEqual(modems.map(item => [item.id, item.name]), [
+    ['4_1', 'Modem 1 (RM551E-GL)'], ['2_1', 'Modem 2 (RM551E-GL)']
+  ]);
 });
 
 test('unknown bands have diagnostics/retry, never actionable all-off checkboxes', { skip: !tree }, async () => {

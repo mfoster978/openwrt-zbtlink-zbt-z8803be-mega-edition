@@ -84,7 +84,7 @@ Mega Edition combines a wide selection of add-on packages with custom-developed 
 | Core networking and normal `mwan3` failover | Active; faster wired-first priority failover is the starting point. |
 | Modem 1 and Modem 2 | Enabled initially in Mega; later per-slot power, dialing and SIM choices are preserved. |
 | Extra watchdog and automated recovery actions | Off until explicitly enabled and configured. |
-| Background speed sampling, minimum-speed switching and prefer-fastest mode | Off until opted in; you control thresholds and intervals. |
+| Modem 1 / Modem 2 routing | Modem 1 is always primary; Modem 2 is health-checked failover only. |
 | Live Speed Test Utility | Runs only when you start a test; it does not automatically consume cellular data in the background. |
 | Speedify | Dependencies are baked in and its first-online installer is enabled. Bonding still requires your own account and setup; no credentials are preconfigured. |
 | Tailscale and OpenVPN | Available for your own account/tunnel configuration; no user VPN connection is preconfigured. |
@@ -129,7 +129,7 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 - SIM information reads the subscriber number from the full `AT+CNUM` response and falls back to the SIM's standard Own Numbers (`ON` / EF-MSISDN) phonebook. It says explicitly when neither store is provisioned; the modem cannot reconstruct an unrecorded number from ICCID or IMSI.
 - QModem's nearby-cell button runs Quectel's full LTE/5G `AT+QSCAN=3,1` with its documented network-dependent timeout instead of treating a three-second timeout as an empty result. It falls back to `AT+QENG="neighbourcell"` and always includes the registered serving cell when available.
 - Quectel carrier aggregation is reported in LTE, 5G NSA and 5G SA modes with every PCC/SCC, bandwidth, PCI, state and active/reported count returned by `AT+QCAINFO`; newer NR PCC layouts are not mislabelled as values such as “state 436.” The router does not impose or advertise a fake two-carrier limit.
-- Advanced opens directly on **5G & Network Mode**, with the modem's read-backed **Automatic — SA + NSA (recommended default)**, **NSA only**, and **SA only** connection type. It changes only Quectel `nr5g_disable_mode`, preserves both band masks, performs no write when the selected mode is already active, and never changes merely because the page was opened. The adjacent **Preferred Bands** tab makes persistent band-mask edits explicit. A verified zero SA/NSA mask for a disabled family is shown as informational instead of a generic band-query failure.
+- Advanced opens directly on **5G & Network Mode**, with read-backed **Automatic preferred**, **Automatic — SA + NSA**, **NSA only**, and **SA only** choices. Automatic preferred defaults direct T-Mobile US service to NSA to expose LTE anchors plus 5G carrier aggregation, while other carriers retain modem-managed SA plus NSA. It changes only Quectel `nr5g_disable_mode`, preserves both band masks, performs no write when the selected mode is already active, and never changes merely because the page was opened. The adjacent **Preferred Bands** tab makes persistent band-mask edits explicit. A verified zero SA/NSA mask for a disabled family is shown as informational instead of a generic band-query failure.
 - Band changes require a successful AT response and matching readback. Unknown masks have read-only diagnostics and Retry; reported bands stay separate from pending edits. See [per-modem band readback](firmware/docs/band-readback.md).
 - Carrier TTL/hop-limit handling and modem NAT detection remain available per modem, but both policies are off on a fresh install so they do not silently disable flow offload.
 
@@ -137,12 +137,12 @@ Installed does not mean every feature is actively controlling traffic. Keep unus
 
 - `mwan3` and `luci-app-mwan3` are installed and enabled with deterministic first-boot defaults.
 - Strict SFP → copper WAN → USB tether → modem 1 → modem 2 failover order, while automatically omitting an unavailable path.
-- A separate balanced policy is available for deliberate load distribution.
+- The legacy balanced policy remains compatible for non-cellular distribution, but keeps Modem 1 and Modem 2 in separate priority tiers.
 - Default traffic, including speed-test ports, follows wired-first failover; balancing is an explicit user choice.
-- **Network → MultiWAN Manager → Presets & Recovery** offers one-click priority, fast-failover, and fastest-cellular presets, plus minimum-speed thresholds and per-modem recovery controls.
+- **Network → MultiWAN Manager → Priority & Recovery** offers one-click normal or fast health failover plus per-modem recovery controls. Both presets keep Modem 1 ahead of Modem 2.
 - The MultiWAN Interfaces tab owns the persistent route metric for every tracked link. QModem displays the cellular value read-only and cannot erase or override it during redial.
 - Priority failover is enabled by default with faster recovery checks: SFP, copper WAN, USB tether, modem 1, then modem 2. When a preferred path becomes healthy again, new connections return to it automatically. Existing established sessions may remain on the backup until they reconnect.
-- The additional modem-reset watchdog, destructive recovery actions, speed-based preference changes, and “prefer fastest” mode remain disabled by default.
+- The additional modem-reset watchdog and destructive recovery actions remain disabled by default. The former speed-based Modem 2 promotion is retired and migrated back to strict Modem 1 priority.
 - Recovery choices include log-only, disconnect, redial, or GPIO power-cycle followed by redial.
 - Cooldowns and failure thresholds prevent rapid recovery loops.
 - QModem supervises each physical modem separately. The old configuration-rewriting watchdog, shared restart hooks, and post-flash automatic modem reset have been retired.
@@ -212,7 +212,7 @@ QModem's cell information now reads Quectel `AT+QCAINFO` in LTE, 5G NSA and 5G S
 
 The Advanced nearby-cell action is a real modem search, not a refresh of the passive neighbor list. On supported Quectel modules it uses `AT+QSCAN=3,1` for LTE and NR cells and can take up to three minutes depending on the network. If full scan is unavailable or returns no records, Mega reads the network-reported `AT+QENG="neighbourcell"` list and the current serving cell instead.
 
-The first Advanced tab, **5G & Network Mode**, always displays the modem's actual connection-type readback. **Automatic — SA + NSA** remains the recommended default. **NSA only** is available as a reversible comparison when SA is slow; it can allow LTE anchor carriers plus 5G, but tower policy, radio conditions and supported combinations still decide the result. Returning to Automatic enables both SA and NSA without replacing the selected band lists. **Preferred Bands** is a separate tab because those selections are persistent modem writes.
+The first Advanced tab, **5G & Network Mode**, always displays both the modem's actual connection-type readback and the saved policy. **Automatic preferred** is the Mega default: direct T-Mobile US service selects NSA, based on the observed same-location comparison where SA was severely slower, while other carriers retain Automatic SA plus NSA. Explicit Automatic, NSA-only and SA-only overrides remain available. The policy is applied after QModem identifies the correct physical slot and AT port, reads before writing, verifies a changed value and never replaces the selected band lists. Tower policy, congestion, signal and supported combinations still decide actual throughput. **Preferred Bands** is separate because those selections are persistent modem writes.
 
 Every firmware version is also used as LuCI's resource cache key. After an upgrade, the browser therefore loads the matching QModem, About, updater, Speedify and utility JavaScript instead of retaining a script from the preceding image. On the first boot after an upgrade, the LuCI health check waits for the normal uWSGI and nginx startup to settle before attempting a repair.
 
@@ -236,7 +236,7 @@ Modem 1 (4_1)  route 200 / MWAN tier 4
 Modem 2 (2_1)  route 210 / MWAN tier 5
 ```
 
-Each available interface is monitored with two public ping targets and `reliability=1`. The default catch-all rule uses the `failover` policy. The `balanced` policy exists for explicit selection, but normal traffic remains wired-first by default. Route-metric changes are made inside MultiWAN Manager and persist in `/etc/config/network`; QModem is responsible only for establishing the cellular data sessions.
+Each available interface is monitored with two public ping targets and `reliability=1`. The default catch-all rule uses the `failover` policy. The legacy `balanced` policy name may still exist for compatibility, but its cellular members also use distinct tiers: it cannot promote Modem 2 while Modem 1 is healthy. Route-metric changes are made inside MultiWAN Manager and persist in `/etc/config/network`; QModem is responsible only for establishing the cellular data sessions.
 
 > [!NOTE]
 > `mwan3` distributes connections and provides failover. It does not combine multiple links into a faster single TCP flow. That requires a bonding service with a remote endpoint, such as Speedify, or a separate OpenMPTCProuter deployment.
@@ -245,11 +245,9 @@ Each available interface is monitored with two public ping targets and `reliabil
 
 Open **Network → MultiWAN Manager → Presets & Recovery** in LuCI to configure:
 
-- recommended one-click wired-first priority, faster health failover, or fastest-cellular behavior;
+- recommended one-click wired-first priority or faster health failover, both with Modem 1 before Modem 2;
 - service enablement and a separate permission switch for recovery actions;
 - check interval, ping target, consecutive-failure threshold, and recovery cooldown;
-- speed-test sampling interval and minimum acceptable throughput;
-- optional failover and fastest-modem preference;
 - per-modem monitoring and recovery action;
 - the fixed physical identity/power mapping (displayed for reference, not freely editable).
 
@@ -259,19 +257,13 @@ The safe defaults are:
 |---|---:|
 | Watchdog service | Off |
 | Recovery actions | Off |
-| Additional speed-based preferences | Off |
-| Prefer fastest modem | Off |
 | Check interval | 30 seconds |
 | Ping failures before action | 4 |
 | Recovery cooldown | 180 seconds |
-| Speed-test sampling | Off |
-| Sampling interval / minimum download speed | 15 minutes / 5 Mbps |
-| Fresh slow samples before demotion | 2 |
-| Fresh healthy samples before recovery | 2 |
 
 Start with monitoring only. Confirm that interface names, APNs, and ping behavior are correct before enabling redial or power-cycle actions.
 
-Each background sample downloads up to **25 MB per modem**. At a 15-minute interval on both modems, background sampling can consume about **4.8 GB/day**. Consider cellular plan limits before enabling it. Background samples still use [Cloudflare's HTTPS endpoints](https://github.com/cloudflare/speedtest/blob/main/README.md) with [curl device binding](https://curl.se/docs/manpage.html#--interface), not the full Cloudflare or Ookla measurement algorithm. The separate interactive Speed Test Utility now uses Speedtest.net servers and **can consume hundreds of MB or exceed 1 GB per run**; it requires an explicit data-use confirmation. It does not have the old 30 MB cap. Interactive tests and background samples share an exclusive measurement lock.
+The separate interactive Speed Test Utility uses Speedtest.net servers and **can consume hundreds of MB or exceed 1 GB per run**; it requires an explicit data-use confirmation. It does not alter the MWAN priority policy.
 
 Only fresh, successful samples count toward the speed threshold. DNS, TLS, timeout, and server failures are not fabricated as zero Mbps. Speed demotion changes only the project's cellular failover-member preferences in RAM, retaining both wired WAN priorities. Custom member layouts are left alone. Existing flows may remain on their original link; this is not seamless bonding. Slow throughput alone never triggers a modem power cycle.
 
@@ -292,7 +284,7 @@ The installer:
 3. downloads the pinned core and LuCI APKs over HTTPS with retries;
 4. rejects either file unless its reviewed SHA256 matches;
 5. installs only the downloaded local APKs with `--no-network`, preventing an ABI-mismatched kernel module from being pulled later;
-6. installs a reviewed LuCI wrapper that preserves the vendor application's live iframe and WebSocket while an external account-login screen is open;
+6. installs a reviewed LuCI handoff that opens the vendor application as a top-level page, avoiding mobile iframe disposal during external account login;
 7. starts and health-checks Speedify, its web service, nginx, and both the HTTP and HTTPS LuCI routes;
 8. keeps nginx and its authenticated Speedify routes in place if a service health check fails; retries do not reinstall already-present packages or repeatedly run vendor network setup;
 9. records completion only after all selected services pass.
@@ -553,7 +545,7 @@ logread -e speedify-installer
 
 Clicking Speedify from an HTTP LuCI session now returns a Speedify-only **307 redirect to HTTPS**; ordinary LuCI pages remain available over HTTP. Without a login session, the protected HTTPS Speedify index should return **401**, not 404 or 502. This is required because the embedded application uses authenticated WebSockets and browser secure-context features. A healthy proxy is not proof that the proprietary VPN daemon has connected; authenticate your Speedify account and test its data path separately. Do not configure two routing/bonding managers to control the same traffic without checking their policies.
 
-If Speedify sends the browser to an external account-login screen, return to the same router tab after completing sign-in. Mega's reviewed wrapper keeps that embedded application and its WebSocket alive so it can receive the daemon's new account state; it does not reload the iframe and restart the login flow. A second router login can still be required when the HTTP-to-HTTPS transition starts a separate secure LuCI session.
+If Speedify sends the browser to an external account-login screen, return to the Speedify application after completing sign-in. Mega opens that application as a top-level page instead of a disposable LuCI iframe, so returning does not recreate the login view. A second router login can still be required when the HTTP-to-HTTPS transition starts a separate secure LuCI session.
 
 ### HTTPS warning on the router's private IP address
 

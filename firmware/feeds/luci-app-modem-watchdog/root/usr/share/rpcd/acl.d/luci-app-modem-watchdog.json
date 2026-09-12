@@ -8,8 +8,7 @@
       "uci": [ "modem_watchdog", "qmodem", "network", "firewall", "mwan3" ],
       "file": {
         "/usr/sbin/zbt-mwan-preset priority": [ "exec" ],
-        "/usr/sbin/zbt-mwan-preset failover": [ "exec" ],
-        "/usr/sbin/zbt-mwan-preset fastest": [ "exec" ]
+        "/usr/sbin/zbt-mwan-preset failover": [ "exec" ]
       }
     }
   }

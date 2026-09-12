@@ -129,6 +129,15 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$perfor
   echo 'Pinned QModem performance UI patch no longer matches; refusing a hidden-control build' >&2
   exit 3
 fi
+# Persist Mega's read-before-write deployment policy and keep Advanced usable
+# even when an already-open browser retains the previous QModem helper module.
+policy_ui_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-mega-policy-ui.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$policy_ui_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$policy_ui_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$policy_ui_patch" >/dev/null; then
+  echo 'Mega QModem policy/UI compatibility patch no longer matches; refusing a broken Advanced page build' >&2
+  exit 3
+fi
 for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
   [ "$(grep -Fo "o.value('$apn'" feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js | wc -l)" -eq 2 ] || {
     echo "US APN preset is not present for both QModem SIM selectors: $apn" >&2; exit 3;
@@ -225,6 +234,22 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/luci/applications
   echo 'KSMBD LuCI enable-toggle patch does not match pinned LuCI feed' >&2
   exit 3
 fi
+# Harden the board tree's QModem monitor copy that 52-zbt-qmodem-monitor-overlay
+# installs over the feed worker on first boot. The patch is pinned to the exact
+# OpenWrt commit checked above and is idempotent for reusable source trees.
+qmodem_monitor_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/zbt-qmodem-monitor-hardening.patch"
+if patch --dry-run --batch --fuzz=0 --forward -p1 < "$qmodem_monitor_patch" >/dev/null; then
+  patch --batch --fuzz=0 --forward -p1 < "$qmodem_monitor_patch"
+elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 < "$qmodem_monitor_patch" >/dev/null; then
+  echo 'QModem monitor hardening patch does not match the pinned OpenWrt tree' >&2
+  exit 3
+fi
+qmodem_monitor_source=target/linux/mediatek/filogic/base-files/usr/lib/zbt/qmodem-modem_monitor.sh
+grep -Fq -- "--write-out '%{http_code}'" "$qmodem_monitor_source" &&
+  grep -Fq '*generate_204*)' "$qmodem_monitor_source" &&
+  grep -Fq 'zbt_monitor_recovery_streak' "$qmodem_monitor_source" || {
+  echo 'QModem monitor source was not hardened as expected' >&2; exit 3;
+}
 mkdir -p files
 if [[ -d "${FILES_OVERLAY_DIR}" ]]; then
   # This source tree is intentionally reusable between local builds. Mirror
@@ -430,6 +455,34 @@ if [[ -z "${rootfs_dir}" ]]; then
   echo "Unable to locate the built MediaTek root filesystem" >&2
   exit 4
 fi
+qmodem_monitor_rootfs="${rootfs_dir}/usr/lib/zbt/qmodem-modem_monitor.sh"
+test -x "$qmodem_monitor_rootfs" || {
+  echo 'Hardened QModem monitor tree copy is missing from the image' >&2; exit 4;
+}
+grep -Fq -- "--write-out '%{http_code}'" "$qmodem_monitor_rootfs" &&
+  grep -Fq '*generate_204*)' "$qmodem_monitor_rootfs" &&
+  grep -Fq 'MONITOR_RECOVERY_STREAK_DEFAULT=3' "$qmodem_monitor_rootfs" &&
+  grep -Fq 'config_get MONITOR_RECOVERY_STREAK main zbt_monitor_recovery_streak' "$qmodem_monitor_rootfs" || {
+  echo 'QModem monitor HTTP/recovery hardening is missing from the image' >&2; exit 4;
+}
+run_actions_line="$(grep -nF '            run_actions' "$qmodem_monitor_rootfs" | tail -n 1 | cut -d: -f1)"
+mark_action_line="$(grep -nF '            mark_monitor_action' "$qmodem_monitor_rootfs" | tail -n 1 | cut -d: -f1)"
+if [[ -z "$run_actions_line" || -z "$mark_action_line" || "$run_actions_line" -ge "$mark_action_line" ]]; then
+  echo 'QModem monitor must mark its cooldown only after dispatching actions' >&2
+  exit 4
+fi
+qmodem_monitor_overlay="${rootfs_dir}/etc/uci-defaults/52-zbt-qmodem-monitor-overlay"
+grep -Fq 'SRC=/usr/lib/zbt/qmodem-modem_monitor.sh' "$qmodem_monitor_overlay" &&
+  grep -Fq 'DST=/usr/share/qmodem/modem_monitor.sh' "$qmodem_monitor_overlay" || {
+  echo 'QModem first-boot worker overlay is missing from the image' >&2; exit 4;
+}
+if grep -R -Fq 'zbt_monitor_recovery_streak' "${rootfs_dir}/etc/config" "${rootfs_dir}/etc/uci-defaults"; then
+  echo 'QModem recovery-streak default must remain runtime-only' >&2
+  exit 4
+fi
+grep -Fq 'monitor_enabled=0' "${rootfs_dir}/usr/sbin/zbt-qmodem-profile" || {
+  echo 'QModem monitoring is not disabled by default in the image' >&2; exit 4;
+}
 test -x "${rootfs_dir}/usr/bin/zbt-speedtest" || {
   echo 'Live speed test engine missing from firmware' >&2; exit 4;
 }
@@ -533,11 +586,22 @@ test -x "${rootfs_dir}/etc/zbt-leds.sh" && test -x "${rootfs_dir}/etc/hotplug.d/
 cmp target/linux/mediatek/filogic/base-files/etc/zbt-leds.sh "${rootfs_dir}/etc/zbt-leds.sh" || {
   echo 'Far5eer modem/status LED helper was changed or overwritten in rootfs' >&2; exit 4;
 }
-for overlay_file in usr/lib/zbt/modem-leds.sh usr/lib/zbt/qmodem-cell-discovery.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/53-zbt-modem-display-labels-v2 etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
+for overlay_file in usr/lib/zbt/modem-leds.sh usr/lib/zbt/qmodem-cell-discovery.sh usr/sbin/zbt-modem-led-poller etc/init.d/zbt-modem-leds etc/hotplug.d/net/15-zbt-rndis-auto etc/hotplug.d/net/20-zbt-modem-led usr/sbin/zbt-qmodem-profile usr/sbin/zbt-qmodem-performance-policy usr/sbin/zbt-mwan-preset etc/uci-defaults/40-zbt-usb-tether-defaults etc/uci-defaults/48-zbt-modem-led-dark-repair etc/uci-defaults/49-zbt-modem-labels-leds etc/uci-defaults/53-zbt-modem-display-labels-v2 etc/uci-defaults/55-zbt-modem-labels-policy-v3 etc/uci-defaults/73-zbt-us-wifi-defaults etc/uci-defaults/74-zbt-mlo-shared-iface-repair etc/uci-defaults/95-mwan3-defaults etc/uci-defaults/99-cellular-multiwan-defaults etc/uci-defaults/99-zbt-route-priority-repair etc/uci-defaults/99-zbt-modem1-priority-v4 etc/init.d/zbt-luci-backend usr/sbin/zbt-luci-backend-check etc/uci-defaults/50-zbt-luci-web-recovery; do
   cmp -s "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || {
     echo "Runtime repair was overwritten in rootfs: ${overlay_file}" >&2; exit 4;
   }
 done
+grep -Fq 'configure_member failover_4_1 4_1 4 1' "${rootfs_dir}/usr/sbin/zbt-mwan-preset" &&
+grep -Fq 'configure_member failover_2_1 2_1 5 1' "${rootfs_dir}/usr/sbin/zbt-mwan-preset" &&
+grep -Fq 'configure_member balanced_4_1 4_1 4 1' "${rootfs_dir}/usr/sbin/zbt-mwan-preset" &&
+grep -Fq 'configure_member balanced_2_1 2_1 5 1' "${rootfs_dir}/usr/sbin/zbt-mwan-preset" || {
+  echo 'Strict Modem 1 before Modem 2 policy is missing from the image' >&2; exit 4;
+}
+if grep -Eq "write_preference|preferred=2|applyPreset\('fastest'\)" \
+  "${rootfs_dir}/usr/sbin/modem-watchdog" \
+  "${rootfs_dir}/www/luci-static/resources/view/modem-watchdog/config.js"; then
+  echo 'Built image still permits automatic Modem 2 promotion' >&2; exit 4;
+fi
 regdb_source="$(find build_dir/target-* -maxdepth 2 -type f -path '*/wireless-regdb-*/db.txt' -print -quit)"
 if [[ -z "$regdb_source" ]]; then
   echo 'Unable to locate the prepared wireless regulatory database' >&2
@@ -648,7 +712,7 @@ grep -Fq 'take up to three minutes' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
   echo 'Nearby-cell scan timing guidance is missing from LuCI' >&2; exit 4;
 }
-grep -Fq 'Automatic — SA + NSA (recommended default)' \
+grep -Fq 'Automatic preferred — NSA on T-Mobile, SA + NSA elsewhere' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
   echo 'Quectel SA/NSA connection-type control is missing from LuCI' >&2; exit 4;
 }
@@ -663,6 +727,14 @@ grep -Fq "readfile('/rom/etc/zbt-mega-build.json')" \
 grep -Fq 'zbt_5g_deployment_query()' \
   "${rootfs_dir}/usr/libexec/rpcd/qmodem" || {
   echo 'Quectel SA/NSA readback backend is missing from the image' >&2; exit 4;
+}
+grep -Fq 'json_add_string policy "$policy"' \
+  "${rootfs_dir}/usr/libexec/rpcd/qmodem" || {
+  echo 'Saved Mega 5G deployment policy is missing from QModem RPC' >&2; exit 4;
+}
+grep -Fq "return uci.load('qmodem').then" \
+  "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
+  echo 'QModem Advanced page lacks its cache-compatible direct label loader' >&2; exit 4;
 }
 grep -Fq 'add_quectel_ca_report "$ca_response"' \
   "${rootfs_dir}/usr/share/qmodem/vendor/quectel.sh" || {

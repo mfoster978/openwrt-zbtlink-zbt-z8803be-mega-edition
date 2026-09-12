@@ -144,8 +144,10 @@ configure_policy() {
 	fi
 	configure_member failover_4_1 4_1 4 1
 	configure_member failover_2_1 2_1 5 1
-	configure_member balanced_4_1 4_1 1 1
-	configure_member balanced_2_1 2_1 1 1
+	# Cellular order is invariant in every firmware-managed policy. Even a
+	# legacy rule that still names "balanced" keeps Modem 2 as failover only.
+	configure_member balanced_4_1 4_1 4 1
+	configure_member balanced_2_1 2_1 5 1
 
 	uci -q set mwan3.failover=policy
 	uci -q delete mwan3.failover.use_member 2>/dev/null || true
@@ -180,12 +182,6 @@ configure_watchdog() {
 	uci -q set modem_watchdog.global.routing_preset="$preset"
 	uci -q set modem_watchdog.global.actions_enabled=0
 	case "$preset" in
-		fastest)
-			uci -q set modem_watchdog.global.enabled=1
-			uci -q set modem_watchdog.global.failover=1
-			uci -q set modem_watchdog.global.prefer_fastest=1
-			uci -q set modem_watchdog.global.speed_test=1
-			;;
 		*)
 			uci -q set modem_watchdog.global.enabled=0
 			uci -q set modem_watchdog.global.failover=0
@@ -219,11 +215,18 @@ case "$mode" in
 	repair)
 		exact=0
 		;;
-	priority|failover|fastest)
+	priority|failover)
+		exact=1
+		;;
+	fastest)
+		# Compatibility for old bookmarks/configuration. The former preset could
+		# promote Modem 2 after a speed sample, contrary to Mega's slot contract.
+		logger -t zbt-mwan-preset 'retiring fastest preset; applying strict Modem 1 priority failover'
+		mode=failover
 		exact=1
 		;;
 	*)
-		echo 'Usage: zbt-mwan-preset {status|repair|priority|failover|fastest}' >&2
+		echo 'Usage: zbt-mwan-preset {status|repair|priority|failover}' >&2
 		exit 2
 		;;
 esac
@@ -253,7 +256,6 @@ fi
 case "$mode" in
 	priority) configure_policy 3 2 ;;
 	failover) configure_policy 2 1 ;;
-	fastest) configure_policy 3 2 ;;
 esac
 configure_watchdog "$mode"
 commit_all

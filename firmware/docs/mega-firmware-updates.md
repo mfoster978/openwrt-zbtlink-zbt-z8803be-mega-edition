@@ -18,9 +18,8 @@ Firmware update controls are **not part of About**; their separate side-menu
 entry is **System → Firmware Update**.
 
 Mega Edition combines add-on packages and custom-built tools into a configurable
-networking workhorse. Optional watchdog recovery, background speed sampling and
-speed-based switching are off by default; essential networking and ordinary
-failover remain active. Users choose which optional tools to enable. Speedify's
+networking workhorse. Optional watchdog recovery is off by default; essential
+networking and Modem-1-first failover remain active. Users choose which optional tools to enable. Speedify's
 first-online installer is enabled, but account setup and bonding are separate
 user choices. See the main README's default-behavior table for the distinction.
 

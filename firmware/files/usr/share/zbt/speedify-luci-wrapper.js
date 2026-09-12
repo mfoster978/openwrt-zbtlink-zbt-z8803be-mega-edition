@@ -1,14 +1,12 @@
 'use strict';
-'require uci';
 'require view';
 
 /*
- * Reviewed overlay for the official luci-app-speedify iframe wrapper.
- *
- * Speedify account authentication may open in another browser screen. Keep
- * the existing iframe alive when the user returns so its WebSocket and
- * in-memory authentication flow can observe the daemon's new account state.
- * Reloading here restarts the vendor login flow and loses that handoff.
+ * Hand the browser to the official Speedify application as a top-level page.
+ * Keeping it in a LuCI iframe lets mobile browsers discard or recreate the
+ * frame while the account provider is open, which restarts authentication.
+ * The daemon session is scoped to the vendor application and the vendor route
+ * always starts at its root instead of replaying a transient login hash.
  */
 return view.extend({
 	handleSaveApply: null,
@@ -26,57 +24,13 @@ return view.extend({
 				(window.location.protocol === 'https:' ? '; Secure' : '');
 		}
 
-		var outerHash = window.location.hash.replace(/^#\/?/, '');
-		var iframePath = outerHash ? '/' + outerHash : '/';
-		var separator = iframePath.indexOf('?') >= 0 ? '&' : '?';
-		var iframeSrc = '/luci-app-speedify/view/index.html#' + iframePath + separator + connectionParams;
-		var speedifyuiframe = E('iframe', {
-			src: iframeSrc,
-			style: 'width:100%; height:80vh; border:none;',
-			frameborder: '0',
-			allowfullscreen: 'true',
-			title: _('Speedify management')
-		});
+		var app = new URL('/luci-app-speedify/view/index.html', window.location.origin);
+		app.hash = '/?' + connectionParams;
+		window.location.replace(app.href);
 
-		function stripConnectionParams(hash) {
-			return hash.replace(/^#\/?/, '').replace(/[?&](?:wsPort|wsEndpoint|wsToken|updateEndpoint|resetEndpoint|restartEndpoint)=[^&]*/g, '').replace(/[?&]$/, '');
-		}
-
-		function syncOuterHash() {
-			try {
-				var innerHash = speedifyuiframe.contentWindow.location.hash || '';
-				var path = stripConnectionParams(innerHash);
-				var newHash = (path && path !== '/') ? '#/' + path : '';
-				if (window.location.hash === newHash || (!window.location.hash && !newHash)) return;
-				if (newHash)
-					history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
-				else
-					history.replaceState(null, '', window.location.pathname + window.location.search);
-			} catch (e) {
-				/* The same-origin frame may not be ready yet. */
-			}
-		}
-
-		speedifyuiframe.addEventListener('load', function() {
-			try {
-				var iframeHistory = speedifyuiframe.contentWindow.history;
-				var origPushState = iframeHistory.pushState;
-				var origReplaceState = iframeHistory.replaceState;
-				iframeHistory.pushState = function() {
-					origPushState.apply(this, arguments);
-					syncOuterHash();
-				};
-				iframeHistory.replaceState = function() {
-					origReplaceState.apply(this, arguments);
-					syncOuterHash();
-				};
-				speedifyuiframe.contentWindow.addEventListener('popstate', syncOuterHash);
-				speedifyuiframe.contentWindow.addEventListener('hashchange', syncOuterHash);
-			} catch (e) {
-				/* Ignore a frame that is still transitioning. */
-			}
-		});
-
-		return E('div', { 'class': 'cbi-map' }, [ speedifyuiframe ]);
+		return E('div', { 'class': 'cbi-map' }, [
+			E('h2', {}, _('Opening Speedify…')),
+			E('p', {}, _('The Speedify application is opening in this tab so account login can return to the same live session.'))
+		]);
 	}
 });

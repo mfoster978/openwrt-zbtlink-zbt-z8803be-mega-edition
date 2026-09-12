@@ -1,0 +1,8 @@
+#!/bin/sh
+# New filename makes this repair run on routers that already consumed older
+# label defaults. QModem's post-scan hook keeps applying it on later boots.
+for section in 4_1 2_1; do
+	/usr/sbin/zbt-qmodem-profile "$section"
+done
+rm -f /tmp/luci-indexcache /tmp/luci-indexcache.json
+exit 0

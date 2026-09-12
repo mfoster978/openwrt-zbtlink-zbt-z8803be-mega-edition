@@ -1,0 +1,69 @@
+#!/bin/sh
+# Mega-only 5G deployment policy. Band masks are intentionally never queried
+# or written here: the carrier remains free to select among every enabled band.
+. /usr/share/qmodem/modem_util.sh
+. /usr/lib/zbt/dual-modem.sh
+
+TAG='zbt-5g-policy'
+
+section_ready() {
+	case "$1" in 4_1|2_1) ;; *) return 1 ;; esac
+	[ "$(uci -q get "qmodem.$1")" = modem-device ] || return 1
+	manufacturer=$(uci -q get "qmodem.$1.manufacturer" | tr '[:upper:]' '[:lower:]')
+	case "$manufacturer" in *quectel*) ;; *) return 1 ;; esac
+	at_port=$(uci -q get "qmodem.$1.at_port")
+	[ -c "$at_port" ] && zbt_port_matches "$1" "$at_port"
+}
+
+query_mode() {
+	local response value
+	response=$(at "$at_port" 'AT+QNWPREFCFG="nr5g_disable_mode"') || return 1
+	printf '%s\n' "$response" | grep -q '^[[:space:]]*OK[[:space:]]*$' || return 1
+	printf '%s\n' "$response" | grep -Eq '^[[:space:]]*(ERROR|\+CM[ES] ERROR:|NO CARRIER)' && return 1
+	value=$(printf '%s\n' "$response" | sed -n 's/^[[:space:]]*+QNWPREFCFG:[[:space:]]*"nr5g_disable_mode",[[:space:]]*\([012]\)[[:space:]\r]*$/\1/p' | sed -n '1p')
+	[ -n "$value" ] || return 1
+	printf '%s\n' "$value"
+}
+
+desired_mode() {
+	local section="$1" policy="$2" imsi
+	case "$policy" in
+		auto_preferred)
+			section_ready "$section" || return 1
+			imsi=$(zbt_modem_imsi "$at_port") || imsi=''
+			# Direct T-Mobile US service in this hardware/location comparison
+			# aggregates LTE anchors with NR far better than the observed SA cell.
+			# The IMSI is used only in memory and is never printed or persisted.
+			case "$imsi" in 310260*) printf '%s\n' 1 ;; *) printf '%s\n' 0 ;; esac
+			;;
+		auto) printf '%s\n' 0 ;;
+		nsa) printf '%s\n' 1 ;;
+		sa) printf '%s\n' 2 ;;
+		*) return 1 ;;
+	esac
+}
+
+apply_policy() {
+	local section="$1" policy desired current response actual
+	section_ready "$section" || return 1
+	policy=$(uci -q get "qmodem.$section.zbt_5g_policy")
+	[ -n "$policy" ] || policy=auto_preferred
+	desired=$(desired_mode "$section" "$policy") || return 1
+	current=$(query_mode) || return 1
+	if [ "$current" = "$desired" ]; then
+		logger -t "$TAG" "$section policy $policy already active; no modem write"
+		return 0
+	fi
+	response=$(at "$at_port" "AT+QNWPREFCFG=\"nr5g_disable_mode\",$desired") || return 1
+	printf '%s\n' "$response" | grep -q '^[[:space:]]*OK[[:space:]]*$' || return 1
+	actual=$(query_mode) || return 1
+	[ "$actual" = "$desired" ] || return 1
+	logger -t "$TAG" "$section applied and verified policy $policy without changing band masks"
+}
+
+case "$1" in
+	desired) desired_mode "$2" "$3" ;;
+	query) section_ready "$2" && query_mode ;;
+	apply) apply_policy "$2" ;;
+	*) exit 2 ;;
+esac

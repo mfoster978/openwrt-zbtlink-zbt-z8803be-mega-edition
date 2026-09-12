@@ -1,0 +1,12 @@
+#!/bin/sh
+# A unique upgrade migration removes every earlier speed-based promotion and
+# reapplies the invariant cellular order through MWAN3. It never redials or
+# sends AT commands; QModem remains only the link/session owner.
+ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset failover || exit 1
+uci -q set modem_watchdog.global.failover='0'
+uci -q set modem_watchdog.global.prefer_fastest='0'
+uci -q set modem_watchdog.global.speed_test='0'
+uci -q set modem_watchdog.global.routing_preset='failover'
+uci -q commit modem_watchdog
+rm -f /tmp/modem-watchdog/4_1.metric /tmp/modem-watchdog/2_1.metric
+exit 0
