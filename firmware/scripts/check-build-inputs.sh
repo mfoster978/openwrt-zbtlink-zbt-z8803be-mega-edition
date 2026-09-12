@@ -154,7 +154,8 @@ grep -Fq 'qmodem-cell-discovery.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-5g-deployment.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-performance-ui.patch' firmware/docker/build-openwrt.sh
 grep -Fq 'qmodem-mega-policy-ui.patch' firmware/docker/build-openwrt.sh
-grep -Fq 'git -C feeds/qmodem reset --hard --quiet HEAD' firmware/docker/build-openwrt.sh
+grep -Fq 'Unrelated QModem changes remain; refusing to overwrite them' firmware/docker/build-openwrt.sh
+grep -Fq 'qmodem-connectivity-v5.patch' firmware/docker/build-openwrt.sh
 qmodem_monitor_patch=firmware/patches/zbt-qmodem-monitor-hardening.patch
 test -s "$qmodem_monitor_patch"
 grep -Fq 'zbt-qmodem-monitor-hardening.patch' firmware/docker/build-openwrt.sh
@@ -189,7 +190,9 @@ grep -Fq "name: _('Preferred Bands')" firmware/patches/qmodem-performance-ui.pat
 grep -Fq "''|4_1|2_1|modem1|modem2)" firmware/files/usr/sbin/zbt-qmodem-profile
 grep -Fq 'zbt_5g_policy=auto_preferred' firmware/files/usr/sbin/zbt-qmodem-profile
 test -x firmware/files/usr/sbin/zbt-qmodem-performance-policy
-grep -Fq '310260*)' firmware/files/usr/sbin/zbt-qmodem-performance-policy
+grep -Fq '. /usr/lib/zbt/qmodem-5g.sh' firmware/files/usr/sbin/zbt-qmodem-performance-policy
+test -x firmware/files/usr/libexec/rpcd/zbt.speedify
+test -x firmware/files/etc/uci-defaults/99-zbt-modem-route-v5
 test -x firmware/files/etc/uci-defaults/55-zbt-modem-labels-policy-v3
 test -s firmware/files/etc/uci-defaults/53-zbt-modem-display-labels-v2
 grep -Fq 'add_quectel_ca_report "$ca_response"' firmware/patches/qmodem-dual-runtime.patch
@@ -317,12 +320,12 @@ grep -Fq '"path": "speedify/speedify"' firmware/files/usr/share/luci/menu.d/zbt-
 grep -Fq "target.protocol = 'https:'" firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq 'window.location.replace(target.href)' firmware/files/www/luci-static/resources/view/speedify/launcher.js
 grep -Fq "install_luci_wrapper || return 1" firmware/files/usr/sbin/speedify-installer-loop
-if grep -Eq "addEventListener\\('(blur|focus|visibilitychange)'|speedifyuiframe|syncOuterHash|E\\('iframe'" \
+if grep -Eq "window.location.replace|syncOuterHash" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js; then
-  echo 'Speedify wrapper must use a top-level login handoff, not a disposable iframe' >&2
+  echo 'Speedify must preserve LuCI navigation and not mirror transient login hashes' >&2
   exit 1
 fi
-grep -Fq "window.location.replace(app.href)" \
+grep -Fq "E('iframe'" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js
 grep -Fq "app.hash = '/?' + connectionParams" \
   firmware/files/usr/share/zbt/speedify-luci-wrapper.js

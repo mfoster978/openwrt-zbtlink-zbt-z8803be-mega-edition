@@ -1,0 +1,38 @@
+#!/bin/sh
+# Authenticated rpcd adapter for the official router activation flow. Never
+# accepts a command, password, token, URL or CLI argument from the browser.
+case "$1:$2" in
+	list:*) echo '{"status":{},"activation":{}}'; exit 0 ;;
+	call:status|call:activation) read -r input ;;
+	*) exit 1 ;;
+esac
+cli=/usr/share/speedify/speedify_cli
+if [ ! -x "$cli" ]; then
+	echo '{"ok":false,"message":"Speedify is not installed yet. Its installer needs working Internet access."}'
+	exit 0
+fi
+case "$2" in
+	status)
+		if ! response=$(timeout 8 "$cli" show user 2>/dev/null); then
+			echo '{"ok":false,"message":"The Speedify service did not answer. Check its service and Internet connection."}'
+			exit 0
+		fi
+		printf '%s' "$response" | jq -ce '
+			if type != "object" or (.isAutoAccount|type) != "boolean" then error("invalid user reply") else
+			{ok:true, signed_in:(.isAutoAccount==false and (.email|type)=="string" and (.email|length)>0),
+			email:(if (.email|type)=="string" then .email else "" end)} end' 2>/dev/null ||
+			echo '{"ok":false,"message":"Speedify returned an unreadable account status; sign-in has not been confirmed."}'
+		;;
+	activation)
+		if ! response=$(timeout 8 "$cli" activationcode 2>/dev/null); then
+			echo '{"ok":false,"message":"Could not request a router activation link. Check the router Internet connection and Speedify service."}'
+			exit 0
+		fi
+		# Return only the official HTTPS activation endpoint and expected code.
+		printf '%s' "$response" | jq -ce '
+			if type=="object" and (.activationUrl|type)=="string" and
+			(.activationUrl|test("^https://my\\.speedify\\.com/activate\\?activationCode=[A-Za-z0-9-]+&role=router$"))
+			then {ok:true,url:.activationUrl} else error("invalid activation reply") end' 2>/dev/null ||
+			echo '{"ok":false,"message":"Speedify did not return a valid router activation link. Check the router Internet connection."}'
+		;;
+esac

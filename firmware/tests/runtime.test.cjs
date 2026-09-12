@@ -218,79 +218,7 @@ zbt_get_lockband_nr /dev/ttyTEST`, { ZBT_SYSFS: '/nonexistent' });
   assert.match(out, /section=NR_NSA[\s\S]*read_state=verified/);
 });
 
-test('5G deployment RPC maps modes and avoids redundant modem writes', { skip: !process.env.QMODEM_TEST_TREE }, () => {
-  const rpcd = fs.readFileSync(path.join(process.env.QMODEM_TEST_TREE,
-    'application/qmodem/files/usr/libexec/rpcd/qmodem'), 'utf8');
-  const start = rpcd.indexOf('# Quectel separates the 5G deployment selector');
-  const end = rpcd.indexOf('\ncase "$1" in', start);
-  assert.ok(start >= 0 && end > start);
-  const helper = rpcd.slice(start, end);
-  const dir = sandbox(), state = path.join(dir, 'state'), log = path.join(dir, 'at.log');
-  fs.writeFileSync(state, '1\n');
-  const mocks = `
-manufacturer=Quectel
-at_port=/dev/ttyTEST
-at() {
-  printf '%s\\n' "$2" >> "$AT_LOG"
-  case "$2" in
-    AT+CIMI) printf '%s\\r\\nOK\\r\\n' "$TEST_IMSI" ;;
-    *nr5g_disable_mode\\\",*) printf '%s\\n' "\${2##*,}" > "$MODE_STATE"; printf 'OK\\r\\n' ;;
-    *) printf '+QNWPREFCFG: "nr5g_disable_mode",%s\\r\\nOK\\r\\n' "$(sed -n '1p' "$MODE_STATE")" ;;
-  esac
-}
-uci() { return 0; }
-json_init() { :; }; json_add_object() { :; }; json_close_object() { :; }; json_dump() { :; }
-json_add_string() { printf '%s=%s\\n' "$1" "$2"; }
-`;
-  let out = shell(helper + mocks + '\nzbt_set_5g_deployment nsa', { MODE_STATE: state, AT_LOG: log });
-  assert.match(out, /status=1[\s\S]*changed=0/);
-  assert.equal((fs.readFileSync(log, 'utf8').match(/,[012]$/gm) || []).length, 0, 'same mode must not write');
-  fs.writeFileSync(log, '');
-  out = shell(helper + mocks + '\nzbt_set_5g_deployment auto', { MODE_STATE: state, AT_LOG: log });
-  assert.match(out, /status=1[\s\S]*changed=1/);
-  assert.equal(fs.readFileSync(state, 'utf8').trim(), '0');
-  assert.equal((fs.readFileSync(log, 'utf8').match(/,[012]$/gm) || []).length, 1);
-  out = shell(helper + mocks + '\nzbt_5g_deployment_value auto_preferred',
-    { MODE_STATE: state, AT_LOG: log, TEST_IMSI: '310260123456789' });
-  assert.equal(out, '1', 'direct T-Mobile US defaults to LTE-anchored 5G');
-  out = shell(helper + mocks + '\nzbt_5g_deployment_value auto_preferred',
-    { MODE_STATE: state, AT_LOG: log, TEST_IMSI: '310410123456789' });
-  assert.equal(out, '0', 'other carriers retain modem-managed SA plus NSA');
-});
-
-test('Mega automatic 5G policy reads before writing and never touches band masks', () => {
-  const text = file('firmware/files/usr/sbin/zbt-qmodem-performance-policy');
-  const body = text.slice(text.indexOf("TAG='zbt-5g-policy'"), text.lastIndexOf('\ncase "$1" in'));
-  const dir = sandbox(), state = path.join(dir, 'state'), log = path.join(dir, 'at.log');
-  fs.writeFileSync(state, '1\n');
-  const mocks = `
-section_ready() { at_port=/dev/ttyTEST; return 0; }
-zbt_modem_imsi() { printf '%s\\n' "$TEST_IMSI"; }
-query_mode() { sed -n '1p' "$MODE_STATE"; }
-uci() {
-  [ "$1" != -q ] || shift
-  case "$1" in get) printf '%s\\n' "$TEST_POLICY" ;; *) return 0 ;; esac
-}
-at() {
-  printf '%s\\n' "$2" >> "$AT_LOG"
-  case "$2" in *nr5g_disable_mode\\\",*) printf '%s\\n' "\${2##*,}" > "$MODE_STATE"; printf 'OK\\r\\n' ;; esac
-}
-logger() { :; }
-`;
-  shell(body + mocks + '\napply_policy 4_1', {
-    MODE_STATE: state, AT_LOG: log, TEST_POLICY: 'auto_preferred', TEST_IMSI: '310260123456789'
-  });
-  assert.equal(fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', '', 'matching active mode performs no modem write');
-
-  fs.writeFileSync(state, '2\n');
-  shell(body + mocks + '\napply_policy 4_1', {
-    MODE_STATE: state, AT_LOG: log, TEST_POLICY: 'nsa', TEST_IMSI: '310260123456789'
-  });
-  assert.equal(fs.readFileSync(state, 'utf8').trim(), '1');
-  const commands = fs.readFileSync(log, 'utf8');
-  assert.match(commands, /nr5g_disable_mode",1/);
-  assert.doesNotMatch(commands, /(?:lte|nr5g|nsa)_band/i, 'deployment policy must not alter any band mask');
-});
+// Transactional 5G policy regressions live in connectivity.test.cjs.
 
 test('fresh slow samples demote after threshold and two good samples recover', () => {
   const policy = source('firmware/files/usr/lib/zbt/speed-policy.sh');
@@ -305,12 +233,12 @@ zbt_speed_transition 10 5 2; echo "$bad:$good:$blocked"`),
     '1:0:0\n1:0:0\n1:0:0\n2:0:1\n0:1:1\n0:2:0');
 });
 
-test('speed metric overrides only project cellular members and expires', () => {
+test('speed samples cannot override configured MWAN3 member metrics', () => {
   const dir = sandbox();
   const policy = source('firmware/files/usr/lib/zbt/mwan3-speed-metric.sh').replaceAll('/tmp/modem-watchdog', dir);
   const expiry = Math.floor(Number(fs.readFileSync('/proc/uptime', 'utf8').split(' ')[0])) + 100;
   fs.writeFileSync(path.join(dir, '4_1.metric'), `${expiry} 5\n`);
-  assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 4; zbt_speed_metric failover_wan wan 2; zbt_speed_metric custom 4_1 4; zbt_speed_metric failover_4_1 4_1 7'), '5\n2\n4\n7');
+  assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 4; zbt_speed_metric failover_wan wan 2; zbt_speed_metric custom 4_1 4; zbt_speed_metric failover_4_1 4_1 7'), '4\n2\n4\n7');
   fs.writeFileSync(path.join(dir, '4_1.metric'), '0 5\n');
   assert.equal(shell(policy + '\nzbt_speed_metric failover_4_1 4_1 4'), '4');
 });
@@ -498,10 +426,11 @@ test('Speedify has a ROM-resident LuCI setup screen across sysupgrade', () => {
   assert.match(view, /Finishing Speedify setup/);
   assert.doesNotMatch(view, /handleSaveApply:\s*function|fetch\(/);
   assert.match(installer, /install_luci_wrapper \|\| return 1/);
-  assert.doesNotMatch(wrapper, /speedifyuiframe|syncOuterHash|E\('iframe'/);
+  assert.doesNotMatch(wrapper, /syncOuterHash|window\.location\.replace/);
+  assert.match(wrapper, /E\('iframe'/);
   assert.match(wrapper, /new URL\('\/luci-app-speedify\/view\/index\.html'/);
   assert.match(wrapper, /app\.hash = '\/\?' \+ connectionParams/);
-  assert.match(wrapper, /window\.location\.replace\(app\.href\)/);
+  assert.match(wrapper, /method: 'activation'/);
   assert.match(wrapper, /SameSite=Strict/);
   assert.match(file('firmware/files/etc/uci-defaults/99-speedify-bootstrap'), /rm -f \/tmp\/luci-indexcache/);
 });

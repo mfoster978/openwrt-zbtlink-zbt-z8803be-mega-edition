@@ -56,9 +56,24 @@ fi
 # Feed updates preserve tracked local modifications. Since the performance UI
 # patch intentionally refines lines added by the deployment patch, testing an
 # earlier patch in isolation cannot recognize an already-applied full stack.
-# Restore this generated, commit-pinned feed checkout before applying the
-# reviewed stack so cached local builds remain deterministic and repeatable.
-git -C feeds/qmodem reset --hard --quiet HEAD
+# Reverse only our exact known patches. Do not reset an entire checkout or
+# discard unrelated local edits while preparing a cached build.
+if ! git -C feeds/qmodem diff --quiet; then
+  for patch_name in qmodem-connectivity-v5.patch qmodem-mega-policy-ui.patch qmodem-performance-ui.patch qmodem-5g-deployment.patch qmodem-cell-discovery.patch qmodem-dual-runtime.patch; do
+    stack_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/$patch_name"
+    if patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$stack_patch" >/dev/null; then
+      patch --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$stack_patch"
+    elif git -C feeds/qmodem diff --quiet; then
+      break
+    elif ! patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$stack_patch" >/dev/null; then
+      echo "Unrecognized cached QModem changes at $patch_name; preserving checkout for inspection" >&2
+      exit 3
+    fi
+  done
+  git -C feeds/qmodem diff --quiet || {
+    echo 'Unrelated QModem changes remain; refusing to overwrite them' >&2; exit 3;
+  }
+fi
 [[ "$(git -C feeds/packages rev-parse HEAD)" = db3b315119519f9194dad8aa668aa40618df9b20 ]] || {
   echo 'Unexpected packages revision; review mwan3 patch before building' >&2; exit 3;
 }
@@ -138,6 +153,8 @@ elif ! patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$policy
   echo 'Mega QModem policy/UI compatibility patch no longer matches; refusing a broken Advanced page build' >&2
   exit 3
 fi
+connectivity_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/qmodem-connectivity-v5.patch"
+patch --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$connectivity_patch"
 for apn in broadband NXTGENPHONE ENHANCEDPHONE firstnet-broadband fast.t-mobile.com vzwinternet h2g2 h2g2-t usccinternet; do
   [ "$(grep -Fo "o.value('$apn'" feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js | wc -l)" -eq 2 ] || {
     echo "US APN preset is not present for both QModem SIM selectors: $apn" >&2; exit 3;
@@ -516,6 +533,10 @@ cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/vie
 cmp "${CUSTOM_FEED_DIR}/luci-app-speedtest-lite/htdocs/luci-static/resources/view/speedtest-lite/style.css" \
   "${rootfs_dir}/www/luci-static/resources/view/speedtest-lite/style.css"
 required_overlay_files=(
+  etc/uci-defaults/99-zbt-modem-route-v5
+  usr/lib/zbt/qmodem-5g.sh
+  usr/libexec/rpcd/zbt.speedify
+  usr/share/rpcd/acl.d/zbt-speedify.json
   etc/uci-defaults/95-mwan3-defaults
   etc/uci-defaults/40-zbt-usb-tether-defaults
   etc/uci-defaults/80-zbt-z8803be-admin-password
@@ -567,6 +588,9 @@ for overlay_file in "${required_overlay_files[@]}"; do
   fi
 done
 echo "Validated files overlay in root filesystem: ${rootfs_dir}"
+for overlay_file in usr/lib/zbt/qmodem-5g.sh usr/lib/zbt/mwan3-speed-metric.sh usr/libexec/rpcd/zbt.speedify usr/share/rpcd/acl.d/zbt-speedify.json usr/share/zbt/speedify-luci-wrapper.js etc/uci-defaults/99-zbt-modem-route-v5; do
+  cmp "${FILES_OVERLAY_DIR}/${overlay_file}" "${rootfs_dir}/${overlay_file}" || exit 4
+done
 # A package/base-files install must expose exactly one modem LED owner. S97
 # deliberately runs after OpenWrt's generic S96 LED configuration service.
 [ "$(readlink "${rootfs_dir}/etc/rc.d/S97zbt-modem-leds")" = ../init.d/zbt-modem-leds ] || {
@@ -712,7 +736,7 @@ grep -Fq 'take up to three minutes' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
   echo 'Nearby-cell scan timing guidance is missing from LuCI' >&2; exit 4;
 }
-grep -Fq 'Automatic preferred — NSA on T-Mobile, SA + NSA elsewhere' \
+grep -Fq 'Automatic preferred — modem/network selection' \
   "${rootfs_dir}/www/luci-static/resources/view/qmodem/config_advanced.js" || {
   echo 'Quectel SA/NSA connection-type control is missing from LuCI' >&2; exit 4;
 }
@@ -724,12 +748,12 @@ grep -Fq "readfile('/rom/etc/zbt-mega-build.json')" \
   "${rootfs_dir}/usr/share/ucode/luci/runtime.uc" || {
   echo 'Firmware-specific LuCI resource cache version is missing from the image' >&2; exit 4;
 }
-grep -Fq 'zbt_5g_deployment_query()' \
+grep -Fq '. /usr/lib/zbt/qmodem-5g.sh' \
   "${rootfs_dir}/usr/libexec/rpcd/qmodem" || {
   echo 'Quectel SA/NSA readback backend is missing from the image' >&2; exit 4;
 }
-grep -Fq 'json_add_string policy "$policy"' \
-  "${rootfs_dir}/usr/libexec/rpcd/qmodem" || {
+grep -Fq 'zbt_5g_policy)' \
+  "${rootfs_dir}/usr/lib/zbt/qmodem-5g.sh" || {
   echo 'Saved Mega 5G deployment policy is missing from QModem RPC' >&2; exit 4;
 }
 grep -Fq "return uci.load('qmodem').then" \

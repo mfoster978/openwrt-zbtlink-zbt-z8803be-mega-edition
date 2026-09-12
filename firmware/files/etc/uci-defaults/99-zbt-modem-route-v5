@@ -1,0 +1,5 @@
+#!/bin/sh
+# Repair the old preset's shell-variable collision even on kept-config upgrades.
+# Runs before normal modem/service startup; never touches radio/band settings.
+ZBT_MWAN_NO_RELOAD=1 /usr/sbin/zbt-mwan-preset failover || exit 1
+exit 0

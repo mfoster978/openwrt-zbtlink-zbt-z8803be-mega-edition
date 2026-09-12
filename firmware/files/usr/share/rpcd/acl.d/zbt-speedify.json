@@ -1,0 +1,7 @@
+{
+  "zbt-speedify": {
+    "description": "Read Speedify router sign-in status and request official activation",
+    "read": { "ubus": { "zbt.speedify": [ "status" ] } },
+    "write": { "ubus": { "zbt.speedify": [ "activation" ] } }
+  }
+}

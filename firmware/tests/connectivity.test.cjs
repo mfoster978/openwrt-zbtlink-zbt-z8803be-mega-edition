@@ -1,0 +1,155 @@
+'use strict';
+const { test, after } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(__dirname, '../..');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mega-connectivity-tests-'));
+after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+let id = 0;
+const read = name => fs.readFileSync(path.join(root, 'firmware', name), 'utf8');
+function shell(script, env = {}, args = []) {
+  const r = spawnSync('busybox', ['sh', '-c', script, 'fixture', ...args], {
+    encoding: 'utf8', timeout: 30000, env: { ...process.env, ...env }
+  });
+  assert.ifError(r.error);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  return r.stdout.trim();
+}
+const radio = read('files/usr/lib/zbt/qmodem-5g.sh');
+function radioFixture(mode = '0', rat = 'AUTO') {
+  const dir = path.join(tmp, String(++id)); fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, 'nr5g_disable_mode'), mode);
+  fs.writeFileSync(path.join(dir, 'mode_pref'), rat);
+  return { dir, env: { DB: dir }, mock: `
+manufacturer=Quectel
+at_port=/dev/ttyMODEM1
+at() {
+  printf '%s %s\\n' "$1" "$2" >> "$DB/commands"
+  local key value
+  key=$(printf '%s' "$2" | cut -d '"' -f2)
+  case "$2" in
+    *,*)
+      value=\${2##*,}
+      if [ "$FAIL_WRITE" = "$key:$value" ]; then echo ERROR; return 0; fi
+      printf '%s' "$value" > "$DB/$key"
+      echo OK ;;
+    *)
+      if [ "$FAIL_READ" = "$key" ]; then echo '+CME ERROR: 3'; return 0; fi
+      printf '+QNWPREFCFG: "%s","%s"\\r\\nOK\\r\\n' "$key" "$(cat "$DB/$key")" ;;
+  esac
+}
+` };
+}
+function apply(f, policy, env = {}) {
+  const out = shell(radio + f.mock + '\nzbt_5g_apply "$POLICY"; echo "status=$? changed=$zbt_5g_changed $zbt_5g_message"',
+    { ...f.env, POLICY: policy, ...env });
+  return { out, commands: fs.readFileSync(path.join(f.dir, 'commands'), 'utf8') };
+}
+test('5G parser accepts actual CRLF/quoted formats but rejects incomplete or contradictory responses', () => {
+  for (const reply of ['+QNWPREFCFG: "nr5g_disable_mode",1\\r\\nOK\\r\\n', '+QNWPREFCFG: NR5G_DISABLE_MODE, "1"\\nOK'])
+    assert.equal(shell(radio + '\nzbt_5g_parse "$(printf \'%b\' "$REPLY")" nr5g_disable_mode', { REPLY: reply }), '1');
+  for (const reply of ['', 'OK', '+QNWPREFCFG: "nr5g_disable_mode",1',
+    '+QNWPREFCFG: "nr5g_disable_mode",3\nOK', '+QNWPREFCFG: "nr5g_disable_mode",1\nERROR\nOK',
+    '+QNWPREFCFG: "nr5g_disable_mode",1\n+QNWPREFCFG: "nr5g_disable_mode",0\nOK'])
+    assert.equal(shell(radio + '\nzbt_5g_parse "$REPLY" nr5g_disable_mode || echo refused', { REPLY: reply }), 'refused');
+});
+test('Automatic preferred repairs old NSA plus NR-only settings without carrier guessing or band writes', () => {
+  const f = radioFixture('1', 'NR5G'); const { out, commands } = apply(f, 'auto_preferred');
+  assert.match(out, /status=0 changed=1/);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'mode_pref'), 'utf8'), 'AUTO');
+  assert.equal(fs.readFileSync(path.join(f.dir, 'nr5g_disable_mode'), 'utf8'), '0');
+  assert.doesNotMatch(commands, /CIMI|band|ttyMODEM2/);
+  assert.ok(commands.indexOf('"mode_pref",AUTO') < commands.indexOf('"nr5g_disable_mode",0'));
+});
+test('NSA enables LTE anchor before disabling SA and only touches the selected modem', () => {
+  const f = radioFixture('0', 'NR5G'); const { out, commands } = apply(f, 'nsa');
+  assert.match(out, /status=0 changed=1/);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'mode_pref'), 'utf8'), 'LTE:NR5G');
+  assert.ok(commands.indexOf('"mode_pref",LTE:NR5G') < commands.indexOf('"nr5g_disable_mode",1'));
+  assert.doesNotMatch(commands, /band|ttyMODEM2/);
+});
+test('already-active policy performs no modem write', () => {
+  for (const [mode, rat, policy] of [['0', 'AUTO', 'auto_preferred'], ['1', 'LTE:NR5G', 'nsa'], ['2', 'NR5G', 'sa']]) {
+    const { out, commands } = apply(radioFixture(mode, rat), policy);
+    assert.match(out, /status=0 changed=0/);
+    assert.doesNotMatch(commands, /",/);
+  }
+});
+test('failed reads retry without writing; failed mode write restores prior RAT and selector', () => {
+  for (const key of ['nr5g_disable_mode', 'mode_pref']) {
+    const f = radioFixture(); const { out, commands } = apply(f, 'nsa', { FAIL_READ: key });
+    assert.match(out, /status=1 changed=0/); assert.doesNotMatch(commands, /",/);
+    assert.equal(commands.split('\n').filter(line => line.endsWith('"' + key + '"')).length, 2);
+  }
+  const f = radioFixture('0', 'NR5G');
+  const { out } = apply(f, 'nsa', { FAIL_WRITE: 'nr5g_disable_mode:1' });
+  assert.match(out, /status=1.*Previous settings restored/);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'mode_pref'), 'utf8'), 'NR5G');
+  assert.equal(fs.readFileSync(path.join(f.dir, 'nr5g_disable_mode'), 'utf8'), '0');
+});
+test('compiled RPC and pre-dial path both use the shared radio transaction', { skip: !process.env.QMODEM_TEST_TREE }, () => {
+  const tree = process.env.QMODEM_TEST_TREE;
+  const rpc = fs.readFileSync(path.join(tree, 'application/qmodem/files/usr/libexec/rpcd/qmodem'), 'utf8');
+  const dial = fs.readFileSync(path.join(tree, 'application/qmodem/files/usr/share/qmodem/modem_dial.sh'), 'utf8');
+  assert.match(rpc, /\. \/usr\/lib\/zbt\/qmodem-5g\.sh/);
+  assert.doesNotMatch(rpc, /310260/);
+  assert.match(dial, /zbt-qmodem-performance-policy apply "\$modem_config"/);
+  assert.match(read('files/usr/sbin/zbt-qmodem-performance-policy'), /use_ubus_flag=-u/);
+});
+test('full kept-config routing preset preserves 200/210, repairs named WAN zones, and never uses speed overrides', () => {
+  const dir = path.join(tmp, String(++id)); fs.mkdirSync(dir);
+  for (const [key, value] of Object.entries({
+    'network.4_1': 'interface', 'network.2_1': 'interface',
+    'qmodem.4_1': 'modem-device', 'qmodem.2_1': 'modem-device',
+    'qmodem.4_1.metric': '0', 'qmodem.2_1.metric': '0',
+    'firewall.wanzone': 'zone', 'firewall.wanzone.name': 'wan', 'firewall.wanzone.network': '2_1'
+  })) fs.writeFileSync(path.join(dir, key), value);
+  const mock = `
+uci() {
+  local cmd key val entry
+  [ "$1" != -q ] || shift
+  cmd=$1; key=$2
+  case "$cmd" in
+    get) [ -f "$DB/$key" ] && cat "$DB/$key" ;;
+    set) printf '%s' "\${key#*=}" > "$DB/\${key%%=*}" ;;
+    delete) rm -f "$DB/$key" ;;
+    add_list) val=\${key#*=}; key=\${key%%=*}; printf ' %s' "$val" >> "$DB/$key" ;;
+    show) for entry in "$DB/$key".*; do
+      [ -f "$entry" ] && printf '%s=%s\\n' "\${entry##*/}" "$(cat "$entry")"
+      done ;;
+    commit) : ;;
+  esac
+}
+logger() { :; }
+`;
+  shell(mock + read('files/usr/sbin/zbt-mwan-preset'), { DB: dir, ZBT_MWAN_NO_RELOAD: '1' }, ['failover']);
+  for (const pkg of ['network', 'qmodem']) {
+    assert.equal(fs.readFileSync(path.join(dir, pkg + '.4_1.metric'), 'utf8'), '200');
+    assert.equal(fs.readFileSync(path.join(dir, pkg + '.2_1.metric'), 'utf8'), '210');
+  }
+  for (const policy of ['failover', 'balanced']) {
+    assert.equal(fs.readFileSync(path.join(dir, 'mwan3.' + policy + '_4_1.metric'), 'utf8'), '4');
+    assert.equal(fs.readFileSync(path.join(dir, 'mwan3.' + policy + '_2_1.metric'), 'utf8'), '5');
+  }
+  assert.equal(fs.readFileSync(path.join(dir, 'firewall.wanzone.network'), 'utf8'), '2_1 4_1');
+  assert.equal(shell(read('files/usr/lib/zbt/mwan3-speed-metric.sh') + '\nzbt_speed_metric failover_2_1 2_1 5'), '5');
+  assert.doesNotMatch(read('files/usr/lib/zbt/mwan3-speed-metric.sh'), /\/tmp\/|expiry/);
+});
+test('Speedify RPC accepts only official activation links and distinguishes daemon failure from logged out', () => {
+  const dir = path.join(tmp, String(++id)); fs.mkdirSync(dir);
+  const cli = path.join(dir, 'cli');
+  fs.writeFileSync(cli, '#!/bin/sh\nprintf \'%s\\n\' "$REPLY"\nexit ${CLI_EXIT:-0}\n', { mode: 0o755 });
+  const rpc = read('files/usr/libexec/rpcd/zbt.speedify').replace('/usr/share/speedify/speedify_cli', cli);
+  const call = (method, reply, code = '0') => JSON.parse(shell(rpc, { REPLY: JSON.stringify(reply), CLI_EXIT: code }, ['call', method]));
+  assert.equal(call('status', { isAutoAccount: true, email: 'auto' }).signed_in, false);
+  assert.equal(call('status', { isAutoAccount: false, email: 'test@example.invalid' }).signed_in, true);
+  assert.equal(call('status', {}).ok, false);
+  assert.equal(call('status', {}, '1').ok, false);
+  const url = 'https://my.speedify.com/activate?activationCode=1234567&role=router';
+  assert.equal(call('activation', { activationUrl: url }).url, url);
+  for (const bad of ['http://my.speedify.com/activate?activationCode=1&role=router', url.replace('my.speedify.com', 'my.speedify.com.evil.invalid'), 'javascript:alert(1)'])
+    assert.equal(call('activation', { activationUrl: bad }).ok, false);
+});

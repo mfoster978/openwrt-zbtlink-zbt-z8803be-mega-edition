@@ -88,7 +88,7 @@ renderAbout();
     assert.equal(await page.getByRole('img', { name: /Illustration/ }).count(), 1);
     assert.match(await page.locator('.zma-thanks').innerText(), /putting the pieces together[\s\S]*working OpenWrt/);
     assert.match(await page.locator('#zma-speedify').textContent(), /Installed after Internet is ready/);
-    assert.match(await page.locator('#zma-speedify').textContent(), /top-level page[\s\S]*cannot discard its login iframe/);
+    assert.match(await page.locator('#zma-speedify').textContent(), /checks the router daemon[\s\S]*keeps the LuCI menu visible/);
     await page.getByRole('tab', { name: 'Speedify', exact: true }).click();
     assert.equal(await page.locator('.zma-speedify-video img[loading="lazy"][referrerpolicy="no-referrer"]').count(), 1);
     assert.equal(await page.getByRole('link', { name: 'Pair & Share | Peer-to-Peer Cellular Bonding | Speedify', exact: true }).getAttribute('href'), 'https://speedify.com/enterprise/pair-and-share-cellular-connection-pooling/?wvideo=lrxei2q3dw');

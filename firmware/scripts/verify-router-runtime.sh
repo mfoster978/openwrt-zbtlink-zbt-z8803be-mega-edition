@@ -21,7 +21,10 @@ for section in 4_1 2_1; do
 	/etc/init.d/qmodem_network modem_status "$section" 2>/dev/null
 	if [ -n "$device" ]; then
 		ip addr show dev "$device" scope global 2>/dev/null
+		ip -4 route show default dev "$device" 2>/dev/null
 	fi
+	# These queries are read-only; no setting/apply method is invoked.
+	ubus -t 25 call qmodem get_5g_deployment "{\"config_section\":\"$section\"}" 2>/dev/null || true
 done
 printf '\n%s\n' 'Independent modem TTL policy (read-only; auto uses a passive 64/65 heuristic)'
 for section in 4_1 2_1; do
@@ -68,6 +71,9 @@ for member in failover_wan_sfp failover_wan failover_usb_tether failover_4_1 fai
 done
 uci -q show modem_watchdog
 ip -4 route show default
+ip -4 rule show
+mwan3 status 2>/dev/null || true
+ubus -t 10 call zbt.speedify status '{}' 2>/dev/null | jq '{ok, signed_in, message}' || true
 printf '\n%s\n' 'Installed UI packages and service health'
 for package in luci-app-mwan3 luci-app-speedtest-lite zbt-speedtest luci-app-tailscale speedify luci-app-speedify; do
 	apk info -e "$package" >/dev/null 2>&1 && printf '%s=installed\n' "$package" || printf '%s=missing\n' "$package"

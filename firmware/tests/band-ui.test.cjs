@@ -109,7 +109,8 @@ test('performance choices are first, visible, read-backed, and read-only on open
   const menu = tabs.children[0];
   assert.deepEqual(menu.children.slice(0, 3).map(el => el.textContent),
     ['5G & Network Mode', 'Preferred Bands', 'Neighbor Cell']);
-  assert.match(tabs.textContent, /Automatic preferred — NSA on T-Mobile, SA \+ NSA elsewhere/);
+  assert.match(tabs.textContent, /Automatic preferred — modem\/network selection/);
+  assert.doesNotMatch(tabs.textContent, /T-Mobile/);
   assert.match(tabs.textContent, /opening this page is read-only/i);
   assert.equal(deploymentReads, 1);
   assert.equal(deploymentWrites, 0, 'rendering the page must never write to the modem');
@@ -121,6 +122,27 @@ test('Advanced loads friendly slot labels without the newer shared helper API', 
   assert.deepEqual(modems.map(item => [item.id, item.name]), [
     ['4_1', 'Modem 1 (RM551E-GL)'], ['2_1', 'Modem 2 (RM551E-GL)']
   ]);
+});
+
+test('failed 5G reads show diagnostics and retry instead of claiming unsupported hardware', { skip: !tree }, async () => {
+  let reads = 0, writes = 0;
+  const f = fixture({
+    get5gDeployment: async () => ({ deployment: reads++ === 0 ? {
+      supported: '0', read_response: '+CME ERROR: 3 <plain text>',
+      data_state: 'No IPv4 data address on this modem.'
+    } : { supported: '1', mode: 'auto', network_mode: 'AUTO', policy: 'auto_preferred' } }),
+    set5gDeployment: async () => { writes++; }
+  });
+  const container = f.view.createRatPreferTab(modem);
+  await settle();
+  assert.match(container.textContent, /Could not read the 5G setting/);
+  assert.match(container.textContent, /No IPv4 data address/);
+  assert.match(container.textContent, /\+CME ERROR: 3 <plain text>/);
+  assert.equal(byId(container, 'deployment_select_2_1').disabled, true);
+  await button(container, 'Read settings again').fire('click');
+  assert.equal(byId(container, 'deployment_select_2_1').disabled, false);
+  assert.equal(byId(container, 'deployment_select_2_1').value, 'auto_preferred');
+  assert.equal(writes, 0);
 });
 
 test('unknown bands have diagnostics/retry, never actionable all-off checkboxes', { skip: !tree }, async () => {
