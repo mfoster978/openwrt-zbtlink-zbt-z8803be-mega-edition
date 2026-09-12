@@ -58,8 +58,16 @@ function run(command, args, options = {}) {
       run('patch', ['--dry-run', '--batch', '--fuzz=0', '--reverse', '-p1', '-d', tree], { input: patch });
       run('patch', ['--batch', '--fuzz=0', '--reverse', '-p1', '-d', tree], { input: patch });
     }
-    for (const patch of patches)
+    for (const patch of patches) {
+      if (name === 'qmodem' && patch === patches.at(-1)) {
+        // A cache from the preceding release has all but the newest patch.
+        // GNU patch --batch -R guesses forward here unless --force is used.
+        const absent = spawnSync('patch', ['--dry-run', '--force', '--fuzz=0', '--reverse', '-p1', '-d', tree],
+          { input: patch, encoding: 'utf8' });
+        assert.notEqual(absent.status, 0, 'absent latest patch must not be applied while reversing a cached build');
+      }
       run('patch', ['--batch', '--fuzz=0', '--forward', '-p1', '-d', tree], { input: patch });
+    }
     for (const p of files) {
       const contents = fs.readFileSync(path.join(tree, p), 'utf8');
       if (p.endsWith('.js')) new Function(contents);

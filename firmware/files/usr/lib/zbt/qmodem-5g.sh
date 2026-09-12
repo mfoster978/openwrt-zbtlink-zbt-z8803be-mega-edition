@@ -62,12 +62,18 @@ zbt_5g_vendor() {
 	case "$(printf '%s' "$manufacturer" | tr '[:upper:]' '[:lower:]')" in *quectel*) return 0 ;; *) return 1 ;; esac
 }
 
+zbt_5g_target() {
+	. /usr/lib/zbt/dual-modem.sh
+	case "$config_section" in 4_1|2_1) ;; *) return 1 ;; esac
+	zbt_5g_vendor && [ -c "$at_port" ] && zbt_port_matches "$config_section" "$at_port"
+}
+
 zbt_5g_apply() {
 	local requested="$1" desired old_mode old_rat target_rat rat_changed=0
 	zbt_5g_changed=0
 	zbt_5g_message='Unable to read the modem settings; no change was made. Retry after the modem has finished connecting.'
 	desired=$(zbt_5g_value "$requested") || return 1
-	zbt_5g_vendor && zbt_5g_read nr5g_disable_mode || return 1
+	zbt_5g_target && zbt_5g_read nr5g_disable_mode || return 1
 	old_mode=$zbt_5g_read_value
 	zbt_5g_read mode_pref || return 1
 	old_rat=$zbt_5g_read_value; target_rat=$old_rat
@@ -117,7 +123,7 @@ zbt_get_5g_deployment() {
 			data_state='No IPv4 data address on this modem. Radio signal alone does not mean Internet access; a per-modem IPv4 speed test cannot run yet. Check Network Configuration and the dial log.'
 		fi
 	fi
-	if zbt_5g_vendor && zbt_5g_read nr5g_disable_mode; then
+	if zbt_5g_target && zbt_5g_read nr5g_disable_mode; then
 		mode=$(zbt_5g_deployment_name "$zbt_5g_read_value"); status=1
 		if zbt_5g_read mode_pref; then rat=$zbt_5g_read_value; fi
 	else

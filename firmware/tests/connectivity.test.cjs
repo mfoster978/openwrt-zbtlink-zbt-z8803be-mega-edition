@@ -18,7 +18,7 @@ function shell(script, env = {}, args = []) {
   assert.equal(r.status, 0, r.stderr + r.stdout);
   return r.stdout.trim();
 }
-const radio = read('files/usr/lib/zbt/qmodem-5g.sh');
+const radio = read('files/usr/lib/zbt/qmodem-5g.sh').replaceAll('/usr/lib/zbt/', root + '/firmware/files/usr/lib/zbt/');
 function radioFixture(mode = '0', rat = 'AUTO') {
   const dir = path.join(tmp, String(++id)); fs.mkdirSync(dir);
   fs.writeFileSync(path.join(dir, 'nr5g_disable_mode'), mode);
@@ -26,6 +26,7 @@ function radioFixture(mode = '0', rat = 'AUTO') {
   return { dir, env: { DB: dir }, mock: `
 manufacturer=Quectel
 at_port=/dev/ttyMODEM1
+zbt_5g_target() { [ "$at_port" = /dev/ttyMODEM1 ]; }
 at() {
   printf '%s %s\\n' "$1" "$2" >> "$DB/commands"
   local key value
@@ -55,6 +56,20 @@ test('5G parser accepts actual CRLF/quoted formats but rejects incomplete or con
     '+QNWPREFCFG: "nr5g_disable_mode",3\nOK', '+QNWPREFCFG: "nr5g_disable_mode",1\nERROR\nOK',
     '+QNWPREFCFG: "nr5g_disable_mode",1\n+QNWPREFCFG: "nr5g_disable_mode",0\nOK'])
     assert.equal(shell(radio + '\nzbt_5g_parse "$REPLY" nr5g_disable_mode || echo refused', { REPLY: reply }), 'refused');
+});
+
+test('5G target validation rejects a stale AT override pointing at the other physical modem', () => {
+  const sys = path.join(tmp, String(++id));
+  fs.mkdirSync(path.join(sys, 'bus/usb/devices/4-1/4-1:1.2'), { recursive: true });
+  fs.mkdirSync(path.join(sys, 'bus/usb/devices/2-1/2-1:1.2'), { recursive: true });
+  fs.mkdirSync(path.join(sys, 'class/tty/null'), { recursive: true });
+  const target = path.join(sys, 'class/tty/null/device');
+  fs.symlinkSync(path.join(sys, 'bus/usb/devices/2-1/2-1:1.2'), target);
+  const run = radio + '\nmanufacturer=Quectel; config_section=4_1; at_port=/dev/null; zbt_5g_target && echo valid || echo rejected';
+  assert.equal(shell(run, { ZBT_SYSFS: sys }), 'rejected');
+  fs.unlinkSync(target);
+  fs.symlinkSync(path.join(sys, 'bus/usb/devices/4-1/4-1:1.2'), target);
+  assert.equal(shell(run, { ZBT_SYSFS: sys }), 'valid');
 });
 test('Automatic preferred repairs old NSA plus NR-only settings without carrier guessing or band writes', () => {
   const f = radioFixture('1', 'NR5G'); const { out, commands } = apply(f, 'auto_preferred');

@@ -6,6 +6,7 @@
 
 section_ready() {
 	case "$1" in 4_1|2_1) ;; *) return 1 ;; esac
+	config_section=$1
 	[ "$(uci -q get "qmodem.$1")" = modem-device ] || return 1
 	manufacturer=$(uci -q get "qmodem.$1.manufacturer")
 	at_port=$(uci -q get "qmodem.$1.at_port")

@@ -61,8 +61,10 @@ fi
 if ! git -C feeds/qmodem diff --quiet; then
   for patch_name in qmodem-connectivity-v5.patch qmodem-mega-policy-ui.patch qmodem-performance-ui.patch qmodem-5g-deployment.patch qmodem-cell-discovery.patch qmodem-dual-runtime.patch; do
     stack_patch="$(dirname "${FILES_OVERLAY_DIR}")/patches/$patch_name"
-    if patch --dry-run --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$stack_patch" >/dev/null; then
-      patch --batch --fuzz=0 --reverse -p1 -d feeds/qmodem < "$stack_patch"
+    # --force disables GNU patch's automatic reversal guessing. In batch
+    # mode alone an absent patch can be applied while asking to reverse it.
+    if patch --dry-run --force --fuzz=0 --reverse -p1 -d feeds/qmodem < "$stack_patch" >/dev/null; then
+      patch --force --fuzz=0 --reverse -p1 -d feeds/qmodem < "$stack_patch"
     elif git -C feeds/qmodem diff --quiet; then
       break
     elif ! patch --dry-run --batch --fuzz=0 --forward -p1 -d feeds/qmodem < "$stack_patch" >/dev/null; then
